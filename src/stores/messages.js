@@ -51,5 +51,31 @@ export const useMessagesStore = defineStore("messages", {
             await supabase.removeChannel(ch);
             delete this.subs[roomId];
         },
+
+        import { session } from "../stores/auth"; // למעלה בקובץ (נדרש כדי לדעת user_id)
+        async send(roomId, text) {
+            const userId = session.value?.user?.id;
+            if (!userId) throw new Error("Not authenticated");
+
+            const clean = String(text ?? "").trim();
+            if (!clean) return;
+
+            const { data, error } = await supabase
+                .from("messages")
+                .insert({ room_id: roomId, user_id: userId, text: clean })
+                .select("id, room_id, user_id, text, created_at, profiles(nickname, avatar_url)")
+                .single();
+
+            if (error) throw error;
+
+            // אופציונלי: push ל־UI מיד (Realtime גם יכניס, אז נמנע כפילויות)
+            if (!this.byRoom[roomId]) this.byRoom[roomId] = [];
+            const exists = this.byRoom[roomId].some((m) => m.id === data.id);
+            if (!exists) this.byRoom[roomId].push(data);
+
+            return data;
+        },
+
+
     },
 });
