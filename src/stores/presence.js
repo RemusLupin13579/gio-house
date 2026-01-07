@@ -2,22 +2,18 @@ import { defineStore } from "pinia";
 import { supabase } from "../services/supabase";
 import { session, profile } from "../stores/auth";
 
-
 export const usePresenceStore = defineStore("presence", {
     state: () => ({
         channel: null,
-        // map: userId -> payload (כולל room_name)
+        channelHouseId: null,   // ✅ נוסיף כדי לדעת לאיזה בית מחוברים
         users: {},
         ready: false,
     }),
 
     getters: {
-        // מחזיר מערך של משתמשים לפי חדר (name: living/gaming/...)
-        usersInRoom: (state) => (roomName) => {
-            return Object.values(state.users).filter((u) => u.room_name === roomName);
-        },
+        usersInRoom: (state) => (roomName) =>
+            Object.values(state.users).filter((u) => u.room_name === roomName),
 
-        // מחזיר map של room -> users[]
         usersByRoom: (state) => {
             const grouped = {};
             for (const u of Object.values(state.users)) {
@@ -30,42 +26,44 @@ export const usePresenceStore = defineStore("presence", {
     },
 
     actions: {
-        async connect() {
-            if (this.channel) return;
-
+        async connect(houseId) {
             const userId = session.value?.user?.id;
             if (!userId) return;
+            if (!houseId) return;
 
-            const ch = supabase.channel("presence:house", {
+            // אם כבר מחוברים לבית הזה – לא לעשות כלום
+            if (this.channel && this.channelHouseId === houseId) return;
+
+            // אם היינו מחוברים לבית אחר – ננתק וננקה
+            if (this.channel) {
+                await supabase.removeChannel(this.channel);
+                this.channel = null;
+                this.channelHouseId = null;
+                this.users = {};
+                this.ready = false;
+            }
+
+            const channelName = `presence:house:${houseId}`;
+            const ch = supabase.channel(channelName, {
                 config: { presence: { key: userId } },
             });
 
             ch.on("presence", { event: "sync" }, () => {
                 const state = ch.presenceState();
-                // state: { [userId]: [payloads...] }
                 const next = {};
                 for (const [k, arr] of Object.entries(state)) {
-                    // לוקחים את האחרון (יש מקרים של כמה payloads)
                     next[k] = arr[arr.length - 1];
                 }
                 this.users = next;
                 this.ready = true;
             });
 
-            ch.on("presence", { event: "join" }, ({ key, newPresences }) => {
-                // אופציונלי – sync כבר מכסה
-            });
-
-            ch.on("presence", { event: "leave" }, ({ key, leftPresences }) => {
-                // אופציונלי – sync כבר מכסה
-            });
-
             await ch.subscribe(async (status) => {
                 if (status !== "SUBSCRIBED") return;
 
-                // track ראשוני (ברירת מחדל: living)
                 await ch.track({
                     user_id: userId,
+                    house_id: houseId, // ✅ חשוב!
                     nickname: profile.value?.nickname ?? "User",
                     avatar_url: profile.value?.avatar_url ?? null,
                     room_name: "living",
@@ -74,6 +72,7 @@ export const usePresenceStore = defineStore("presence", {
             });
 
             this.channel = ch;
+            this.channelHouseId = houseId;
         },
 
         async setRoom(roomName) {
@@ -83,6 +82,7 @@ export const usePresenceStore = defineStore("presence", {
 
             await this.channel.track({
                 user_id: userId,
+                house_id: this.channelHouseId, // ✅ כדי להישאר עקבי
                 nickname: profile.value?.nickname ?? "User",
                 avatar_url: profile.value?.avatar_url ?? null,
                 room_name: roomName,
@@ -94,6 +94,7 @@ export const usePresenceStore = defineStore("presence", {
             if (!this.channel) return;
             await supabase.removeChannel(this.channel);
             this.channel = null;
+            this.channelHouseId = null;
             this.users = {};
             this.ready = false;
         },

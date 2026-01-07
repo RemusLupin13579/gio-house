@@ -1,9 +1,21 @@
 <template>
     <div class="min-h-screen bg-black text-white overflow-auto">
         <!-- כותרת -->
-        <div class="text-center pt-8 pb-4">
-            <h1 class="text-4xl font-bold text-green-400 mb-2">🏠 GIO HOUSE</h1>
-            <p class="text-green-600">איפה כולם עכשיו?</p>
+        <h1 class="text-4xl font-bold text-green-400 mb-2">
+            🏠 {{ isPublicHouse ? 'GIO HOUSE' : (currentHouse?.name || 'My House') }}
+        </h1>
+        <p class="text-green-600">
+            {{ isPublicHouse ? 'איפה כולם עכשיו?' : 'מי בבית עכשיו?' }}
+        </p>
+
+        <!-- כפתורי דיבוג בתים פרטיים -->
+        <div class="fixed bottom-4 right-4 z-[9999] flex gap-2">
+            <button class="px-3 py-2 bg-white text-black rounded" @click="debugCreateHouse">
+                DEBUG: Create house
+            </button>
+            <button class="px-3 py-2 bg-white text-black rounded" @click="debugJoinHouse">
+                DEBUG: Join house
+            </button>
         </div>
 
         <!-- שעון הוויזלים -->
@@ -38,14 +50,14 @@
                         <!-- המחוג -->
                         <div class="absolute left-1/2 top-1/2 origin-left"
                              :style="{
-                                width: `${getHandLen(user)}px`,
-                                height: '4px',
-                                transform: 'translateY(-50%)',
-                                backgroundColor: safeColor(user.color),
-                                boxShadow: `0 0 12px ${safeColor(user.color)}66`,
-                                borderRadius: '999px',
-                                opacity: user.status === 'offline' ? '0.25' : '0.85'
-                              }"></div>
+                width: `${getHandLen(user)}px`,
+                height: '4px',
+                transform: 'translateY(-50%)',
+                backgroundColor: safeColor(user.color),
+                boxShadow: `0 0 12px ${safeColor(user.color)}66`,
+                borderRadius: '999px',
+                opacity: user.status === 'offline' ? '0.25' : '0.85'
+              }"></div>
 
                         <!-- avatar at end (locked to the hand) -->
                         <div class="absolute left-1/2 top-1/2"
@@ -60,11 +72,11 @@
                                     <!-- ring + face -->
                                     <div class="w-full h-full rounded-full flex items-center justify-center border-4 transition-transform active:scale-95 hover:scale-110 overflow-hidden"
                                          :style="{
-                                            borderColor: safeColor(user.color),
-                                            background: `linear-gradient(135deg, ${safeColor(user.color)}22, ${safeColor(user.color)}44)`,
-                                            boxShadow: `0 0 20px ${safeColor(user.color)}88`,
-                                            opacity: user.status === 'offline' ? '0.35' : '1'
-                                          }">
+                      borderColor: safeColor(user.color),
+                      background: `linear-gradient(135deg, ${safeColor(user.color)}22, ${safeColor(user.color)}44)`,
+                      boxShadow: `0 0 20px ${safeColor(user.color)}88`,
+                      opacity: user.status === 'offline' ? '0.35' : '1'
+                    }">
                                         <!-- אם avatar הוא URL – נציג תמונה -->
                                         <img v-if="user.avatar && (String(user.avatar).startsWith('http') || String(user.avatar).startsWith('blob:'))"
                                              :src="user.avatar"
@@ -77,15 +89,14 @@
                                         </span>
                                     </div>
 
-
                                     <!-- status dot -->
                                     <div class="absolute -bottom-1 -right-1 w-5 h-5 rounded-full border-2 border-black"
                                          :class="getStatusColor(user.status)"></div>
 
                                     <!-- tooltip (tap on mobile, hover on desktop) -->
                                     <div class="absolute -bottom-9 left-1/2 -translate-x-1/2
-                                           bg-black/90 px-3 py-1 rounded-lg border whitespace-nowrap text-xs font-bold
-                                           pointer-events-none opacity-0 transition-opacity"
+                           bg-black/90 px-3 py-1 rounded-lg border whitespace-nowrap text-xs font-bold
+                           pointer-events-none opacity-0 transition-opacity"
                                          :class="activeTooltipUserId === user.id ? 'opacity-100' : 'group-hover:opacity-100'"
                                          :style="{ borderColor: safeColor(user.color), color: safeColor(user.color) }">
                                         {{ user.name }}
@@ -95,16 +106,12 @@
                         </div>
                     </div>
 
-
-                        <!-- טבעת “זוהר” עדינה בפנים (אופציונלי) -->
-                        <div class="absolute inset-0 rounded-full pointer-events-none z-0"
-                             style="box-shadow: inset 0 0 80px rgba(34,197,94,0.12);"></div>
-                    </div>
+                    <!-- טבעת “זוהר” עדינה בפנים (אופציונלי) -->
+                    <div class="absolute inset-0 rounded-full pointer-events-none z-0"
+                         style="box-shadow: inset 0 0 80px rgba(34,197,94,0.12);"></div>
+                </div>
             </div>
         </div>
-
-
-        
 
         <!-- רשימת חדרים -->
         <div class="max-w-md mx-auto px-4 pb-8">
@@ -145,14 +152,11 @@
                                 </div>
                             </div>
 
-                            <div v-if="presence.usersInRoom(room[0]).length > 8"
-                                 class="text-green-400 text-xs font-bold">
+                            <div v-if="presence.usersInRoom(room[0]).length > 8" class="text-green-400 text-xs font-bold">
                                 +{{ presence.usersInRoom(room[0]).length - 8 }}
                             </div>
                         </div>
                     </div>
-
-
                 </button>
             </div>
         </div>
@@ -160,103 +164,123 @@
 </template>
 
 <script setup>
+    /**
+     * HomeView
+     * - מציג "שעון וויזלים" (presence)
+     * - מציג רשימת חדרים (כרגע hardcoded מה-store)
+     * - תומך ב-Houses: הכותרת משתנה לפי הבית הנוכחי, וה-presence מבודד לפי houseId
+     */
+
     import { supabase } from "../services/supabase";
-    import { computed } from 'vue'
-    import { useUIStore } from '../stores/ui'
-    import { useHouseStore } from '../stores/house'
-    import { useUserStore } from '../stores/users'
-    import { useRouter } from 'vue-router'
-    import { ref, onMounted, onBeforeUnmount, onUnmounted } from 'vue'
+    import { computed, ref, onMounted, onBeforeUnmount, onUnmounted, watch } from "vue";
+    import { useUIStore } from "../stores/ui";
+    import { useHouseStore } from "../stores/house";
+    import { useUserStore } from "../stores/users";
+    import { useRouter } from "vue-router";
     import { usePresenceStore } from "../stores/presence";
 
-    const activeTooltipUserId = ref(null)
-    const router = useRouter()
-    const ui = useUIStore()
-    const house = useHouseStore()
-    const userStore = useUserStore()
-    const status = ref("loading...");
+    const router = useRouter();
+    const ui = useUIStore(); // (לא שיניתי שימושים, נשאר למקרה שיש לך בקוד המלא)
+    const house = useHouseStore();
+    const userStore = useUserStore(); // (כנ"ל)
     const presence = usePresenceStore();
-   
-    const clockUsers = computed(() => {
-        const list = Object.values(presence.users || {}); // ✅ הופך map -> array
 
+    const activeTooltipUserId = ref(null);
+
+    /**
+     * הבית הנוכחי (מתוך myHouses + currentHouseId)
+     * Public House = כותרת "GIO HOUSE"
+     * Private House = שם הבית
+     */
+    const currentHouse = computed(() => {
+        const list = house.myHouses ?? [];   // ✅ תמיד מערך
+        const id = house.currentHouseId;
+        return list.find(h => h.id === id);
+    });
+
+    const isPublicHouse = computed(() => !!currentHouse.value?.is_public);
+
+
+    /**
+     * Presence צריך להיות מבודד לפי בית:
+     * presence channel = presence:house:${currentHouseId}
+     * לכן כשהבית מתחלף – מחברים מחדש לערוץ הנכון.
+     */
+    watch(
+        () => house.currentHouseId,
+        async (houseId) => {
+            if (!houseId) return;
+            await presence.connect(houseId);
+            // ברירת מחדל: תמיד "living" כאשר נכנסים לבית חדש
+            await presence.setRoom("living");
+        },
+        { immediate: true }
+    );
+
+    /**
+     * clockUsers נגזר מ-presence.users (map) -> array
+     * אם presence עובד נכון לפי בית, זה כבר יהיה מסונן לבית הנוכחי "אוטומטית".
+     */
+    const clockUsers = computed(() => {
+        const list = Object.values(presence.users || {});
         return list
-            .map(u => ({
-                id: u.user_id ?? u.id,                 // אצלך זה user_id
-                name: u.nickname ?? "User",            // אצלך זה nickname
-                avatar: u.avatar_url ?? null,          // אצלך זה avatar_url
-                color: u.color ?? "#22c55e",           // אם אין עדיין צבע בפרזנס
-                status: "online",                      // Presence = אונליין. אופליין פשוט לא נמצא
-                roomKey: u.room_name ?? "living",      // אצלך זה room_name
+            .map((u) => ({
+                id: u.user_id ?? u.id,
+                name: u.nickname ?? "User",
+                avatar: u.avatar_url ?? null,
+                color: u.color ?? "#22c55e",
+                status: "online",
+                roomKey: u.room_name ?? "living",
             }))
-            .filter(u => !!u.id)
+            .filter((u) => !!u.id)
             .sort((a, b) => String(a.id).localeCompare(String(b.id)));
     });
 
-    function getAvatarSize(user) {
-        const sameRoomCount = clockUsers.value.filter(u => u.roomKey === user.roomKey).length;
-
-        if (sameRoomCount >= 7) return 44;
-        if (sameRoomCount >= 5) return 50;
-        if (sameRoomCount >= 3) return 56;
-        return 60; // היה 72
-    }
-
-    function getAvatarFontClass(user) {
-        const s = getAvatarSize(user);
-        if (s <= 44) return "text-xl";
-        if (s <= 50) return "text-2xl";
-        return "text-3xl";
-    }
-
-
+    /* ---------- Tooltip helpers ---------- */
     function toggleTooltip(userId) {
-        console.log('tap user:', userId)
-        activeTooltipUserId.value = (activeTooltipUserId.value === userId) ? null : userId
+        console.log("tap user:", userId);
+        activeTooltipUserId.value = activeTooltipUserId.value === userId ? null : userId;
     }
-
-
     function closeTooltip() {
-        activeTooltipUserId.value = null
+        activeTooltipUserId.value = null;
     }
-
     // סוגר כשנוגעים “בחוץ”
     function onDocPointerDown(e) {
-        // אם לחצו על כפתור אוואטר (יש לנו data attr), לא לסגור
-        const insideAvatar = e.target?.closest?.('[data-avatar-btn="1"]')
-        if (!insideAvatar) closeTooltip()
+        const insideAvatar = e.target?.closest?.('[data-avatar-btn="1"]');
+        if (!insideAvatar) closeTooltip();
     }
 
+    /* ---------- Lifecycle ---------- */
     onMounted(async () => {
-        await presence.connect();
-        // תדווח שאתה בחדר הנוכחי
-        await presence.setRoom("living");
-        console.log("✅ Supabase ping: start");
+        house.hydrateCurrentHouse?.()
 
-        console.log("URL:", import.meta.env.VITE_SUPABASE_URL);
-        console.log("KEY starts with:", (import.meta.env.VITE_SUPABASE_ANON_KEY || "").slice(0, 14));
+        // אם אין currentHouseId עדיין — נלך לבית הציבורי אוטומטית דרך ה-RPC
+        if (!house.currentHouseId) {
+            const { data, error } = await supabase.rpc('ensure_public_house_membership')
+            if (!error && data) {
+                house.setCurrentHouse(data)
+            } else {
+                console.error('ensure_public_house_membership failed', error)
+            }
+        }
+    })
 
-        const { data, error } = await supabase.auth.getSession();
-        console.log("✅ Supabase ping: session result", { data, error });
-    });
-    onBeforeUnmount(() => document.removeEventListener('pointerdown', onDocPointerDown))
-    // אופציונלי: כשעוזבים את האפליקציה
+
+    onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocPointerDown));
     onUnmounted(() => {
-        // לא חובה, נוח לדיבוג
-        //presence.disconnect();
+        // לא חובה. אם תרצה ניקוי קשוח כשעוזבים HomeView:
+        // presence.disconnect();
     });
 
-
-    // מיקומי החדרים על השעון
+    /* ---------- Room "clock" layout ---------- */
     const roomPositions = computed(() => [
-        { id: 'living', name: 'סלון', icon: '🛋️' },
-        { id: 'gaming', name: 'גיימינג', icon: '🎮' },
-        { id: 'study', name: 'לימוד', icon: '📚' },
-        { id: 'bathroom', name: 'שירותים', icon: '🚿' },
-        { id: 'cinema', name: 'קולנוע', icon: '🎬' },
-        { id: 'afk', name: 'לא פה', icon: '😴' },
-    ])
-    
+        { id: "living", name: "סלון", icon: "🛋️" },
+        { id: "gaming", name: "גיימינג", icon: "🎮" },
+        { id: "study", name: "לימוד", icon: "📚" },
+        { id: "bathroom", name: "שירותים", icon: "🚿" },
+        { id: "cinema", name: "קולנוע", icon: "🎬" },
+        { id: "afk", name: "לא פה", icon: "😴" },
+    ]);
 
     const ROOM_ANGLE = {
         // 12, 2, 4, 6, 8, 10 (עם כיוון שעון)
@@ -266,55 +290,46 @@
         bathroom: 180,
         study: 240,
         afk: 300,
-    }
+    };
 
     function safeColor(c) {
-        return (typeof c === 'string' && c.startsWith('#')) ? c : '#22c55e'
+        return typeof c === "string" && c.startsWith("#") ? c : "#22c55e";
     }
 
     function getHandLen(user) {
         const base = 145;
 
         const sameRoom = clockUsers.value
-            .filter(u => u.roomKey === user.roomKey)
+            .filter((u) => u.roomKey === user.roomKey)
             .sort((a, b) => String(a.id).localeCompare(String(b.id)));
 
-        const idx = sameRoom.findIndex(u => u.id === user.id);
-
-        // כל אחד באותו חדר יקבל עוד 8px, כדי שלא יישבו בדיוק על אותו נקודה
+        const idx = sameRoom.findIndex((u) => u.id === user.id);
         return base + idx * 8;
     }
 
-
-
-    // חישוב מיקום תוויות החדרים
     function getRoomLabelStyle(roomId) {
-        const angleDeg = ((ROOM_ANGLE[roomId] ?? ROOM_ANGLE.afk) - 90)
-        const radius = 160
+        const angleDeg = (ROOM_ANGLE[roomId] ?? ROOM_ANGLE.afk) - 90;
+        const radius = 160;
 
-        const rad = (angleDeg * Math.PI) / 180
-        const x = Math.cos(rad) * radius
-        const y = Math.sin(rad) * radius
+        const rad = (angleDeg * Math.PI) / 180;
+        const x = Math.cos(rad) * radius;
+        const y = Math.sin(rad) * radius;
 
         return {
             left: `calc(50% + ${x}px)`,
             top: `calc(50% + ${y}px)`,
-            transform: 'translate(-50%, -50%)'
-        }
+            transform: "translate(-50%, -50%)",
+        };
     }
 
-
-    // חישוב זווית המחוג
     function getUserRotation(user) {
-        // ROOM_ANGLE מוגדר אצלך כ"שעון" (0 למעלה, 60 = 2, וכו')
-        // בשביל CSS צריך להזיז ב-90 מעלות שמאלה כדי ש-0 יהיה למעלה
         const base = (ROOM_ANGLE[user.roomKey] ?? ROOM_ANGLE.afk) - 90;
 
         const sameRoom = clockUsers.value
-            .filter(u => u.roomKey === user.roomKey)
+            .filter((u) => u.roomKey === user.roomKey)
             .sort((a, b) => String(a.id).localeCompare(String(b.id)));
 
-        const idx = sameRoom.findIndex(u => u.id === user.id);
+        const idx = sameRoom.findIndex((u) => u.id === user.id);
 
         const step = 10;
         const offset = (idx - (sameRoom.length - 1) / 2) * step;
@@ -322,52 +337,86 @@
         return base + offset;
     }
 
+    /* ---------- Avatar sizing helpers ---------- */
+    function getAvatarSize(user) {
+        const sameRoomCount = clockUsers.value.filter((u) => u.roomKey === user.roomKey).length;
+        if (sameRoomCount >= 7) return 44;
+        if (sameRoomCount >= 5) return 50;
+        if (sameRoomCount >= 3) return 56;
+        return 60;
+    }
+    function getAvatarFontClass(user) {
+        const s = getAvatarSize(user);
+        if (s <= 44) return "text-xl";
+        if (s <= 50) return "text-2xl";
+        return "text-3xl";
+    }
 
-
-
-
-    // צבע סטטוס
+    /* ---------- Status color ---------- */
     function getStatusColor(status) {
-        return {
-            online: 'bg-green-400',
-            afk: 'bg-yellow-400',
-            offline: 'bg-gray-600',
-        }[status] || 'bg-gray-600'
+        return (
+            {
+                online: "bg-green-400",
+                afk: "bg-yellow-400",
+                offline: "bg-gray-600",
+            }[status] || "bg-gray-600"
+        );
     }
 
-    // שם החדר
+    /* ---------- Rooms list helpers (נשאר כמו אצלך) ---------- */
     function getRoomName(roomId) {
-        return house.rooms[roomId]?.name || 'לא פה'
+        return house.rooms[roomId]?.name || "לא פה";
     }
-
-    // אייקון חדר
     function getRoomIcon(roomId) {
         const icons = {
-            living: '🛋️',
-            gaming: '🎮',
-            bathroom: '🚿',
-            study: '📚',
-            cinema: '🎬'
-        }
-        return icons[roomId] || '🚪'
+            living: "🛋️",
+            gaming: "🎮",
+            bathroom: "🚿",
+            study: "📚",
+            cinema: "🎬",
+        };
+        return icons[roomId] || "🚪";
     }
 
-    // משתמשים בחדר
-    function getUsersInRoom(roomId) {
-        return userStore.usersInRoom(roomId)
-    }
-
-    // כניסה לחדר
+    /**
+     * כניסה לחדר:
+     * - מוודאים שה-presence מחובר לבית הנוכחי
+     * - מדווחים חדר (room_name)
+     * - ואז ניווט ל-room route
+     */
     async function enterRoom(roomKey) {
-        await presence.connect();        // 👈 חובה, כדי שיהיה channel פעיל
+        await presence.connect(house.currentHouseId);
         house.enterRoom(roomKey);
         await presence.setRoom(roomKey);
         router.push(`/room/${roomKey}`);
     }
 
+    /* ---------- Private house debug functions (נשאר) ---------- */
+    async function debugCreateHouse() {
+        const code = String(Math.floor(1000 + Math.random() * 9000));
+        const { data, error } = await supabase.rpc("create_house", {
+            p_name: `Tester House ${code}`,
+            p_join_code: code,
+        });
 
-    console.log('USERS', userStore.users.map(u => ({ name: u.name, currentRoom: u.currentRoom, color: u.color })))
-    console.log('ROOM IDS', roomPositions.value.map(r => r.id))
+        console.log("create_house:", { code, data, error });
+        alert(error ? `Error: ${error.message}` : `Created house: ${data}\nCode: ${code}`);
+    }
+
+    async function debugJoinHouse() {
+        const userCode = prompt("Please enter the 4-digit house code:");
+        if (!userCode) {
+            console.log("Join cancelled");
+            return;
+        }
+
+        const { data, error } = await supabase.rpc("join_house_by_code", {
+            p_code: userCode,
+        });
+
+        console.log("join_house_by_code:", { data, error });
+        alert(error ? `Error: ${error.message}` : `Joined house: ${data}`);
+    }
 </script>
 
 <style scoped>

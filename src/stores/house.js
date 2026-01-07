@@ -2,6 +2,11 @@ import { defineStore } from 'pinia'
 
 export const useHouseStore = defineStore('house', {
     state: () => ({
+        // ✅ חדש: בתים (לשלב ה-Houses)
+        currentHouseId: null,
+        myHouses: [],
+
+        // ✅ קיים אצלך: חדר נוכחי + חדרים (עד שנעבור ל-rooms מה-DB)
         currentRoom: 'living',
         rooms: {
             living: {
@@ -38,12 +43,8 @@ export const useHouseStore = defineStore('house', {
     }),
 
     getters: {
-        // קבלת החדר הנוכחי
-        currentRoomData: (state) => {
-            return state.rooms[state.currentRoom]
-        },
+        currentRoomData: (state) => state.rooms[state.currentRoom],
 
-        // כמה משתמשים בכל חדר
         roomUserCounts: (state) => {
             const counts = {}
             for (const [roomId, room] of Object.entries(state.rooms)) {
@@ -52,7 +53,6 @@ export const useHouseStore = defineStore('house', {
             return counts
         },
 
-        // חדרים פעילים (עם משתמשים)
         activeRooms: (state) => {
             return Object.entries(state.rooms)
                 .filter(([_, room]) => room.users.length > 0)
@@ -61,31 +61,38 @@ export const useHouseStore = defineStore('house', {
     },
 
     actions: {
-        // כניסה לחדר
-        enterRoom(roomKey) {
-            if (this.rooms[roomKey]) {
-                this.currentRoom = roomKey
-            }
+        // ✅ חדש: קובע בית נוכחי + אפשר לשמור ללוקאלסטורג' אם בא לך
+        setCurrentHouse(houseId) {
+            this.currentHouseId = houseId
+            try { localStorage.setItem('gio_current_house_id', houseId) } catch (_) { }
         },
 
-        // הוספת משתמש לחדר
+        // ✅ חדש: טעינה בסיסית של currentHouseId מה-localStorage (לא חובה אבל נוח)
+        hydrateCurrentHouse() {
+            try {
+                const saved = localStorage.getItem('gio_current_house_id')
+                if (saved) this.currentHouseId = saved
+            } catch (_) { }
+        },
+
+        // קיים אצלך
+        enterRoom(roomKey) {
+            if (this.rooms[roomKey]) this.currentRoom = roomKey
+        },
+
         addUserToRoom(roomKey, userName) {
             if (this.rooms[roomKey] && !this.rooms[roomKey].users.includes(userName)) {
                 this.rooms[roomKey].users.push(userName)
             }
         },
 
-        // הסרת משתמש מחדר
         removeUserFromRoom(roomKey, userName) {
             if (this.rooms[roomKey]) {
                 const index = this.rooms[roomKey].users.indexOf(userName)
-                if (index > -1) {
-                    this.rooms[roomKey].users.splice(index, 1)
-                }
+                if (index > -1) this.rooms[roomKey].users.splice(index, 1)
             }
         },
 
-        // העברת משתמש בין חדרים
         moveUser(userName, fromRoom, toRoom) {
             this.removeUserFromRoom(fromRoom, userName)
             this.addUserToRoom(toRoom, userName)
