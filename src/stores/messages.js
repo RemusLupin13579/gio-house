@@ -1,6 +1,5 @@
 import { defineStore } from "pinia";
 import { supabase } from "../services/supabase";
-import { session } from "../stores/auth";
 
 export const useMessagesStore = defineStore("messages", {
     state: () => ({
@@ -56,30 +55,7 @@ export const useMessagesStore = defineStore("messages", {
             delete this.subs[roomId];
         },
 
-        async send(roomId, text) {
-            const userId = session.value?.user?.id;
-            if (!userId) throw new Error("Not authenticated");
-
-            const trimmed = (text ?? "").trim();
-            if (!trimmed) return;
-
-            const { data, error } = await supabase
-                .from("messages")
-                .insert({
-                    room_id: roomId,
-                    user_id: userId,
-                    text: trimmed,
-                })
-                .select("id, room_id, user_id, text, created_at")
-                .single();
-
-            if (error) throw error;
-
-            if (!this.byRoom[roomId]) this.byRoom[roomId] = [];
-            this.byRoom[roomId].push(data);
-
-            return data;
-        }
+        
 
     },
 });
