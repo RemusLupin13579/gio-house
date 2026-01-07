@@ -1,84 +1,44 @@
-import { ref } from "vue";
-import { supabase } from "../services/supabase";
+import { createRouter, createWebHashHistory } from "vue-router";
 
-export const authReady = ref(false);
-export const session = ref(null);
-export const profile = ref(null);
+import HomeView from "../views/HomeView.vue";
+import RoomView from "../views/RoomView.vue";
+import LoginView from "../views/LoginView.vue";
+import AuthCallbackView from "../views/AuthCallbackView.vue";
+import OnboardingView from "../views/OnboardingView.vue";
 
-async function ensureProfile(user) {
-    // בודקים אם קיים פרופיל
-    const { data: existing, error: selectError } = await supabase
-        .from("profiles")
-        .select("id")
-        .eq("id", user.id)
-        .maybeSingle();
+import { authReady, session, profile } from "../stores/auth";
 
-    if (selectError) {
-        console.error("ensureProfile select error:", selectError);
-        return;
+const routes = [
+    { path: "/login", name: "login", component: LoginView, meta: { public: true } },
+    { path: "/auth/callback", name: "auth-callback", component: AuthCallbackView, meta: { public: true } },
+    { path: "/onboarding", name: "onboarding", component: OnboardingView, meta: { public: false } },
+    { path: "/", name: "home", component: HomeView },
+    { path: "/room/:id", name: "room", component: RoomView, props: true }
+];
+
+const router = createRouter({
+    history: createWebHashHistory(),
+    routes,
+});
+
+// ✅ Guard פשוט: אם auth עוד לא מוכן – לא עושים redirect, רק נותנים לנווט (או אפשר לעצור)
+router.beforeEach((to) => {
+    if (!authReady.value) return true;
+
+    const isPublic = Boolean(to.meta.public);
+    const isAuthed = Boolean(session.value);
+
+    if (!isPublic && !isAuthed) return { name: "login" };
+    if (to.name === "login" && isAuthed) return { name: "home" };
+
+    const needsOnboarding =
+        isAuthed && (!profile.value || !profile.value.nickname || profile.value.onboarded === false);
+
+    if (needsOnboarding && to.name !== "onboarding" && to.name !== "auth-callback") {
+        return { name: "onboarding" };
     }
 
-    if (existing) return;
+    return true;
+});
 
-    // יוצרים פרופיל חדש (ללא שם אמיתי)
-    const { error: insertError } = await supabase.from("profiles").insert({
-        id: user.id,
-        nickname: null,
-        onboarded: false,
-        // אפשר לשמור תמונת גוגל כ-fallback זמני, או לשים null אם אתה לא רוצה בכלל
-        avatar_url: user.user_metadata?.avatar_url ?? user.user_metadata?.picture ?? null,
-    });
-
-    if (insertError) console.error("ensureProfile insert error:", insertError);
-}
-
-export async function fetchMyProfile() {
-    if (!session.value?.user) {
-        profile.value = null;
-        return;
-    }
-
-    const { data, error } = await supabase
-        .from("profiles")
-        .select("id, nickname, avatar_url, onboarded")
-        .eq("id", session.value.user.id)
-        .maybeSingle();
-
-    if (error) {
-        console.error("fetchMyProfile error:", error);
-        return;
-    }
-
-    profile.value = data ?? null;
-}
-
-export async function initAuth() {
-    // 1) משחזרים session
-    const { data, error } = await supabase.auth.getSession();
-    if (error) console.error("getSession error:", error);
-
-    session.value = data.session ?? null;
-
-    // 2) אם מחובר - דואגים לפרופיל + טוענים אותו
-    if (session.value?.user) {
-        await ensureProfile(session.value.user);
-        await fetchMyProfile();
-    } else {
-        profile.value = null;
-    }
-
-    // 3) מסמנים שה-auth מוכן
-    authReady.value = true;
-
-    // 4) מאזינים לשינויים
-    supabase.auth.onAuthStateChange(async (_event, newSession) => {
-        session.value = newSession ?? null;
-
-        if (newSession?.user) {
-            await ensureProfile(newSession.user);
-            await fetchMyProfile();
-        } else {
-            profile.value = null;
-        }
-    });
-}
+export default router;
