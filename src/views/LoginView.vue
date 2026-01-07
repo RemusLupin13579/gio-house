@@ -5,7 +5,7 @@ async function signInWithGoogle() {
   await supabase.auth.signInWithOAuth({
     provider: "google",
     options: {
-      redirectTo: `${import.meta.env.VITE_SITE_URL}/auth/callback`,
+        redirectTo: `${import.meta.env.VITE_SITE_URL}/auth/callback`,
     },
   });
 }
