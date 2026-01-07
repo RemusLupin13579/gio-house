@@ -1,6 +1,6 @@
 import { defineStore } from "pinia";
 import { supabase } from "../services/supabase";
-import { session } from "../stores/auth";
+import { session } from "../stores/auth"; // למעלה בקובץ (נדרש כדי לדעת user_id)
 
 export const useMessagesStore = defineStore("messages", {
     state: () => ({
@@ -53,7 +53,7 @@ export const useMessagesStore = defineStore("messages", {
             delete this.subs[roomId];
         },
 
-        import { session } from "../stores/auth"; // למעלה בקובץ (נדרש כדי לדעת user_id)
+        
         async send(roomId, text) {
             const userId = session.value?.user?.id;
             if (!userId) throw new Error("Not authenticated");
