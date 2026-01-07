@@ -1,44 +1,78 @@
-import { createRouter, createWebHashHistory } from "vue-router";
+import { ref } from "vue";
+import { supabase } from "../services/supabase";
 
-import HomeView from "../views/HomeView.vue";
-import RoomView from "../views/RoomView.vue";
-import LoginView from "../views/LoginView.vue";
-import AuthCallbackView from "../views/AuthCallbackView.vue";
-import OnboardingView from "../views/OnboardingView.vue";
+export const authReady = ref(false);
+export const session = ref(null);
+export const profile = ref(null);
 
-import { authReady, session, profile } from "../stores/auth";
+async function ensureProfile(user) {
+    const { data: existing, error: selectError } = await supabase
+        .from("profiles")
+        .select("id")
+        .eq("id", user.id)
+        .maybeSingle();
 
-const routes = [
-    { path: "/login", name: "login", component: LoginView, meta: { public: true } },
-    { path: "/auth/callback", name: "auth-callback", component: AuthCallbackView, meta: { public: true } },
-    { path: "/onboarding", name: "onboarding", component: OnboardingView, meta: { public: false } },
-    { path: "/", name: "home", component: HomeView },
-    { path: "/room/:id", name: "room", component: RoomView, props: true }
-];
+    if (selectError) {
+        console.error("ensureProfile select error:", selectError);
+        return;
+    }
+    if (existing) return;
 
-const router = createRouter({
-    history: createWebHashHistory(),
-    routes,
-});
+    const { error: insertError } = await supabase.from("profiles").insert({
+        id: user.id,
+        nickname: null,
+        onboarded: false,
+        avatar_url: user.user_metadata?.avatar_url ?? user.user_metadata?.picture ?? null,
+    });
 
-// ✅ Guard פשוט: אם auth עוד לא מוכן – לא עושים redirect, רק נותנים לנווט (או אפשר לעצור)
-router.beforeEach((to) => {
-    if (!authReady.value) return true;
+    if (insertError) console.error("ensureProfile insert error:", insertError);
+}
 
-    const isPublic = Boolean(to.meta.public);
-    const isAuthed = Boolean(session.value);
-
-    if (!isPublic && !isAuthed) return { name: "login" };
-    if (to.name === "login" && isAuthed) return { name: "home" };
-
-    const needsOnboarding =
-        isAuthed && (!profile.value || !profile.value.nickname || profile.value.onboarded === false);
-
-    if (needsOnboarding && to.name !== "onboarding" && to.name !== "auth-callback") {
-        return { name: "onboarding" };
+export async function fetchMyProfile() {
+    if (!session.value?.user) {
+        profile.value = null;
+        return;
     }
 
-    return true;
-});
+    const { data, error } = await supabase
+        .from("profiles")
+        .select("id, nickname, avatar_url, onboarded")
+        .eq("id", session.value.user.id)
+        .maybeSingle();
 
-export default router;
+    if (error) {
+        console.error("fetchMyProfile error:", error);
+        return;
+    }
+
+    profile.value = data ?? null;
+}
+
+export async function initAuth() {
+    authReady.value = false;
+
+    const { data, error } = await supabase.auth.getSession();
+    if (error) console.error("getSession error:", error);
+
+    session.value = data.session ?? null;
+
+    if (session.value?.user) {
+        await ensureProfile(session.value.user);
+        await fetchMyProfile();
+    } else {
+        profile.value = null;
+    }
+
+    authReady.value = true;
+
+    supabase.auth.onAuthStateChange(async (_event, newSession) => {
+        session.value = newSession ?? null;
+
+        if (newSession?.user) {
+            await ensureProfile(newSession.user);
+            await fetchMyProfile();
+        } else {
+            profile.value = null;
+        }
+    });
+}

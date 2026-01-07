@@ -11,7 +11,7 @@ import { authReady, session, profile } from "../stores/auth";
 const routes = [
     { path: "/login", name: "login", component: LoginView, meta: { public: true } },
     { path: "/auth/callback", name: "auth-callback", component: AuthCallbackView, meta: { public: true } },
-    { path: "/onboarding", name: "onboarding", component: OnboardingView, meta: { public: false } },
+    { path: "/onboarding", name: "onboarding", component: OnboardingView },
     { path: "/", name: "home", component: HomeView },
     { path: "/room/:id", name: "room", component: RoomView, props: true },
 ];
@@ -22,7 +22,6 @@ const router = createRouter({
 });
 
 router.beforeEach((to) => {
-    // לא עושים redirects לפני ש-initAuth סיים
     if (!authReady.value) return true;
 
     const isPublic = Boolean(to.meta.public);

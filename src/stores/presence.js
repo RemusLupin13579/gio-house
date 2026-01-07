@@ -2,6 +2,7 @@ import { defineStore } from "pinia";
 import { supabase } from "../services/supabase";
 import { session, profile } from "../stores/auth";
 
+
 export const usePresenceStore = defineStore("presence", {
     state: () => ({
         channel: null,

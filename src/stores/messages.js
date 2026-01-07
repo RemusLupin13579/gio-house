@@ -35,12 +35,9 @@ export const useMessagesStore = defineStore("messages", {
                     (payload) => {
                         if (!this.byRoom[roomId]) this.byRoom[roomId] = [];
                         const msg = payload.new;
-                        if (!this.byRoom[roomId]) this.byRoom[roomId] = [];
 
-                        // אם כבר קיימת הודעה עם אותו id – לא מוסיפים שוב
-                        const exists = this.byRoom[roomId].some(m => m.id === msg.id);
+                        const exists = this.byRoom[roomId].some((m) => m.id === msg.id);
                         if (!exists) this.byRoom[roomId].push(msg);
-
                     }
                 )
                 .subscribe();
@@ -54,8 +51,5 @@ export const useMessagesStore = defineStore("messages", {
             await supabase.removeChannel(ch);
             delete this.subs[roomId];
         },
-
-        
-
     },
 });
