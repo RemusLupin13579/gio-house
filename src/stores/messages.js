@@ -1,5 +1,6 @@
 import { defineStore } from "pinia";
 import { supabase } from "../services/supabase";
+import { session } from "../stores/auth";
 
 export const useMessagesStore = defineStore("messages", {
     state: () => ({
