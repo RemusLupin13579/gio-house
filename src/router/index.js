@@ -45,25 +45,37 @@ const router = createRouter({
     history: createWebHashHistory(),
     routes,
 });
+const authReady = ref(false);
 
-router.beforeEach((to) => {
-    // auth כבר אמור להיות מוכן לפני mount, אבל נשאיר הגנה
-    if (!authReady.value) return true;
+supabase.auth.onAuthStateChange((_event, session) => {
+    sessionRef.value = session;
+    authReady.value = true;
+});
+
+router.beforeEach(async (to) => {
+    // חכה ש-auth יאותחל
+    if (!authReady.value) {
+        await new Promise(resolve => {
+            const stop = watch(authReady, (ready) => {
+                if (ready) {
+                    stop();
+                    resolve();
+                }
+            });
+        });
+    }
 
     const isPublic = Boolean(to.meta.public);
     const isAuthed = Boolean(session.value);
 
-    // 1) לא מחובר → רק public מותר
     if (!isPublic && !isAuthed) {
         return { name: "login" };
     }
 
-    // 2) מחובר ונכנס ל-login → הביתה
     if (to.name === "login" && isAuthed) {
         return { name: "home" };
     }
 
-    // 3) onboarding: אם מחובר אבל אין nickname/onboarded → שולחים ל-onboarding
     const needsOnboarding =
         isAuthed &&
         (!profile.value || !profile.value.nickname || profile.value.onboarded === false);
@@ -74,5 +86,6 @@ router.beforeEach((to) => {
 
     return true;
 });
+
 
 export default router;
