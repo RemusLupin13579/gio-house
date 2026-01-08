@@ -50,7 +50,7 @@
         await roomsStore.load();
 
         // 3) ממירים ל-UUID בשביל DB/Realtime
-        const roomUuid = roomsStore.getRoomUuidByName(roomName);
+        const roomUuid = roomsStore.getRoomUuidByKey(roomName);
         if (!roomUuid) {
             console.error("Unknown room name:", roomName);
             return;
@@ -59,7 +59,7 @@
     }
 
     function stopListening(roomName) {
-        const roomUuid = roomsStore.getRoomUuidByName(roomName);
+        const roomUuid = roomsStore.getRoomUuidByKey(roomName);
         if (roomUuid) messagesStore.unsubscribe(roomUuid);
     }
 
@@ -127,7 +127,7 @@
 
     onUnmounted(() => {
         const roomName = route.params.id;
-        const roomUuid = roomsStore.getRoomUuidByName(roomName);
+        const roomUuid = roomsStore.getRoomUuidByKey(roomName);
         if (roomUuid) messagesStore.unsubscribe(roomUuid);
     });
 

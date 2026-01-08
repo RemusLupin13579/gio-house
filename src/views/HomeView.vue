@@ -8,16 +8,6 @@
             {{ isPublicHouse ? 'איפה כולם עכשיו?' : 'מי בבית עכשיו?' }}
         </p>
 
-        <!-- כפתורי דיבוג בתים פרטיים -->
-        <div class="fixed bottom-4 right-4 z-[9999] flex gap-2">
-            <button class="px-3 py-2 bg-white text-black rounded" @click="debugCreateHouse">
-                DEBUG: Create house
-            </button>
-            <button class="px-3 py-2 bg-white text-black rounded" @click="debugJoinHouse">
-                DEBUG: Join house
-            </button>
-        </div>
-
         <!-- שעון הוויזלים -->
         <div class="flex justify-center py-8">
             <div class="relative w-96 h-96">
@@ -41,6 +31,48 @@
                     <!-- אפקט זכוכית -->
                     <div class="absolute inset-0 rounded-full pointer-events-none z-0"
                          style="background: radial-gradient(circle at 30% 20%, rgba(255,255,255,0.10), transparent 45%);"></div>
+                    <!-- Presence loading badge (Discord-style) -->
+                    <div v-if="isPresenceLoading"
+                         class="absolute top-3 left-1/2 -translate-x-1/2 z-40
+                            px-3 py-1 rounded-full text-xs font-bold
+                            bg-black/70 border border-green-500/40 backdrop-blur">
+                        🟢 Syncing…
+                    </div>
+
+                    <!-- Presence failed badge -->
+                    <div v-else-if="isPresenceFailed"
+                         class="absolute top-3 left-1/2 -translate-x-1/2 z-40
+                            px-3 py-1 rounded-full text-xs font-bold
+                            bg-red-500/10 border border-red-500/40 text-red-200 backdrop-blur">
+                        🔴 Realtime offline
+                    </div>
+
+                    <!-- Skeleton avatars layer (shown only while connecting) -->
+                    <div v-if="isPresenceLoading" class="absolute inset-0 z-15 pointer-events-none">
+                        <div v-for="u in skeletonUsers"
+                             :key="u.id"
+                             class="absolute inset-0"
+                             :style="{ transform: `rotate(${(ROOM_ANGLE[u.roomKey] ?? ROOM_ANGLE.afk) - 90}deg)` }">
+
+                            <!-- ghost hand -->
+                            <div class="absolute left-1/2 top-1/2 origin-left animate-pulse"
+                                 :style="{
+                                    width: '145px',
+                                    height: '4px',
+                                    transform: 'translateY(-50%)',
+                                    borderRadius: '999px',
+                                    background: 'rgba(34,197,94,0.20)'
+                                  }"></div>
+
+                            <!-- ghost avatar at end -->
+                            <div class="absolute left-1/2 top-1/2"
+                                 :style="{ transform: `translate(-50%, -50%) translateX(145px)` }">
+                                <div class="w-[52px] h-[52px] rounded-full border-4 animate-pulse
+                                    border-green-500/30 bg-green-500/10 shadow-[0_0_20px_rgba(34,197,94,0.25)]">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
 
                     <!-- מחוגים (אווטרים של משתמשים) -->
                     <div v-for="user in clockUsers"
@@ -130,7 +162,9 @@
                             <div class="text-right">
                                 <div class="text-white font-bold text-lg">{{ room[1].name }}</div>
                                 <div class="text-green-500 text-sm">
-                                    {{ presence.usersInRoom(room[0]).length }} בפנים
+                                    <span v-if="presence.status==='connecting'" class="gio-skel-count"></span>
+                                    <span v-else>{{ `${presence.usersInRoom(room[0]).length} בפנים` }}</span>
+                                    
                                 </div>
                             </div>
                         </div>
@@ -187,6 +221,23 @@
 
     const activeTooltipUserId = ref(null);
 
+    // Presence UI states
+    const isPresenceLoading = computed(() => presence.status === "connecting");
+    const isPresenceFailed = computed(() => presence.status === "failed");
+
+    // “Discord-like” skeleton users while presence connects
+    const skeletonUsers = computed(() => {
+        // 6 "ghost" users, one per room-ish
+        return [
+            { id: "s1", roomKey: "living" },
+            { id: "s2", roomKey: "gaming" },
+            { id: "s3", roomKey: "cinema" },
+            { id: "s4", roomKey: "bathroom" },
+            { id: "s5", roomKey: "study" },
+            { id: "s6", roomKey: "afk" },
+        ];
+    });
+
     /**
      * הבית הנוכחי (מתוך myHouses + currentHouseId)
      * Public House = כותרת "GIO HOUSE"
@@ -199,23 +250,6 @@
     });
 
     const isPublicHouse = computed(() => !!currentHouse.value?.is_public);
-
-
-    /**
-     * Presence צריך להיות מבודד לפי בית:
-     * presence channel = presence:house:${currentHouseId}
-     * לכן כשהבית מתחלף – מחברים מחדש לערוץ הנכון.
-     */
-    watch(
-        () => house.currentHouseId,
-        async (houseId) => {
-            if (!houseId) return;
-            await presence.connect(houseId);
-            // ברירת מחדל: תמיד "living" כאשר נכנסים לבית חדש
-            await presence.setRoom("living");
-        },
-        { immediate: true }
-    );
 
     /**
      * clockUsers נגזר מ-presence.users (map) -> array
@@ -251,19 +285,10 @@
     }
 
     /* ---------- Lifecycle ---------- */
-    onMounted(async () => {
-        house.hydrateCurrentHouse?.()
+    onMounted(() => {
+        // HomeView = תצוגה בלבד. לא מנהל auth/house/presence.
+    });
 
-        // אם אין currentHouseId עדיין — נלך לבית הציבורי אוטומטית דרך ה-RPC
-        if (!house.currentHouseId) {
-            const { data, error } = await supabase.rpc('ensure_public_house_membership')
-            if (!error && data) {
-                house.setCurrentHouse(data)
-            } else {
-                console.error('ensure_public_house_membership failed', error)
-            }
-        }
-    })
 
 
     onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocPointerDown));
@@ -378,49 +403,39 @@
         return icons[roomId] || "🚪";
     }
 
-    /**
-     * כניסה לחדר:
-     * - מוודאים שה-presence מחובר לבית הנוכחי
-     * - מדווחים חדר (room_name)
-     * - ואז ניווט ל-room route
-     */
     async function enterRoom(roomKey) {
-        await presence.connect(house.currentHouseId);
         house.enterRoom(roomKey);
         await presence.setRoom(roomKey);
         router.push(`/room/${roomKey}`);
     }
 
-    /* ---------- Private house debug functions (נשאר) ---------- */
-    async function debugCreateHouse() {
-        const code = String(Math.floor(1000 + Math.random() * 9000));
-        const { data, error } = await supabase.rpc("create_house", {
-            p_name: `Tester House ${code}`,
-            p_join_code: code,
-        });
-
-        console.log("create_house:", { code, data, error });
-        alert(error ? `Error: ${error.message}` : `Created house: ${data}\nCode: ${code}`);
+    async function retryPresence() {
+        const houseId = house.currentHouseId;
+        if (!houseId) return;
+        const ok = await presence.connect(houseId);
+        if (ok) await presence.setRoom("living");
     }
 
-    async function debugJoinHouse() {
-        const userCode = prompt("Please enter the 4-digit house code:");
-        if (!userCode) {
-            console.log("Join cancelled");
-            return;
-        }
-
-        const { data, error } = await supabase.rpc("join_house_by_code", {
-            p_code: userCode,
-        });
-
-        console.log("join_house_by_code:", { data, error });
-        alert(error ? `Error: ${error.message}` : `Joined house: ${data}`);
-    }
 </script>
 
 <style scoped>
     .active\:scale-98:active {
         transform: scale(0.98);
     }
+
+    @keyframes subtleFloat {
+        0%, 100% {
+            transform: translateY(0);
+        }
+
+        50% {
+            transform: translateY(-2px);
+        }
+    }
+
+    .animate-subtle-float {
+        animation: subtleFloat 1.6s ease-in-out infinite;
+    }
+
+
 </style>

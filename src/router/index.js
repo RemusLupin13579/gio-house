@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from "vue-router";
 
+import AppShell from "../layouts/AppShell.vue";
 import HomeView from "../views/HomeView.vue";
 import RoomView from "../views/RoomView.vue";
 import LoginView from "../views/LoginView.vue";
@@ -12,8 +13,16 @@ const routes = [
     { path: "/login", name: "login", component: LoginView, meta: { public: true } },
     { path: "/auth/callback", name: "auth-callback", component: AuthCallbackView, meta: { public: true } },
     { path: "/onboarding", name: "onboarding", component: OnboardingView },
-    { path: "/", name: "home", component: HomeView },
-    { path: "/room/:id", name: "room", component: RoomView, props: true },
+
+    // ✅ כל האפליקציה בתוך shell
+    {
+        path: "/",
+        component: AppShell,
+        children: [
+            { path: "", name: "home", component: HomeView },
+            { path: "room/:id", name: "room", component: RoomView, props: true },
+        ],
+    },
 ];
 
 const router = createRouter({

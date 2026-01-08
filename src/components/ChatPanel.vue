@@ -96,7 +96,7 @@
     const messagesContainer = ref(null)
     const isExpanded = ref(false)
 
-    const roomUuid = computed(() => roomsStore.getRoomUuidByName(house.currentRoom));
+    const roomUuid = computed(() => roomsStore.getRoomUuidByKey(house.currentRoom));
     watch(
         roomUuid,
         async (newUuid, oldUuid) => {
@@ -152,7 +152,12 @@
     // שליחת הודעה
     async function sendMessage() {
         if (!newMessage.value.trim()) return;
-        if (!roomUuid.value) return;
+
+        if (!roomUuid.value) {
+            console.warn("No roomUuid — not sending", { roomUuid: roomUuid.value });
+            alert("אין roomUuid לחדר הזה — לא יכול לשלוח עדיין.");
+            return;
+        }
 
         try {
             await messagesStore.send(roomUuid.value, newMessage.value.trim());
@@ -163,6 +168,7 @@
             alert(e.message ?? "Failed to send");
         }
     }
+
 
 
 

@@ -14,22 +14,28 @@ export const useRoomsStore = defineStore("rooms", {
 
             const { data, error } = await supabase
                 .from("rooms")
-                .select("id, name, icon")
+                .select("id, house_id, key, name, icon")
                 .order("created_at", { ascending: true });
 
             if (error) throw error;
 
             this.rooms = data ?? [];
-            this.byName = Object.fromEntries(this.rooms.map((r) => [r.name, r]));
+
+            // 🔑 מיפוי לפי key (living / gaming / ...)
+            this.byKey = Object.fromEntries(
+                this.rooms.map((r) => [r.key, r])
+            );
+
             this.loaded = true;
         },
 
-        getRoomUuidByName(name) {
-            return this.byName[name]?.id ?? null;
+        getRoomUuidByKey(key) {
+            return this.byKey?.[key]?.id ?? null;
         },
 
-        getRoomByName(name) {
-            return this.byName[name] ?? null;
+        getRoomByKey(key) {
+            return this.byKey?.[key] ?? null;
         },
     },
+
 });
