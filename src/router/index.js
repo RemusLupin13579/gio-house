@@ -14,7 +14,6 @@ const routes = [
     { path: "/auth/callback", name: "auth-callback", component: AuthCallbackView, meta: { public: true } },
     { path: "/onboarding", name: "onboarding", component: OnboardingView },
 
-    // ✅ כל האפליקציה בתוך shell
     {
         path: "/",
         component: AppShell,
@@ -30,17 +29,29 @@ const router = createRouter({
     routes,
 });
 
-router.beforeEach((to) => {
-    if (!authReady.value) return true;
-
+/**
+ * ✅ FIX קריטי למובייל:
+ * מחכים ל-authReady לפני שמחליטים אם יש session או לא.
+ * בלי זה – במובייל יש לוגין לופ.
+ */
+router.beforeEach(async (to) => {
     const isPublic = Boolean(to.meta.public);
+
+    // ✅ מסלולים public (login/callback) צריכים להיטען מיד – בלי לחכות
+    if (isPublic) return true;
+
+    // ✅ רק למסלולים מוגנים אנחנו מחכים ש-authReady יטען
+    if (!authReady.value) {
+        await waitForAuthReady();
+    }
+
     const isAuthed = Boolean(session.value);
 
-    if (!isPublic && !isAuthed) return { name: "login" };
-    if (to.name === "login" && isAuthed) return { name: "home" };
+    if (!isAuthed) return { name: "login" };
 
     const needsOnboarding =
-        isAuthed && (!profile.value || !profile.value.nickname || profile.value.onboarded === false);
+        isAuthed &&
+        (!profile.value || !profile.value.nickname || profile.value.onboarded === false);
 
     if (needsOnboarding && to.name !== "onboarding" && to.name !== "auth-callback") {
         return { name: "onboarding" };
@@ -48,5 +59,23 @@ router.beforeEach((to) => {
 
     return true;
 });
+
+/**
+ * helper קטן שמחכה ל-authReady
+ * (JS טהור – בלי Promise<void>)
+ */
+function waitForAuthReady(timeoutMs = 6000) {
+    return new Promise((resolve) => {
+        const start = Date.now();
+
+        const tick = () => {
+            if (authReady.value) return resolve();
+            if (Date.now() - start > timeoutMs) return resolve(); // fail-open
+            setTimeout(tick, 25);
+        };
+
+        tick();
+    });
+}
 
 export default router;

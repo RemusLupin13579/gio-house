@@ -1,36 +1,38 @@
 <template>
-    <div class="h-screen flex flex-col bg-black text-white"
+    <div class="min-h-screen bg-black text-white flex flex-col overflow-hidden"
          @touchstart="handleTouchStart"
          @touchmove="handleTouchMove"
          @touchend="handleTouchEnd">
-
-        <!-- כפתור חזרה -->
-        <div class="absolute top-3 left-3 z-10">
+        <div class="absolute top-3 left-3 z-30" :style="safeTopStyle">
             <button @click="goBack"
-                    class="px-4 py-2 bg-gray-800/80 backdrop-blur border-2 border-green-500/50 rounded-lg text-green-400 hover:border-green-400 transition-all flex items-center gap-2 shadow-lg">
+                    class="px-4 py-2 bg-black/50 backdrop-blur border border-white/10 rounded-xl
+               text-green-300 hover:border-green-400/50 transition-all flex items-center gap-2
+               shadow-lg active:scale-[0.99]">
                 <span class="text-xl">←</span>
                 <span class="font-bold">חזרה</span>
             </button>
         </div>
 
-        <!-- אזור האינטראקציה בחדר -->
-        <div class="flex-1 flex flex-col">
-            <RoomScene />
-        </div>
+        <div class="flex-1 min-h-0 grid" :style="gridStyle">
+            <div class="min-h-0 overflow-hidden">
+                <RoomScene class="h-full w-full" />
+            </div>
 
-        <!-- פאנל הצ'אט -->
-        <ChatPanel />
+            <div class="min-h-0 overflow-hidden border-t border-white/10 bg-black/40 backdrop-blur" :style="safeBottomStyle">
+                <ChatPanel class="h-full" />
+            </div>
+        </div>
     </div>
 </template>
 
 <script setup>
-    import { ref, onMounted, onUnmounted, watchEffect } from 'vue'
-    import { useRouter, useRoute } from 'vue-router'
-    import RoomScene from '../components/RoomScene.vue'
-    import ChatPanel from '../components/ChatPanel.vue'
-    import { useHouseStore } from '../stores/house'
-    import { useMessagesStore } from "../stores/messages";
-    import { useRoomsStore } from "../stores/rooms";
+    import { ref, onMounted, computed, provide } from "vue";
+    import { useRouter, useRoute } from "vue-router";
+
+    import RoomScene from "../components/RoomScene.vue";
+    import ChatPanel from "../components/ChatPanel.vue";
+
+    import { useHouseStore } from "../stores/house";
     import { usePresenceStore } from "../stores/presence";
     import { watch } from "vue";
 
@@ -39,104 +41,71 @@
     const route = useRoute();
     const house = useHouseStore();
 
-    const roomsStore = useRoomsStore();
-    const messagesStore = useMessagesStore();
+    /* Safe-area */
+    const safeTopStyle = computed(() => ({ paddingTop: "env(safe-area-inset-top)" }));
+    const safeBottomStyle = computed(() => ({ paddingBottom: "env(safe-area-inset-bottom)" }));
 
-    async function enterAndListen(roomName) {
-        // 1) UI שלך עדיין עובד לפי "living/gaming"
-        if (roomName) house.enterRoom(roomName);
-        presence.setRoom(roomName);
-        // 2) טוענים rooms פעם אחת
-        await roomsStore.load();
+    /* Split layout controller (for ChatPanel expand/collapse) */
+    const chatExpanded = ref(false);
 
-        // 3) ממירים ל-UUID בשביל DB/Realtime
-        const roomUuid = roomsStore.getRoomUuidByKey(roomName);
-        if (!roomUuid) {
-            console.error("Unknown room name:", roomName);
-            return;
+    provide("chatLayout", {
+        chatExpanded,
+        toggle: () => (chatExpanded.value = !chatExpanded.value),
+        collapse: () => (chatExpanded.value = false),
+    });
+
+    const gridStyle = computed(() => ({
+        gridTemplateRows: chatExpanded.value ? "35fr 65fr" : "55fr 45fr",
+    }));
+
+    /**
+     * ✅ CRITICAL:
+     * RoomView לא עושה connect() בכלל.
+     * AppShell אחראי לחיבור presence לבית הנוכחי.
+     * כאן רק מעדכנים חדר.
+     */
+    async function syncRoom(roomKey) {
+        if (roomKey && house.rooms[roomKey]) {
+            house.enterRoom(roomKey);
         }
-        
+        await presence.setRoom(roomKey);
     }
-
-    function stopListening(roomName) {
-        const roomUuid = roomsStore.getRoomUuidByKey(roomName);
-        if (roomUuid) messagesStore.unsubscribe(roomUuid);
-    }
-
-    const touchStartX = ref(0)
-    const touchStartY = ref(0)
-    const touchEndX = ref(0)
-    const touchEndY = ref(0)
 
     watch(
         () => route.params.id,
-        async (newRoom, oldRoom) => {
-            if (oldRoom) stopListening(oldRoom);
-            await presence.connect();
-            await presence.setRoom(newRoom);
-            await enterAndListen(newRoom);
+        async (newRoom) => {
+            await syncRoom(newRoom);
         },
         { immediate: true }
     );
 
     async function goBack() {
-        await presence.connect();
-        await presence.setRoom("living"); // הבית = סלון
-        router.push("/");
-    }
-
-
-
-    function handleTouchStart(e) {
-        touchStartX.value = e.touches[0].clientX
-        touchStartY.value = e.touches[0].clientY
-    }
-
-    function handleTouchMove(e) {
-        touchEndX.value = e.touches[0].clientX
-        touchEndY.value = e.touches[0].clientY
-    }
-
-    function handleTouchEnd() {
-        const diffX = touchEndX.value - touchStartX.value
-        const diffY = touchEndY.value - touchStartY.value
-
-        if (Math.abs(diffX) > Math.abs(diffY) && diffX > 100) {
-            goBack()
-        }
-    }
-
-    async function handlePopState() {
-        await presence.connect();
         await presence.setRoom("living");
         router.push("/");
     }
 
+    /* Swipe back */
+    const touchStartX = ref(0);
+    const touchStartY = ref(0);
+    const touchEndX = ref(0);
+    const touchEndY = ref(0);
+
+    function handleTouchStart(e) {
+        touchStartX.value = e.touches[0].clientX;
+        touchStartY.value = e.touches[0].clientY;
+    }
+    function handleTouchMove(e) {
+        touchEndX.value = e.touches[0].clientX;
+        touchEndY.value = e.touches[0].clientY;
+    }
+    function handleTouchEnd() {
+        const diffX = touchEndX.value - touchStartX.value;
+        const diffY = touchEndY.value - touchStartY.value;
+        if (Math.abs(diffX) > Math.abs(diffY) && diffX > 100) goBack();
+    }
 
     onMounted(async () => {
-        const roomName = route.params.id;
-
-        if (roomName && house.rooms[roomName]) {
-            house.enterRoom(roomName);
-        }
-        await presence.connect();
-        await presence.setRoom(route.params.id);
+        // direct entry support
+        await syncRoom(route.params.id);
     });
-
-    
-
-    onUnmounted(() => {
-        const roomName = route.params.id;
-        const roomUuid = roomsStore.getRoomUuidByKey(roomName);
-        if (roomUuid) messagesStore.unsubscribe(roomUuid);
-    });
-
-
 </script>
-
-<style scoped>
-    .h-screen {
-        touch-action: pan-y;
-        overscroll-behavior: none;
-    }
-</style>

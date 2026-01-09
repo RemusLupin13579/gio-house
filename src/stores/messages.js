@@ -1,10 +1,43 @@
 import { defineStore } from "pinia";
 import { supabase } from "../services/supabase";
-import { session } from "../stores/auth"; // למעלה בקובץ (נדרש כדי לדעת user_id)
+import { session, profile } from "../stores/auth";
+
+function colorFromId(id) {
+    // צבע עקבי מאותו user_id (פשוט ויעיל)
+    const s = String(id ?? "x");
+    let h = 0;
+    for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+    const hue = h % 360;
+    return `hsl(${hue} 80% 65%)`;
+}
+
+function fmtTime(ts) {
+    try {
+        return new Date(ts).toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" });
+    } catch {
+        return "";
+    }
+}
+
+function normalizeRow(row) {
+    const name = row?.profiles?.nickname ?? "User";
+    return {
+        id: row.id,
+        room_id: row.room_id,
+        user_id: row.user_id,
+        text: String(row?.text ?? ""),
+        created_at: row.created_at,
+        // fields the ChatPanel expects:
+        userName: name,
+        userInitial: String(name).trim()[0] ?? "🙂",
+        userColor: colorFromId(row.user_id),
+        time: fmtTime(row.created_at),
+    };
+}
 
 export const useMessagesStore = defineStore("messages", {
     state: () => ({
-        byRoom: {}, // roomId -> messages[]
+        byRoom: {}, // roomId -> uiMessages[]
         subs: {},   // roomId -> realtime channel
     }),
 
@@ -22,7 +55,8 @@ export const useMessagesStore = defineStore("messages", {
                 .limit(limit);
 
             if (error) throw error;
-            this.byRoom[roomId] = data ?? [];
+
+            this.byRoom[roomId] = (data ?? []).map(normalizeRow);
         },
 
         subscribe(roomId) {
@@ -35,13 +69,27 @@ export const useMessagesStore = defineStore("messages", {
                     { event: "INSERT", schema: "public", table: "messages", filter: `room_id=eq.${roomId}` },
                     (payload) => {
                         if (!this.byRoom[roomId]) this.byRoom[roomId] = [];
-                        const msg = payload.new;
 
-                        const exists = this.byRoom[roomId].some((m) => m.id === msg.id);
-                        if (!exists) this.byRoom[roomId].push(msg);
+                        const raw = payload.new;
+
+                        // realtime מגיע בלי join של profiles → ננסה להשלים רק לעצמנו
+                        const myId = session.value?.user?.id;
+                        const enriched =
+                            raw.user_id === myId
+                                ? { ...raw, profiles: { nickname: profile.value?.nickname ?? "Me" } }
+                                : raw;
+
+                        const uiMsg = normalizeRow(enriched);
+
+                        const exists = this.byRoom[roomId].some((m) => m.id === uiMsg.id);
+                        if (!exists) this.byRoom[roomId].push(uiMsg);
                     }
                 )
-                .subscribe();
+                .subscribe((status) => {
+                    if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+                        console.warn("[messages] realtime status:", status, "roomId:", roomId);
+                    }
+                });
 
             this.subs[roomId] = ch;
         },
@@ -53,7 +101,6 @@ export const useMessagesStore = defineStore("messages", {
             delete this.subs[roomId];
         },
 
-        
         async send(roomId, text) {
             const userId = session.value?.user?.id;
             if (!userId) throw new Error("Not authenticated");
@@ -69,14 +116,13 @@ export const useMessagesStore = defineStore("messages", {
 
             if (error) throw error;
 
-            // אופציונלי: push ל־UI מיד (Realtime גם יכניס, אז נמנע כפילויות)
+            const uiMsg = normalizeRow(data);
+
             if (!this.byRoom[roomId]) this.byRoom[roomId] = [];
-            const exists = this.byRoom[roomId].some((m) => m.id === data.id);
-            if (!exists) this.byRoom[roomId].push(data);
+            const exists = this.byRoom[roomId].some((m) => m.id === uiMsg.id);
+            if (!exists) this.byRoom[roomId].push(uiMsg);
 
-            return data;
+            return uiMsg;
         },
-
-
     },
 });

@@ -319,6 +319,9 @@
     import { useHouseStore } from "../stores/house";
     import { usePresenceStore } from "../stores/presence";
     import { profile } from "../stores/auth";
+    import { useRoomsStore } from "../stores/rooms";
+
+    const roomsStore = useRoomsStore();
 
     const router = useRouter();
     const route = useRoute();
@@ -464,6 +467,13 @@
         // ✅ טוען את רשימת הבתים כדי ש-headerTitle יציג שם אמיתי
         await house.loadMyHouses();
 
+        // ✅ טוען rooms פעם אחת לבית הנוכחי (מספיק לצ׳אט)
+        if (house.currentHouseId) {
+            void roomsStore.loadForHouse(house.currentHouseId).catch((e) => {
+                console.error("roomsStore.loadForHouse failed in AppShell:", e);
+            });
+        }
+
         // ✅ חיבור presence לבית הנוכחי
         if (house.currentHouseId) {
             void (async () => {
@@ -481,12 +491,17 @@
         (houseId) => {
             if (!houseId) return;
 
+            // ✅ טען rooms לבית החדש
+            void roomsStore.loadForHouse(house.currentHouseId).catch(console.error);
+
+            // ✅ presence reconnect (כבר יש אצלך)
             void (async () => {
                 const ok = await presence.connect(houseId);
                 if (ok) await presence.setRoom("living");
             })();
         }
     );
+
 
     const isHome = computed(() => route.name === "home");
     function goHome() {

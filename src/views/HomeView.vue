@@ -1,51 +1,60 @@
 <template>
-    <div class="min-h-screen bg-black text-white overflow-auto">
-        <!-- כותרת -->
-        <div class="flex flex-col items-center text-center">
-            <h1 class="text-4xl font-bold text-green-400 mb-2">
-                🏠 {{ isPublicHouse ? 'GIO HOUSE' : (currentHouse?.name || 'My House') }}
+    <!-- HomeView container
+         ✅ Mobile-first: padding + max widths + no "crush" -->
+    <div class="min-h-screen bg-black text-white overflow-x-hidden">
+        <!-- Header (mobile-first sizes) -->
+        <header class="pt-6 sm:pt-8 px-4 text-center">
+            <h1 class="text-2xl sm:text-4xl font-extrabold text-green-400 mb-1 sm:mb-2 leading-tight">
+                🏠 {{ isPublicHouse ? "GIO HOUSE" : (currentHouse?.name || "My House") }}
             </h1>
-            <p class="text-green-600">
-                {{ isPublicHouse ? 'איפה כולם עכשיו?' : 'מי בבית עכשיו?' }}
+            <p class="text-sm sm:text-base text-green-600">
+                {{ isPublicHouse ? "איפה כולם עכשיו?" : "מי בבית עכשיו?" }}
             </p>
-        </div>
+        </header>
 
-        <!-- שעון הוויזלים -->
-        <div class="flex justify-center py-8">
-            <div class="relative w-96 h-96">
-                <!-- מעגל חיצוני -->
+        <!-- Clock area -->
+        <section class="flex justify-center py-6 sm:py-8 px-3">
+            <!-- ✅ The clock scales with screen width
+                 - w-[min(92vw,24rem)] keeps it inside mobile viewport
+                 - aspect-square keeps perfect circle -->
+            <div ref="clockWrapEl"
+                 class="relative w-[min(92vw,24rem)] aspect-square">
+                <!-- Outer circle -->
                 <div class="absolute inset-0 rounded-full border-4 border-green-500 bg-gradient-to-br from-gray-900 to-black shadow-2xl shadow-green-500/30 overflow-hidden">
-                    <!-- מרכז השעון -->
+                    <!-- Center dot -->
                     <div class="absolute inset-0 flex items-center justify-center">
-                        <div class="w-10 h-10 rounded-full bg-gradient-to-br from-green-400 to-green-600 border-4 border-black shadow-xl"></div>
+                        <div class="rounded-full bg-gradient-to-br from-green-400 to-green-600 border-4 border-black shadow-xl"
+                             :style="{
+                width: `${centerDot}px`,
+                height: `${centerDot}px`,
+              }"></div>
                     </div>
 
-                    <!-- מיקומים על השעון -->
+                    <!-- Room markers around the clock -->
                     <div v-for="room in roomPositions"
                          :key="room.id"
-                         class="absolute text-xs font-bold z-10"
+                         class="absolute z-10"
                          :style="getRoomLabelStyle(room.id)">
                         <div class="text-center bg-black/70 px-2 py-1 rounded-lg border border-green-500/50 backdrop-blur">
-                            <span class="text-2xl">{{ room.icon }}</span>
+                            <span class="block" :style="{ fontSize: `${roomEmoji}px` }">
+                                {{ room.icon }}
+                            </span>
                         </div>
                     </div>
 
-                    <!-- אפקט זכוכית -->
+                    <!-- Glass effect -->
                     <div class="absolute inset-0 rounded-full pointer-events-none z-0"
                          style="background: radial-gradient(circle at 30% 20%, rgba(255,255,255,0.10), transparent 45%);"></div>
-                    <!-- Presence loading badge (Discord-style) -->
+
+                    <!-- Presence loading badge -->
                     <div v-if="isPresenceLoading"
-                         class="absolute top-3 left-1/2 -translate-x-1/2 z-40
-                            px-3 py-1 rounded-full text-xs font-bold
-                            bg-black/70 border border-green-500/40 backdrop-blur">
+                         class="absolute top-3 left-1/2 -translate-x-1/2 z-40 px-3 py-1 rounded-full text-xs font-bold bg-black/70 border border-green-500/40 backdrop-blur">
                         🟢 Syncing…
                     </div>
 
                     <!-- Presence failed badge -->
                     <div v-else-if="isPresenceFailed"
-                         class="absolute top-3 left-1/2 -translate-x-1/2 z-40
-                            px-3 py-1 rounded-full text-xs font-bold
-                            bg-red-500/10 border border-red-500/40 text-red-200 backdrop-blur">
+                         class="absolute top-3 left-1/2 -translate-x-1/2 z-40 px-3 py-1 rounded-full text-xs font-bold bg-red-500/10 border border-red-500/40 text-red-200 backdrop-blur">
                         🔴 Realtime offline
                     </div>
 
@@ -55,82 +64,75 @@
                              :key="u.id"
                              class="absolute inset-0"
                              :style="{ transform: `rotate(${(ROOM_ANGLE[u.roomKey] ?? ROOM_ANGLE.afk) - 90}deg)` }">
-
                             <!-- ghost hand -->
                             <div class="absolute left-1/2 top-1/2 origin-left animate-pulse"
                                  :style="{
-                                    width: '145px',
-                                    height: '4px',
-                                    transform: 'translateY(-50%)',
-                                    borderRadius: '999px',
-                                    background: 'rgba(34,197,94,0.20)'
-                                  }"></div>
+                  width: `${baseHandLen}px`,
+                  height: `${handThickness}px`,
+                  transform: 'translateY(-50%)',
+                  borderRadius: '999px',
+                  background: 'rgba(34,197,94,0.20)',
+                }"></div>
 
                             <!-- ghost avatar at end -->
                             <div class="absolute left-1/2 top-1/2"
-                                 :style="{ transform: `translate(-50%, -50%) translateX(145px)` }">
-                                <div class="w-[52px] h-[52px] rounded-full border-4 animate-pulse
-                                    border-green-500/30 bg-green-500/10 shadow-[0_0_20px_rgba(34,197,94,0.25)]">
-                                </div>
+                                 :style="{ transform: `translate(-50%, -50%) translateX(${baseHandLen}px)` }">
+                                <div class="rounded-full border-4 animate-pulse border-green-500/30 bg-green-500/10 shadow-[0_0_20px_rgba(34,197,94,0.25)]"
+                                     :style="{ width: `${ghostAvatar}px`, height: `${ghostAvatar}px` }"></div>
                             </div>
                         </div>
                     </div>
 
-                    <!-- מחוגים (אווטרים של משתמשים) -->
+                    <!-- Clock hands (users) -->
                     <div v-for="user in clockUsers"
                          :key="user.id"
                          class="absolute inset-0 z-20 pointer-events-none"
                          :style="{ transform: `rotate(${getUserRotation(user)}deg)` }">
-                        <!-- המחוג -->
+                        <!-- hand -->
                         <div class="absolute left-1/2 top-1/2 origin-left"
                              :style="{
                 width: `${getHandLen(user)}px`,
-                height: '4px',
+                height: `${handThickness}px`,
                 transform: 'translateY(-50%)',
                 backgroundColor: safeColor(user.color),
                 boxShadow: `0 0 12px ${safeColor(user.color)}66`,
                 borderRadius: '999px',
-                opacity: user.status === 'offline' ? '0.25' : '0.85'
+                opacity: user.status === 'offline' ? '0.25' : '0.85',
               }"></div>
 
-                        <!-- avatar at end (locked to the hand) -->
+                        <!-- avatar at end -->
                         <div class="absolute left-1/2 top-1/2"
                              :style="{ transform: `translate(-50%, -50%) translateX(${getHandLen(user)}px)` }">
-                            <!-- counter-rotate so the avatar stays upright -->
+                            <!-- keep avatar upright -->
                             <div :style="{ transform: `rotate(${-getUserRotation(user)}deg)` }">
-                                <!-- CLICKABLE HITBOX (not just the emoji) -->
+                                <!-- clickable hitbox -->
                                 <div data-avatar-btn="1"
                                      @click.stop="toggleTooltip(user.id)"
                                      class="relative z-30 cursor-pointer select-none pointer-events-auto group"
                                      :style="{ width: `${getAvatarSize(user)}px`, height: `${getAvatarSize(user)}px` }">
-                                    <!-- ring + face -->
                                     <div class="w-full h-full rounded-full flex items-center justify-center border-4 transition-transform active:scale-95 hover:scale-110 overflow-hidden"
                                          :style="{
                       borderColor: safeColor(user.color),
                       background: `linear-gradient(135deg, ${safeColor(user.color)}22, ${safeColor(user.color)}44)`,
                       boxShadow: `0 0 20px ${safeColor(user.color)}88`,
-                      opacity: user.status === 'offline' ? '0.35' : '1'
+                      opacity: user.status === 'offline' ? '0.35' : '1',
                     }">
-                                        <!-- אם avatar הוא URL – נציג תמונה -->
                                         <img v-if="user.avatar && (String(user.avatar).startsWith('http') || String(user.avatar).startsWith('blob:'))"
                                              :src="user.avatar"
                                              alt="avatar"
                                              class="w-full h-full object-cover" />
-
-                                        <!-- אחרת – נציג את מה שיש (אימוג'י/אות) -->
                                         <span v-else :class="getAvatarFontClass(user)">
                                             {{ user.avatar || (user.name ? user.name[0] : "🙂") }}
                                         </span>
                                     </div>
 
                                     <!-- status dot -->
-                                    <div class="absolute -bottom-1 -right-1 w-5 h-5 rounded-full border-2 border-black"
-                                         :class="getStatusColor(user.status)"></div>
+                                    <div class="absolute -bottom-1 -right-1 rounded-full border-2 border-black"
+                                         :class="getStatusColor(user.status)"
+                                         :style="{ width: `${statusDot}px`, height: `${statusDot}px` }"></div>
 
                                     <!-- tooltip (tap on mobile, hover on desktop) -->
-                                    <div class="absolute -bottom-9 left-1/2 -translate-x-1/2
-                           bg-black/90 px-3 py-1 rounded-lg border whitespace-nowrap text-xs font-bold
-                           pointer-events-none opacity-0 transition-opacity"
+                                    <div class="absolute -bottom-9 left-1/2 -translate-x-1/2 bg-black/90 px-3 py-1 rounded-lg border whitespace-nowrap text-xs font-bold pointer-events-none opacity-0 transition-opacity"
                                          :class="activeTooltipUserId === user.id ? 'opacity-100' : 'group-hover:opacity-100'"
                                          :style="{ borderColor: safeColor(user.color), color: safeColor(user.color) }">
                                         {{ user.name }}
@@ -140,16 +142,16 @@
                         </div>
                     </div>
 
-                    <!-- טבעת “זוהר” עדינה בפנים (אופציונלי) -->
+                    <!-- inner glow -->
                     <div class="absolute inset-0 rounded-full pointer-events-none z-0"
                          style="box-shadow: inset 0 0 80px rgba(34,197,94,0.12);"></div>
                 </div>
             </div>
-        </div>
+        </section>
 
-        <!-- רשימת חדרים -->
-        <div class="max-w-md mx-auto px-4 pb-8">
-            <h2 class="text-green-400 font-bold mb-4 text-xl text-center">
+        <!-- Rooms list (mobile-first) -->
+        <section class="max-w-lg mx-auto px-4 pb-10">
+            <h2 class="text-green-400 font-bold mb-4 text-lg sm:text-xl text-center">
                 🚪 חדרים זמינים
             </h2>
 
@@ -157,26 +159,31 @@
                 <button v-for="room in Object.entries(house.rooms)"
                         :key="room[0]"
                         @click="enterRoom(room[0])"
-                        class="w-full bg-gradient-to-r from-gray-900 to-gray-800 border-2 border-green-500/50 rounded-xl p-4 hover:border-green-400 hover:shadow-xl hover:shadow-green-500/20 transition-all active:scale-98">
-                    <div class="flex items-center justify-between">
-                        <div class="flex items-center gap-4">
-                            <span class="text-4xl">{{ getRoomIcon(room[0]) }}</span>
+                        class="w-full bg-gradient-to-r from-gray-900 to-gray-800 border border-green-500/40 rounded-2xl p-4 hover:border-green-400/70 hover:shadow-xl hover:shadow-green-500/20 transition-all active:scale-[0.99]">
+                    <div class="flex items-center justify-between gap-3">
+                        <div class="flex items-center gap-3 sm:gap-4">
+                            <span class="text-3xl sm:text-4xl">{{ getRoomIcon(room[0]) }}</span>
+
                             <div class="text-right">
-                                <div class="text-white font-bold text-lg">{{ room[1].name }}</div>
+                                <div class="text-white font-bold text-base sm:text-lg">
+                                    {{ room[1].name }}
+                                </div>
+
                                 <div class="text-green-500 text-sm">
-                                    <span v-if="presence.status==='connecting'" class="gio-skel-count"></span>
+                                    <span v-if="presence.status === 'connecting'" class="gio-skel-count"></span>
                                     <span v-else>{{ `${presence.usersInRoom(room[0]).length} בפנים` }}</span>
-                                    
                                 </div>
                             </div>
                         </div>
-                        <div class="text-green-400 text-2xl">←</div>
+
+                        <div class="text-green-400 text-xl sm:text-2xl">←</div>
                     </div>
 
-                    <!-- מפריד + שורת מחוברים -->
+                    <!-- Divider + avatars row -->
                     <div v-if="presence.usersInRoom(room[0]).length > 0" class="mt-3 pt-3">
                         <div class="h-px w-full bg-gradient-to-r from-transparent via-green-500/40 to-transparent mb-3"></div>
 
+                        <!-- ✅ mobile-first: wraps nicely, doesn’t overflow -->
                         <div class="flex flex-row flex-wrap gap-2 justify-end items-center">
                             <div v-for="u in presence.usersInRoom(room[0]).slice(0, 8)"
                                  :key="u.user_id"
@@ -195,68 +202,59 @@
                     </div>
                 </button>
             </div>
-        </div>
+        </section>
     </div>
 </template>
 
 <script setup>
     /**
-     * HomeView
-     * - מציג "שעון וויזלים" (presence)
-     * - מציג רשימת חדרים (כרגע hardcoded מה-store)
-     * - תומך ב-Houses: הכותרת משתנה לפי הבית הנוכחי, וה-presence מבודד לפי houseId
+     * HomeView (mobile-first)
+     * - הוספנו ResizeObserver כדי שהשעון יהיה דינמי ולא "96x96 קשיח"
+     * - כל החישובים של radius/hand lengths נשענים על clockSize
      */
 
-    import { supabase } from "../services/supabase";
-    import { computed, ref, onMounted, onBeforeUnmount, onUnmounted, watch } from "vue";
+    import { computed, ref, onMounted, onBeforeUnmount, watch } from "vue";
     import { useUIStore } from "../stores/ui";
     import { useHouseStore } from "../stores/house";
     import { useUserStore } from "../stores/users";
     import { useRouter } from "vue-router";
     import { usePresenceStore } from "../stores/presence";
 
+    const warmup = ref(true);
     const router = useRouter();
-    const ui = useUIStore(); // (לא שיניתי שימושים, נשאר למקרה שיש לך בקוד המלא)
+    const ui = useUIStore();
     const house = useHouseStore();
-    const userStore = useUserStore(); // (כנ"ל)
+    const userStore = useUserStore();
     const presence = usePresenceStore();
 
+    /* Tooltip state */
     const activeTooltipUserId = ref(null);
 
-    // Presence UI states
-    const isPresenceLoading = computed(() => presence.status === "connecting");
+    /* Presence UI states */
+    const isPresenceLoading = computed(() =>
+        presence.status === "connecting" || warmup.value
+    );
     const isPresenceFailed = computed(() => presence.status === "failed");
 
-    // “Discord-like” skeleton users while presence connects
-    const skeletonUsers = computed(() => {
-        // 6 "ghost" users, one per room-ish
-        return [
-            { id: "s1", roomKey: "living" },
-            { id: "s2", roomKey: "gaming" },
-            { id: "s3", roomKey: "cinema" },
-            { id: "s4", roomKey: "bathroom" },
-            { id: "s5", roomKey: "study" },
-            { id: "s6", roomKey: "afk" },
-        ];
-    });
+    /* Skeleton users while connecting */
+    const skeletonUsers = computed(() => [
+        { id: "s1", roomKey: "living" },
+        { id: "s2", roomKey: "gaming" },
+        { id: "s3", roomKey: "cinema" },
+        { id: "s4", roomKey: "bathroom" },
+        { id: "s5", roomKey: "study" },
+        { id: "s6", roomKey: "afk" },
+    ]);
 
-    /**
-     * הבית הנוכחי (מתוך myHouses + currentHouseId)
-     * Public House = כותרת "GIO HOUSE"
-     * Private House = שם הבית
-     */
+    /* Current house */
     const currentHouse = computed(() => {
-        const list = house.myHouses ?? [];   // ✅ תמיד מערך
+        const list = house.myHouses ?? [];
         const id = house.currentHouseId;
-        return list.find(h => h.id === id);
+        return list.find((h) => h.id === id);
     });
-
     const isPublicHouse = computed(() => !!currentHouse.value?.is_public);
 
-    /**
-     * clockUsers נגזר מ-presence.users (map) -> array
-     * אם presence עובד נכון לפי בית, זה כבר יהיה מסונן לבית הנוכחי "אוטומטית".
-     */
+    /* Users displayed on the clock */
     const clockUsers = computed(() => {
         const list = Object.values(presence.users || {});
         return list
@@ -272,34 +270,63 @@
             .sort((a, b) => String(a.id).localeCompare(String(b.id)));
     });
 
-    /* ---------- Tooltip helpers ---------- */
+    /* Tooltip helpers */
     function toggleTooltip(userId) {
-        console.log("tap user:", userId);
         activeTooltipUserId.value = activeTooltipUserId.value === userId ? null : userId;
     }
     function closeTooltip() {
         activeTooltipUserId.value = null;
     }
-    // סוגר כשנוגעים “בחוץ”
     function onDocPointerDown(e) {
         const insideAvatar = e.target?.closest?.('[data-avatar-btn="1"]');
         if (!insideAvatar) closeTooltip();
     }
 
-    /* ---------- Lifecycle ---------- */
+    /* ✅ Dynamic sizing (the key for mobile-first clock) */
+    const clockWrapEl = ref(null);
+    const clockSize = ref(0);
+    let ro = null;
+
+    function updateClockSize() {
+        if (!clockWrapEl.value) return;
+        clockSize.value = Math.round(clockWrapEl.value.getBoundingClientRect().width || 0);
+    }
+
     onMounted(() => {
-        // HomeView = תצוגה בלבד. לא מנהל auth/house/presence.
+        const t = setTimeout(() => (warmup.value = false), 1200);
+        watch(
+            () => Object.keys(presence.users || {}).length,
+            (n) => { if (n > 0) warmup.value = false; },
+            { immediate: true }
+        );
+
+
+        document.addEventListener("pointerdown", onDocPointerDown);
+
+        updateClockSize();
+        ro = new ResizeObserver(() => updateClockSize());
+        if (clockWrapEl.value) ro.observe(clockWrapEl.value);
     });
 
-
-
-    onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocPointerDown));
-    onUnmounted(() => {
-        // לא חובה. אם תרצה ניקוי קשוח כשעוזבים HomeView:
-        // presence.disconnect();
+    onBeforeUnmount(() => {
+        document.removeEventListener("pointerdown", onDocPointerDown);
+        if (ro && clockWrapEl.value) ro.unobserve(clockWrapEl.value);
+        ro = null;
     });
 
-    /* ---------- Room "clock" layout ---------- */
+    /**
+     * ✅ Derived pixel values based on clockSize
+     * (These numbers feel "premium" on mobile and still look good on desktop.)
+     */
+    const radius = computed(() => Math.max(110, Math.min(170, Math.floor(clockSize.value * 0.40))));
+    const baseHandLen = computed(() => Math.max(100, Math.min(160, Math.floor(clockSize.value * 0.38))));
+    const handThickness = computed(() => Math.max(3, Math.min(5, Math.floor(clockSize.value * 0.012))));
+    const centerDot = computed(() => Math.max(9, Math.min(14, Math.floor(clockSize.value * 0.035))));
+    const roomEmoji = computed(() => Math.max(18, Math.min(28, Math.floor(clockSize.value * 0.06))));
+    const ghostAvatar = computed(() => Math.max(44, Math.min(54, Math.floor(clockSize.value * 0.14))));
+    const statusDot = computed(() => Math.max(14, Math.min(20, Math.floor(clockSize.value * 0.05))));
+
+    /* Room layout */
     const roomPositions = computed(() => [
         { id: "living", name: "סלון", icon: "🛋️" },
         { id: "gaming", name: "גיימינג", icon: "🎮" },
@@ -310,7 +337,6 @@
     ]);
 
     const ROOM_ANGLE = {
-        // 12, 2, 4, 6, 8, 10 (עם כיוון שעון)
         living: 0,
         gaming: 60,
         cinema: 120,
@@ -323,24 +349,23 @@
         return typeof c === "string" && c.startsWith("#") ? c : "#22c55e";
     }
 
+    /* Hand length: base + small offset per user in same room */
     function getHandLen(user) {
-        const base = 145;
-
         const sameRoom = clockUsers.value
             .filter((u) => u.roomKey === user.roomKey)
             .sort((a, b) => String(a.id).localeCompare(String(b.id)));
 
         const idx = sameRoom.findIndex((u) => u.id === user.id);
-        return base + idx * 8;
+        return baseHandLen.value + idx * Math.max(6, Math.floor(clockSize.value * 0.02));
     }
 
+    /* Room label positions on circle */
     function getRoomLabelStyle(roomId) {
         const angleDeg = (ROOM_ANGLE[roomId] ?? ROOM_ANGLE.afk) - 90;
-        const radius = 160;
-
         const rad = (angleDeg * Math.PI) / 180;
-        const x = Math.cos(rad) * radius;
-        const y = Math.sin(rad) * radius;
+
+        const x = Math.cos(rad) * radius.value;
+        const y = Math.sin(rad) * radius.value;
 
         return {
             left: `calc(50% + ${x}px)`,
@@ -349,6 +374,7 @@
         };
     }
 
+    /* User rotation with slight spread per room */
     function getUserRotation(user) {
         const base = (ROOM_ANGLE[user.roomKey] ?? ROOM_ANGLE.afk) - 90;
 
@@ -364,13 +390,17 @@
         return base + offset;
     }
 
-    /* ---------- Avatar sizing helpers ---------- */
+    /* Avatar sizing */
     function getAvatarSize(user) {
-        const sameRoomCount = clockUsers.value.filter((u) => u.roomKey === user.roomKey).length;
-        if (sameRoomCount >= 7) return 44;
-        if (sameRoomCount >= 5) return 50;
-        if (sameRoomCount >= 3) return 56;
-        return 60;
+        const count = clockUsers.value.filter((u) => u.roomKey === user.roomKey).length;
+
+        // scale relative to clock size (keeps proportions on mobile)
+        const base = Math.max(44, Math.min(60, Math.floor(clockSize.value * 0.15)));
+
+        if (count >= 7) return Math.max(40, base - 12);
+        if (count >= 5) return Math.max(44, base - 8);
+        if (count >= 3) return Math.max(48, base - 4);
+        return base;
     }
     function getAvatarFontClass(user) {
         const s = getAvatarSize(user);
@@ -379,7 +409,7 @@
         return "text-3xl";
     }
 
-    /* ---------- Status color ---------- */
+    /* Status color */
     function getStatusColor(status) {
         return (
             {
@@ -390,10 +420,7 @@
         );
     }
 
-    /* ---------- Rooms list helpers (נשאר כמו אצלך) ---------- */
-    function getRoomName(roomId) {
-        return house.rooms[roomId]?.name || "לא פה";
-    }
+    /* Rooms list helpers */
     function getRoomIcon(roomId) {
         const icons = {
             living: "🛋️",
@@ -410,34 +437,11 @@
         await presence.setRoom(roomKey);
         router.push(`/room/${roomKey}`);
     }
-
-    async function retryPresence() {
-        const houseId = house.currentHouseId;
-        if (!houseId) return;
-        const ok = await presence.connect(houseId);
-        if (ok) await presence.setRoom("living");
-    }
-
 </script>
 
 <style scoped>
+    /* keep your active scale helper */
     .active\:scale-98:active {
         transform: scale(0.98);
     }
-
-    @keyframes subtleFloat {
-        0%, 100% {
-            transform: translateY(0);
-        }
-
-        50% {
-            transform: translateY(-2px);
-        }
-    }
-
-    .animate-subtle-float {
-        animation: subtleFloat 1.6s ease-in-out infinite;
-    }
-
-
 </style>

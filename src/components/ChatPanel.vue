@@ -1,73 +1,116 @@
 <template>
-    <div class="h-[45vh] bg-black border-t-2 border-green-500 flex flex-col shadow-2xl">
-        <!-- כותרת החדר -->
-        <div class="bg-gradient-to-r from-gray-900 to-black px-4 py-3 border-b border-green-500/30">
-            <div class="flex items-center justify-between">
-                <div>
-                    <h3 class="text-green-400 font-bold text-lg flex items-center gap-2">
-                        <span class="text-2xl">{{ getRoomIcon(house.currentRoom) }}</span>
-                        {{ currentRoomName }}
-                    </h3>
-                    <p class="text-green-600 text-xs mt-0.5">{{ onlineCount }} בחדר</p>
+    <div class="h-full flex flex-col bg-[#0b0f12] text-white">
+        <!-- Header -->
+        <div class="shrink-0 border-b border-white/10 bg-black/30 backdrop-blur">
+            <div class="h-14 px-3 sm:px-4 flex items-center justify-between">
+                <div class="flex items-center gap-3 min-w-0">
+                    <div class="w-9 h-9 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center">
+                        <span class="text-xl">{{ getRoomIcon(house.currentRoom) }}</span>
+                    </div>
+
+                    <div class="min-w-0">
+                        <div class="flex items-center gap-2 min-w-0">
+                            <h3 class="font-extrabold text-sm sm:text-base text-green-200 truncate">
+                                {{ currentRoomName }}
+                            </h3>
+
+                            <span class="text-[11px] px-2 py-0.5 rounded-full border border-white/10 bg-white/5 text-white/70">
+                                {{ onlineCount }} online
+                            </span>
+                        </div>
+
+                        <div class="text-[11px] text-white/45 truncate">
+                            {{ house.currentRoom }}
+                            <span v-if="roomUuid" class="text-white/25">• {{ roomUuid.slice(0, 8) }}</span>
+                        </div>
+                    </div>
                 </div>
+
                 <button @click="toggleChatSize"
-                        class="text-green-500 hover:text-green-400 text-xl px-2 transition-all">
-                    {{ isExpanded ? '🔽' : '🔼' }}
+                        class="w-10 h-10 rounded-xl bg-white/5 border border-white/10 hover:border-green-500/40 transition
+                 active:scale-[0.98] flex items-center justify-center"
+                        :title="chatExpanded ? 'הקטן צ׳אט' : 'הגדל צ׳אט'">
+                    <span class="text-lg">{{ chatExpanded ? "▾" : "▴" }}</span>
                 </button>
             </div>
         </div>
 
-        <!-- רשימת הודעות -->
-        <div ref="messagesContainer" class="flex-1 overflow-y-auto p-4 space-y-4">
-            <!-- הודעות מסוננות לפי החדר הנוכחי -->
-            <div v-for="msg in currentRoomMessages"
-                 :key="msg.id"
-                 class="flex items-start gap-3 animate-fadeIn">
-                <!-- אווטר -->
-                <div class="w-10 h-10 rounded-full flex items-center justify-center text-xl border-3 flex-shrink-0 shadow-lg"
-                     :style="{
-                         borderColor: msg.userColor,
-                         background: `linear-gradient(135deg, ${msg.userColor}22, ${msg.userColor}44)`,
-                         boxShadow: `0 0 15px ${msg.userColor}44`
-                     }">
-                    {{ msg.userInitial }}
-                </div>
+        <!-- Messages -->
+        <div ref="messagesContainer" class="flex-1 min-h-0 overflow-y-auto px-3 sm:px-4 py-3 space-y-3">
+            <!-- Loading / error banner -->
+            <div v-if="chatLoading" class="text-center text-white/60 py-6">
+                <div class="text-3xl mb-2">⏳</div>
+                טוען את הצ׳אט…
+            </div>
 
-                <!-- תוכן ההודעה -->
-                <div class="flex-1">
-                    <div class="flex items-baseline gap-2">
-                        <span class="font-bold text-sm"
-                              :style="{ color: msg.userColor }">
-                            {{ msg.userName }}
+            <div v-else-if="chatError" class="text-center text-red-300 py-6">
+                <div class="text-3xl mb-2">💥</div>
+                שגיאה בצ׳אט: {{ chatError.message || chatError }}
+            </div>
+
+            <template v-else>
+                <div v-for="msg in currentRoomMessages"
+                     :key="msg.id"
+                     class="flex items-start gap-3">
+                    <div class="w-9 h-9 sm:w-10 sm:h-10 rounded-full overflow-hidden flex items-center justify-center
+                   border border-white/10 flex-shrink-0 shadow-sm"
+                         :style="{
+              borderColor: msg.userColor,
+              background: `linear-gradient(135deg, ${msg.userColor}22, ${msg.userColor}44)`,
+            }">
+                        <span class="text-base sm:text-lg font-extrabold">
+                            {{ msg.userInitial }}
                         </span>
-                        <span class="text-gray-500 text-xs">{{ msg.time }}</span>
                     </div>
-                    <p class="text-white text-sm mt-1.5 leading-relaxed bg-gray-900/50 px-3 py-2 rounded-lg border-l-2"
-                       :style="{ borderColor: msg.userColor }">
-                        {{ msg.text }}
-                    </p>
-                </div>
-            </div>
 
-            <!-- הודעה כשאין הודעות בחדר -->
-            <div v-if="currentRoomMessages.length === 0" class="text-center text-green-600 py-16">
-                <div class="text-5xl mb-3">💬</div>
-                <p class="text-lg">אין הודעות בחדר הזה עדיין...</p>
-                <p class="text-sm mt-2 text-green-700">תהיה הראשון לשלוח! 🚀</p>
-            </div>
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-baseline gap-2">
+                            <span class="font-extrabold text-xs sm:text-sm truncate" :style="{ color: msg.userColor }">
+                                {{ msg.userName }}
+                            </span>
+                            <span class="text-white/35 text-[11px]">
+                                {{ msg.time }}
+                            </span>
+                        </div>
+
+                        <div class="mt-1.5 bg-white/5 border border-white/10 rounded-2xl px-3 py-2 text-sm leading-relaxed"
+                             :style="{ borderLeft: `3px solid ${msg.userColor}` }">
+                            {{ msg.text }}
+                        </div>
+                    </div>
+                </div>
+
+                <div v-if="currentRoomMessages.length === 0" class="text-center text-white/55 py-14">
+                    <div class="text-5xl mb-3">💬</div>
+                    <p class="text-base font-bold text-green-200">אין הודעות בחדר הזה עדיין</p>
+                    <p class="text-sm mt-1 text-white/45">תהיה הראשון לשלוח 🚀</p>
+                </div>
+            </template>
         </div>
 
-        <!-- שדה קלט -->
-        <div class="p-4 bg-gradient-to-r from-gray-900 to-black border-t border-green-500/30">
-            <form @submit.prevent="sendMessage" class="flex gap-3">
-                <input v-model="newMessage"
+        <!-- Input -->
+        <div class="shrink-0 border-t border-white/10 bg-black/25 backdrop-blur" :style="safeBottomPad">
+            <div v-if="!roomReady" class="px-4 pt-3 text-xs text-yellow-300">
+                טוען זיהוי חדר… (roomUuid)
+                <span v-if="roomsError" class="text-red-300"> — שגיאה: {{ roomsError.message || roomsError }}</span>
+            </div>
+
+            <form @submit.prevent="sendMessage" class="p-3 sm:p-4 flex gap-2">
+                <input :disabled="!roomReady"
+                       v-model="newMessage"
                        type="text"
-                       placeholder="כתוב הודעה..."
-                       class="flex-1 bg-black border-2 border-green-500/50 rounded-xl px-4 py-3 text-white placeholder-green-700 focus:outline-none focus:ring-2 focus:ring-green-400 focus:border-green-400 transition-all"
+                       :placeholder="roomReady ? 'כתוב הודעה...' : 'טוען חדר…'"
+                       class="flex-1 bg-black/40 border border-white/10 rounded-xl px-4 py-3
+                 text-white placeholder-white/35 outline-none
+                 focus:border-green-500/40 focus:ring-2 focus:ring-green-500/10 transition"
                        @keydown.enter.prevent="sendMessage" />
+
                 <button type="submit"
-                        :disabled="!newMessage.trim()"
-                        class="bg-gradient-to-r from-green-500 to-green-600 text-black px-8 py-3 rounded-xl font-bold hover:from-green-400 hover:to-green-500 disabled:opacity-30 disabled:cursor-not-allowed transition-all shadow-lg hover:shadow-green-500/50 active:scale-95">
+                        :disabled="!roomReady || !newMessage.trim()"
+                        class="px-5 sm:px-6 py-3 rounded-xl font-extrabold
+                 bg-green-500 text-black
+                 hover:bg-green-400 disabled:opacity-30 disabled:cursor-not-allowed
+                 transition active:scale-[0.98]">
                     שלח
                 </button>
             </form>
@@ -76,182 +119,195 @@
 </template>
 
 <script setup>
-    import { ref, computed, nextTick, watch } from 'vue'
-    import { useHouseStore } from '../stores/house'
-    import { useUserStore } from '../stores/users'
-    import { useRoute } from "vue-router";
+    import { ref, computed, nextTick, watch, onMounted, onUnmounted, inject, onErrorCaptured } from "vue";
+    import { useHouseStore } from "../stores/house";
+    import { useUserStore } from "../stores/users";
     import { useMessagesStore } from "../stores/messages";
     import { useRoomsStore } from "../stores/rooms";
-    import { onMounted, onUnmounted } from "vue";
 
-
-
-    const route = useRoute();
+    const house = useHouseStore();
+    const userStore = useUserStore();
     const messagesStore = useMessagesStore();
     const roomsStore = useRoomsStore();
-    const house = useHouseStore()
-    const userStore = useUserStore()
 
-    const newMessage = ref('')
-    const messagesContainer = ref(null)
-    const isExpanded = ref(false)
+    const newMessage = ref("");
+    const messagesContainer = ref(null);
 
-    const roomUuid = computed(() => roomsStore.getRoomUuidByKey(house.currentRoom));
-    watch(
-        roomUuid,
-        async (newUuid, oldUuid) => {
-            if (oldUuid) {
-                await messagesStore.unsubscribe(oldUuid);
-            }
+    /* ✅ Hook to RoomView layout controller */
+    const chatLayout = inject("chatLayout", null);
+    const chatExpanded = computed(() => chatLayout?.chatExpanded?.value ?? false);
 
-            if (!newUuid) return;
+    function toggleChatSize() {
+        if (chatLayout?.toggle) return chatLayout.toggle();
+        // fallback (shouldn't happen if provide exists)
+    }
 
-            try {
-                await messagesStore.load(newUuid);
-                messagesStore.subscribe(newUuid);
-                scrollToBottom();
-            } catch (e) {
-                console.error("Failed to load/subscribe messages:", e);
-            }
-        },
-        { immediate: true }
-    );
+    /* Safe bottom */
+    const safeBottomPad = computed(() => ({
+        paddingBottom: "env(safe-area-inset-bottom)",
+    }));
 
-    // שם החדר הנוכחי
+    /* Icons */
+    function getRoomIcon(roomId) {
+        const icons = {
+            living: "🛋️",
+            gaming: "🎮",
+            bathroom: "🚿",
+            study: "📚",
+            cinema: "🎬",
+            afk: "😴",
+        };
+        return icons[roomId] || "🚪";
+    }
+
+    /* UUID */
+    const roomUuid = computed(() => {
+        const key = house.currentRoom;
+        if (!key) return null;
+        return roomsStore.getRoomUuidByKey(key);
+    });
+    const roomReady = computed(() => !!roomUuid.value);
+    const roomsError = computed(() => roomsStore.error);
+
+    /* Derived */
     const currentRoomName = computed(() => {
-        return house.rooms[house.currentRoom]?.name || 'חדר'
-    })
-
-    // כמה אנשים בחדר
-    const onlineCount = computed(() => {
-        return userStore.usersInRoom(house.currentRoom).length
-    })
-
-    
-
+        // NOTE: אם אתה רוצה שם+אייקון מה DB – נחבר בהמשך.
+        return house.rooms?.[house.currentRoom]?.name || "חדר";
+    });
+    const onlineCount = computed(() => userStore.usersInRoom(house.currentRoom).length);
     const currentRoomMessages = computed(() => {
         if (!roomUuid.value) return [];
         return messagesStore.messagesInRoom(roomUuid.value);
     });
 
+    /* ✅ Robust sync (prevents race) */
+    const chatLoading = ref(false);
+    const chatError = ref(null);
+    let activeUuid = null;
+    let runToken = 0;
 
-
-
-    // אייקון החדר
-    function getRoomIcon(roomId) {
-        const icons = {
-            living: '🛋️',
-            gaming: '🎮',
-            bathroom: '🚿',
-            study: '📚',
-            cinema: '🎬'
-        }
-        return icons[roomId] || '🚪'
+    async function ensureRoomsLoaded() {
+        if (!house.currentHouseId) return false;
+        await roomsStore.loadForHouse(house.currentHouseId);
+        return true;
     }
 
-    // שליחת הודעה
-    async function sendMessage() {
-        if (!newMessage.value.trim()) return;
-
-        if (!roomUuid.value) {
-            console.warn("No roomUuid — not sending", { roomUuid: roomUuid.value });
-            alert("אין roomUuid לחדר הזה — לא יכול לשלוח עדיין.");
-            return;
-        }
+    async function syncChat() {
+        const token = ++runToken;
+        chatError.value = null;
+        chatLoading.value = true;
 
         try {
-            await messagesStore.send(roomUuid.value, newMessage.value.trim());
-            newMessage.value = "";
+            const ok = await ensureRoomsLoaded();
+            if (!ok) return;
+
+            if (token !== runToken) return;
+
+            const uuid = roomUuid.value;
+            if (!uuid) {
+                // עדיין אין UUID → נשארים במצב לא-מוכן
+                return;
+            }
+
+            // אם עברנו חדר: מנתקים מהקודם
+            if (activeUuid && activeUuid !== uuid) {
+                try {
+                    await messagesStore.unsubscribe(activeUuid);
+                } catch (e) {
+                    console.warn("[ChatPanel] unsubscribe failed:", e);
+                }
+            }
+
+            if (token !== runToken) return;
+
+            // טוענים ומתחברים רק אם חדש/שונה
+            if (activeUuid !== uuid) {
+                await messagesStore.load(uuid);
+                messagesStore.subscribe(uuid);
+                activeUuid = uuid;
+            }
+
             scrollToBottom();
         } catch (e) {
-            console.error(e);
-            alert(e.message ?? "Failed to send");
+            chatError.value = e;
+            console.error("[ChatPanel] syncChat failed:", e);
+        } finally {
+            if (token === runToken) {
+                chatLoading.value = false;
+            }
         }
     }
+    console.log("[ChatPanel] houseId:", house.currentHouseId, "roomKey:", house.currentRoom, "uuid:", roomUuid.value);
 
+    /* Watchers */
+    watch(
+        () => [house.currentHouseId, house.currentRoom, roomsStore.loadedForHouseId],
+        () => {
+            // כל שינוי בית/חדר/טעינת rooms → sync
+            void syncChat();
+        },
+        { immediate: true }
+    );
 
+    /* Actions */
+    async function sendMessage() {
+        const text = newMessage.value.trim();
+        if (!text) return;
+        if (!roomUuid.value) return;
 
-
-
-    // הגדלה/הקטנה של הצ'אט
-    function toggleChatSize() {
-        isExpanded.value = !isExpanded.value
-        // אפשר להוסיף לוגיקה לשינוי גובה בעתיד
+        await messagesStore.send(roomUuid.value, text);
+        newMessage.value = "";
+        scrollToBottom();
     }
 
-    // גלילה לתחתית
     function scrollToBottom() {
         nextTick(() => {
             if (messagesContainer.value) {
-                messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight
+                messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight;
             }
-        })
+        });
     }
 
-    // גלילה אוטומטית כשמוסיפים הודעה או משנים חדר
-    watch([currentRoomMessages, () => house.currentRoom], () => {
-        scrollToBottom()
-    }, { deep: true })
-
-    
-    onMounted(async () => {
-        try {
-            await roomsStore.load();
-            console.log("rooms loaded:", roomsStore.rooms.map(r => ({ name: r.name, id: r.id })));
-        } catch (e) {
-            console.error("failed to load rooms:", e);
-        }
-        console.log("roomName:", house.currentRoom, "roomUuid:", roomUuid.value);
-
+    /* Lifecycle */
+    onMounted(() => {
+        // 👌 nothing else needed; watcher handles sync
     });
 
     onUnmounted(async () => {
-        if (roomUuid.value) {
-            await messagesStore.unsubscribe(roomUuid.value);
+        if (activeUuid) {
+            try {
+                await messagesStore.unsubscribe(activeUuid);
+            } catch (e) {
+                console.warn("[ChatPanel] unsubscribe onUnmount failed:", e);
+            }
         }
     });
 
+    /* ✅ אם Vue מפילה את הקומפוננטה, זה יראה בקונסול */
+    onErrorCaptured((err, instance, info) => {
+        console.error("[ChatPanel] errorCaptured:", err, info);
+        chatError.value = err;
+        chatLoading.value = false;
+        return false; // אל תבלע
+    });
 </script>
 
 <style scoped>
-    /* אנימציה להודעות חדשות */
-    @keyframes fadeIn {
-        from {
-            opacity: 0;
-            transform: translateY(10px);
-        }
-
-        to {
-            opacity: 1;
-            transform: translateY(0);
-        }
+    .flex-1::-webkit-scrollbar {
+        width: 10px;
     }
 
-    .animate-fadeIn {
-        animation: fadeIn 0.4s ease-out;
+    .flex-1::-webkit-scrollbar-track {
+        background: rgba(255, 255, 255, 0.03);
     }
 
-    /* גלילה מעוצבת */
-    .overflow-y-auto {
-        scrollbar-width: thin;
-        scrollbar-color: #10b981 #000;
+    .flex-1::-webkit-scrollbar-thumb {
+        background: rgba(34, 197, 94, 0.25);
+        border: 2px solid rgba(0, 0, 0, 0.6);
+        border-radius: 999px;
     }
 
-        .overflow-y-auto::-webkit-scrollbar {
-            width: 8px;
+        .flex-1::-webkit-scrollbar-thumb:hover {
+            background: rgba(34, 197, 94, 0.35);
         }
-
-        .overflow-y-auto::-webkit-scrollbar-track {
-            background: #000;
-            border-radius: 4px;
-        }
-
-        .overflow-y-auto::-webkit-scrollbar-thumb {
-            background: linear-gradient(to bottom, #10b981, #059669);
-            border-radius: 4px;
-        }
-
-            .overflow-y-auto::-webkit-scrollbar-thumb:hover {
-                background: linear-gradient(to bottom, #34d399, #10b981);
-            }
 </style>
