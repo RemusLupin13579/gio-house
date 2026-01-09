@@ -47,10 +47,18 @@ async function bootstrap() {
      * - currentHouseId קיים
      * - ChatPanel יכול לטעון rooms בלי race
      */
-    createApp(App)
-        .use(pinia)
-        .use(router)
-        .mount("#app");
+    const app = createApp(App).use(pinia).use(router);
+
+    app.config.errorHandler = (err, instance, info) => {
+        console.error("[VueError]", info, err);
+    };
+
+    app.config.warnHandler = (msg, instance, trace) => {
+        console.warn("[VueWarn]", msg, trace);
+    };
+
+    app.mount("#app");
+
 }
 
 bootstrap();

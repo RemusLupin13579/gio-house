@@ -241,13 +241,28 @@
 
     /* Watchers */
     watch(
-        () => [house.currentHouseId, house.currentRoom, roomsStore.loadedForHouseId],
-        () => {
-            // כל שינוי בית/חדר/טעינת rooms → sync
-            void syncChat();
+        roomUuid,
+        async (newUuid, oldUuid) => {
+            try {
+                const ok = await ensureRoomsLoaded();
+                if (!ok) return;
+
+                if (oldUuid) {
+                    await messagesStore.unsubscribe(oldUuid);
+                }
+
+                if (!newUuid) return;
+
+                await messagesStore.load(newUuid);
+                messagesStore.subscribe(newUuid);
+                scrollToBottom();
+            } catch (e) {
+                console.error("[ChatPanel] watch(roomUuid) failed:", e);
+            }
         },
         { immediate: true }
     );
+
 
     /* Actions */
     async function sendMessage() {

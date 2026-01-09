@@ -18,6 +18,35 @@ function fmtTime(ts) {
         return "";
     }
 }
+function normalizeMsg(row) {
+    const nickname = row?.profiles?.nickname ?? "User";
+    const initial = (nickname?.[0] ?? "U").toUpperCase();
+    const time = row?.created_at
+        ? new Date(row.created_at).toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" })
+        : "";
+
+    // צבע יציב לפי user_id (fallback)
+    const uid = row?.user_id ?? "";
+    let hash = 0;
+    for (let i = 0; i < uid.length; i++) hash = (hash * 31 + uid.charCodeAt(i)) | 0;
+    const hue = Math.abs(hash) % 360;
+    const userColor = `hsl(${hue} 80% 60%)`;
+
+    return {
+        id: row.id,
+        room_id: row.room_id,
+        user_id: row.user_id,
+        text: row.text ?? "",
+        created_at: row.created_at,
+        profiles: row.profiles ?? null,
+
+        // fields your UI uses:
+        userName: nickname,
+        userInitial: initial,
+        userColor,
+        time,
+    };
+}
 
 function normalizeRow(row) {
     const name = row?.profiles?.nickname ?? "User";
@@ -56,7 +85,8 @@ export const useMessagesStore = defineStore("messages", {
 
             if (error) throw error;
 
-            this.byRoom[roomId] = (data ?? []).map(normalizeRow);
+            this.byRoom[roomId] = (data ?? []).map(normalizeMsg);
+
         },
 
         subscribe(roomId) {
@@ -79,7 +109,7 @@ export const useMessagesStore = defineStore("messages", {
                                 ? { ...raw, profiles: { nickname: profile.value?.nickname ?? "Me" } }
                                 : raw;
 
-                        const uiMsg = normalizeRow(enriched);
+                        const uiMsg = normalizeMsg(payload.new);
 
                         const exists = this.byRoom[roomId].some((m) => m.id === uiMsg.id);
                         if (!exists) this.byRoom[roomId].push(uiMsg);
