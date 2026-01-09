@@ -2,71 +2,58 @@ import { defineStore } from "pinia";
 import { supabase } from "../services/supabase";
 import { session, profile } from "../stores/auth";
 
-function colorFromId(id) {
-    // צבע עקבי מאותו user_id (פשוט ויעיל)
-    const s = String(id ?? "x");
-    let h = 0;
-    for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
-    const hue = h % 360;
-    return `hsl(${hue} 80% 65%)`;
-}
-
-function fmtTime(ts) {
-    try {
-        return new Date(ts).toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" });
-    } catch {
-        return "";
-    }
-}
-function normalizeMsg(row) {
-    const nickname = row?.profiles?.nickname ?? "User";
-    const initial = (nickname?.[0] ?? "U").toUpperCase();
-    const time = row?.created_at
-        ? new Date(row.created_at).toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" })
-        : "";
-
-    // צבע יציב לפי user_id (fallback)
-    const uid = row?.user_id ?? "";
+/**
+ * יוצר צבע עקבי לפי user_id (כדי שלא תצטרך לשמור DB)
+ */
+function colorFromUserId(userId) {
+    const s = String(userId || "anon");
     let hash = 0;
-    for (let i = 0; i < uid.length; i++) hash = (hash * 31 + uid.charCodeAt(i)) | 0;
-    const hue = Math.abs(hash) % 360;
-    const userColor = `hsl(${hue} 80% 60%)`;
-
-    return {
-        id: row.id,
-        room_id: row.room_id,
-        user_id: row.user_id,
-        text: row.text ?? "",
-        created_at: row.created_at,
-        profiles: row.profiles ?? null,
-
-        // fields your UI uses:
-        userName: nickname,
-        userInitial: initial,
-        userColor,
-        time,
-    };
+    for (let i = 0; i < s.length; i++) hash = (hash * 31 + s.charCodeAt(i)) >>> 0;
+    const hue = hash % 360;
+    return `hsl(${hue} 85% 65%)`;
 }
 
-function normalizeRow(row) {
-    const name = row?.profiles?.nickname ?? "User";
+function initialFromName(name) {
+    const n = String(name || "").trim();
+    return n ? n[0].toUpperCase() : "🙂";
+}
+
+function formatTime(ts) {
+    if (!ts) return "";
+    const d = new Date(ts);
+    if (Number.isNaN(d.getTime())) return "";
+    return d.toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" });
+}
+
+/**
+ * ✅ normalize: תמיד מחזיר אובייקט “מוכן ל-UI”
+ * גם אם profiles חסר, גם אם text null, גם אם created_at מוזר.
+ */
+function normalizeMessage(row) {
+    const userName =
+        row?.profiles?.nickname ||
+        row?.nickname ||
+        (row?.user_id === session.value?.user?.id ? (profile.value?.nickname ?? "Me") : "User");
+
     return {
-        id: row.id,
-        room_id: row.room_id,
-        user_id: row.user_id,
+        id: row?.id ?? `${row?.user_id ?? "u"}:${row?.created_at ?? Date.now()}`,
+        room_id: row?.room_id ?? row?.roomId ?? null,
+        user_id: row?.user_id ?? null,
         text: String(row?.text ?? ""),
-        created_at: row.created_at,
-        // fields the ChatPanel expects:
-        userName: name,
-        userInitial: String(name).trim()[0] ?? "🙂",
-        userColor: colorFromId(row.user_id),
-        time: fmtTime(row.created_at),
+        created_at: row?.created_at ?? null,
+
+        // ✅ fields שה-ChatPanel שלך מצפה להם
+        userName,
+        userInitial: initialFromName(userName),
+        userColor: colorFromUserId(row?.user_id),
+        time: formatTime(row?.created_at),
+        avatarUrl: row?.profiles?.avatar_url ?? null,
     };
 }
 
 export const useMessagesStore = defineStore("messages", {
     state: () => ({
-        byRoom: {}, // roomId -> uiMessages[]
+        byRoom: {}, // roomId -> normalized messages[]
         subs: {},   // roomId -> realtime channel
     }),
 
@@ -76,6 +63,8 @@ export const useMessagesStore = defineStore("messages", {
 
     actions: {
         async load(roomId, limit = 100) {
+            if (!roomId) return;
+
             const { data, error } = await supabase
                 .from("messages")
                 .select("id, room_id, user_id, text, created_at, profiles(nickname, avatar_url)")
@@ -85,11 +74,11 @@ export const useMessagesStore = defineStore("messages", {
 
             if (error) throw error;
 
-            this.byRoom[roomId] = (data ?? []).map(normalizeMsg);
-
+            this.byRoom[roomId] = (data ?? []).map(normalizeMessage);
         },
 
         subscribe(roomId) {
+            if (!roomId) return;
             if (this.subs[roomId]) return;
 
             const ch = supabase
@@ -97,29 +86,30 @@ export const useMessagesStore = defineStore("messages", {
                 .on(
                     "postgres_changes",
                     { event: "INSERT", schema: "public", table: "messages", filter: `room_id=eq.${roomId}` },
-                    (payload) => {
+                    async (payload) => {
+                        // payload.new מגיע בלי profiles -> נביא את הפרופיל בנפרד (או נשים fallback)
+                        const raw = payload?.new;
+                        if (!raw) return;
+
+                        // נסיון קל להביא nickname כדי שלא יהיה "User" תמיד
+                        let prof = null;
+                        try {
+                            const { data } = await supabase
+                                .from("profiles")
+                                .select("nickname, avatar_url")
+                                .eq("id", raw.user_id)
+                                .maybeSingle();
+                            prof = data ?? null;
+                        } catch (_) { }
+
+                        const normalized = normalizeMessage({ ...raw, profiles: prof });
+
                         if (!this.byRoom[roomId]) this.byRoom[roomId] = [];
-
-                        const raw = payload.new;
-
-                        // realtime מגיע בלי join של profiles → ננסה להשלים רק לעצמנו
-                        const myId = session.value?.user?.id;
-                        const enriched =
-                            raw.user_id === myId
-                                ? { ...raw, profiles: { nickname: profile.value?.nickname ?? "Me" } }
-                                : raw;
-
-                        const uiMsg = normalizeMsg(payload.new);
-
-                        const exists = this.byRoom[roomId].some((m) => m.id === uiMsg.id);
-                        if (!exists) this.byRoom[roomId].push(uiMsg);
+                        const exists = this.byRoom[roomId].some((m) => m.id === normalized.id);
+                        if (!exists) this.byRoom[roomId].push(normalized);
                     }
                 )
-                .subscribe((status) => {
-                    if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-                        console.warn("[messages] realtime status:", status, "roomId:", roomId);
-                    }
-                });
+                .subscribe();
 
             this.subs[roomId] = ch;
         },
@@ -134,6 +124,7 @@ export const useMessagesStore = defineStore("messages", {
         async send(roomId, text) {
             const userId = session.value?.user?.id;
             if (!userId) throw new Error("Not authenticated");
+            if (!roomId) throw new Error("Missing roomId");
 
             const clean = String(text ?? "").trim();
             if (!clean) return;
@@ -146,13 +137,13 @@ export const useMessagesStore = defineStore("messages", {
 
             if (error) throw error;
 
-            const uiMsg = normalizeRow(data);
+            const normalized = normalizeMessage(data);
 
             if (!this.byRoom[roomId]) this.byRoom[roomId] = [];
-            const exists = this.byRoom[roomId].some((m) => m.id === uiMsg.id);
-            if (!exists) this.byRoom[roomId].push(uiMsg);
+            const exists = this.byRoom[roomId].some((m) => m.id === normalized.id);
+            if (!exists) this.byRoom[roomId].push(normalized);
 
-            return uiMsg;
+            return normalized;
         },
     },
 });

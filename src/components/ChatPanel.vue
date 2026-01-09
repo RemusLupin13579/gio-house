@@ -97,6 +97,8 @@
 
             <form @submit.prevent="sendMessage" class="p-3 sm:p-4 flex gap-2">
                 <input :disabled="!roomReady"
+                       id="chat-message"
+                       name="chat-message"
                        v-model="newMessage"
                        type="text"
                        :placeholder="roomReady ? 'כתוב הודעה...' : 'טוען חדר…'"
@@ -241,27 +243,28 @@
 
     /* Watchers */
     watch(
-        roomUuid,
-        async (newUuid, oldUuid) => {
-            try {
-                const ok = await ensureRoomsLoaded();
-                if (!ok) return;
+        [() => house.currentHouseId, () => house.currentRoom],
+        async ([houseId, roomKey], [oldHouseId, oldRoomKey]) => {
+            if (!houseId || !roomKey) return;
 
-                if (oldUuid) {
-                    await messagesStore.unsubscribe(oldUuid);
-                }
+            await roomsStore.loadForHouse(houseId);
 
-                if (!newUuid) return;
+            const newUuid = roomsStore.getRoomUuidByKey(roomKey);
+            const oldUuid = oldRoomKey ? roomsStore.getRoomUuidByKey(oldRoomKey) : null;
 
-                await messagesStore.load(newUuid);
-                messagesStore.subscribe(newUuid);
-                scrollToBottom();
-            } catch (e) {
-                console.error("[ChatPanel] watch(roomUuid) failed:", e);
+            if (oldUuid && oldUuid !== newUuid) {
+                await messagesStore.unsubscribe(oldUuid);
             }
+
+            if (!newUuid) return;
+
+            await messagesStore.load(newUuid);
+            messagesStore.subscribe(newUuid);
+            scrollToBottom();
         },
         { immediate: true }
     );
+
 
 
     /* Actions */
