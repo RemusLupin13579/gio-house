@@ -1,3 +1,19 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* ✅ App-like sizing */
+html, body, #app {
+    height: 100%;
+}
+
+body {
+    margin: 0;
+    overflow: hidden; /* האפליקציה מנהלת גלילות פנימיות */
+    -webkit-text-size-adjust: 100%;
+}
+
+/* ✅ iOS: smooth scrolling where needed */
+* {
+    -webkit-tap-highlight-color: transparent;
+}

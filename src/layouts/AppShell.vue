@@ -1,21 +1,12 @@
 <template>
-    <!--
-      ✅ AppShell (Mobile-first, Discord-like)
-      - Mobile: layout הוא flex-col => TopBar למעלה, Main מתחת (לא נמעך)
-      - Desktop (md+): layout הוא flex-row => Rail + Panel + Main כמו דיסקורד
-    -->
-    <div class="h-screen w-screen bg-black text-white overflow-hidden flex flex-col md:flex-row">
+    <!-- ✅ AppShell (Mobile-first, Discord-like) -->
+    <div class="h-[100dvh] w-screen bg-black text-white overflow-hidden flex flex-col md:flex-row">
 
         <!-- ========================= -->
-        <!-- ✅ MOBILE TOP BAR (ONLY)  -->
+        <!-- ✅ MOBILE TOP BAR (HIDE IN ROOM) -->
         <!-- ========================= -->
-        <!--
-          Mobile בלבד: bar עליון קומפקטי
-          - כפתור ☰ פותח drawer
-          - כותרת בית במרכז
-          - כפתור ➕ לפתיחת modal
-        -->
-        <div class="md:hidden h-12 px-3 flex items-center justify-between border-b border-white/5">
+        <div v-if="showMobileTopBar"
+             class="md:hidden h-12 px-3 flex items-center justify-between border-b border-white/5">
             <button class="w-10 h-10 rounded-xl bg-white/5 border border-white/10 hover:border-green-500/50 transition active:scale-[0.98]"
                     @click="openMobileNav()"
                     title="Menu">
@@ -36,9 +27,7 @@
         <!-- ========================= -->
         <!-- ✅ DESKTOP ICON RAIL       -->
         <!-- ========================= -->
-        <!-- Desktop בלבד: נשאר קבוע. במובייל hidden כדי לא למעוך -->
         <aside class="hidden md:flex w-16 bg-[#0b0f12] border-r border-white/5 flex-col items-center py-3 gap-3">
-            <!-- Home -->
             <button class="w-11 h-11 rounded-2xl flex items-center justify-center border border-white/10 hover:border-green-500/50 transition"
                     :class="isHome ? 'bg-green-500/20 border-green-500/60' : 'bg-white/5'"
                     @click="goHome"
@@ -46,7 +35,6 @@
                 🏠
             </button>
 
-            <!-- Houses (+) -->
             <button class="w-11 h-11 rounded-2xl flex items-center justify-center border border-white/10 bg-white/5 hover:border-green-500/50 transition"
                     @click="openHouseModal = true"
                     title="Houses">
@@ -55,7 +43,6 @@
 
             <div class="flex-1"></div>
 
-            <!-- Profile -->
             <button class="w-11 h-11 rounded-2xl flex items-center justify-center border border-white/10 bg-white/5 hover:border-green-500/50 transition"
                     title="Profile">
                 👤
@@ -69,7 +56,6 @@
             <!-- House header -->
             <div class="h-20 px-4 flex items-center justify-between border-b border-white/5">
                 <div class="flex items-center gap-2">
-                    <!-- GIO Top Status Bar -->
                     <div class="gio-topbar">
                         <div class="gio-topbar__left">
                             <div class="gio-house-badge">
@@ -86,7 +72,6 @@
                         </div>
                     </div>
 
-                    <!-- House menu -->
                     <div class="relative inline-block shrink-0" data-house-menu="1">
                         <button class="w-9 h-9 rounded-xl bg-white/5 border border-white/10 hover:border-green-500/50 transition"
                                 @click.stop="houseMenuOpen = !houseMenuOpen"
@@ -135,7 +120,6 @@
 
             <div class="flex-1"></div>
 
-            <!-- Bottom profile bar -->
             <div class="h-14 px-3 border-t border-white/5 flex items-center justify-between">
                 <div class="flex items-center gap-2">
                     <div class="w-9 h-9 rounded-xl bg-white/5 border border-white/10 overflow-hidden flex items-center justify-center">
@@ -156,10 +140,7 @@
                                     <span class="gio-dots"><i></i><i></i><i></i></span>
                                 </span>
 
-                                <span v-else-if="presence.status === 'failed'">
-                                    Offline
-                                </span>
-
+                                <span v-else-if="presence.status === 'failed'">Offline</span>
                                 <span v-else>Idle</span>
 
                                 <button v-if="presence.status === 'failed'"
@@ -182,12 +163,8 @@
         <!-- ========================= -->
         <!-- ✅ MAIN CONTENT            -->
         <!-- ========================= -->
-        <!--
-          Mobile: main מקבל את כל השטח מתחת ל-topbar (כי wrapper הוא flex-col)
-          Desktop: main הוא העמודה השלישית (flex-row)
-        -->
-        <main class="flex-1 bg-black overflow-hidden">
-            <div class="gio-fade" :key="house.currentHouseId">
+        <main class="flex-1 bg-black overflow-hidden min-h-0">
+            <div class="gio-fade h-full min-h-0" :key="house.currentHouseId">
                 <RouterView />
             </div>
         </main>
@@ -195,19 +172,11 @@
         <!-- ========================= -->
         <!-- ✅ MOBILE DRAWER OVERLAY   -->
         <!-- ========================= -->
-        <!--
-          Drawer אלגנטי:
-          - תמיד נמצא ב-DOM בזמן פתוח (v-if), עם טרנזישן החלקה
-          - overlay עם blur
-          - swipe gesture על הדראור לסגירה (גרור שמאלה)
-        -->
         <div v-if="mobileNavOpen" class="md:hidden fixed inset-0 z-[9999]">
-            <!-- overlay -->
             <div class="absolute inset-0 bg-black/50 backdrop-blur-[2px] transition-opacity"
                  :style="{ opacity: overlayOpacity }"
                  @click="closeMobileNav()"></div>
 
-            <!-- drawer panel (LEFT) -->
             <div class="absolute left-0 top-0 h-full w-[86vw] max-w-[360px]
                bg-[#0b0f12]/95 border-r border-white/10 shadow-2xl
                will-change-transform"
@@ -216,8 +185,6 @@
                  @touchmove.passive="onDrawerTouchMove"
                  @touchend="onDrawerTouchEnd">
                 <div class="h-full flex flex-col">
-
-                    <!-- header -->
                     <div class="h-14 px-4 flex items-center justify-between border-b border-white/10">
                         <div class="font-bold text-green-300 truncate">{{ headerTitle }}</div>
                         <button class="w-9 h-9 rounded-xl bg-white/5 border border-white/10 hover:border-green-500/50 transition active:scale-[0.98]"
@@ -227,9 +194,7 @@
                         </button>
                     </div>
 
-                    <!-- body scroll -->
                     <div class="flex-1 overflow-auto">
-                        <!-- actions -->
                         <div class="p-3 border-b border-white/10">
                             <div class="text-xs text-white/40 mb-2">פעולות</div>
                             <div class="flex gap-2">
@@ -253,7 +218,6 @@
                             </div>
                         </div>
 
-                        <!-- rooms -->
                         <div class="p-3">
                             <div class="text-xs text-white/40 mb-2">חדרים</div>
 
@@ -277,7 +241,6 @@
                         </div>
                     </div>
 
-                    <!-- footer pinned -->
                     <div class="h-14 px-3 border-t border-white/10 flex items-center justify-between">
                         <div class="flex items-center gap-2">
                             <div class="w-9 h-9 rounded-xl bg-white/5 border border-white/10 overflow-hidden flex items-center justify-center">
@@ -301,17 +264,11 @@
             </div>
         </div>
 
-        <!-- house switcher modal -->
         <HouseSwitcherModal v-if="openHouseModal" @close="openHouseModal=false" />
     </div>
 </template>
 
 <script setup>
-    /**
-     * AppShell: Mobile-first
-     * 🔥 Fix #1: wrapper הוא flex-col במובייל, md:flex-row בדסקטופ => אין מעיכה
-     * 🔥 Fix #2: Drawer עם אנימציה + swipe לסגירה
-     */
     import HouseSwitcherModal from "../components/HouseSwitcherModal.vue";
     import { computed, ref, watch, onMounted, onBeforeUnmount, nextTick } from "vue";
     import { RouterView, useRoute, useRouter } from "vue-router";
@@ -322,7 +279,6 @@
     import { useRoomsStore } from "../stores/rooms";
 
     const roomsStore = useRoomsStore();
-
     const router = useRouter();
     const route = useRoute();
 
@@ -332,68 +288,63 @@
     const openHouseModal = ref(false);
     const houseMenuOpen = ref(false);
 
+    const showMobileTopBar = computed(() => route.name !== "room");
+
     /* =========================
        ✅ MOBILE DRAWER STATE
        ========================= */
     const mobileNavOpen = ref(false);
-
-    /**
-     * הדראור “מחליק” באמצעות translateX בפיקסלים.
-     * 0 => פתוח לגמרי
-     * שלילי => מחוץ למסך (שמאלה)
-     */
-    const drawerTranslateX = ref(-400); // יכנס לאנימציה לפי הרוחב האמיתי
+    const drawerTranslateX = ref(-400);
     const overlayOpacity = ref(0);
 
-    /** אנימציה חלקה ללא ספריות */
     function animateDrawer(toX, toOpacity, ms = 220) {
         const fromX = drawerTranslateX.value;
         const fromO = overlayOpacity.value;
         const start = performance.now();
-
         const easeOut = (t) => 1 - Math.pow(1 - t, 3);
 
         function frame(now) {
             const p = Math.min(1, (now - start) / ms);
             const e = easeOut(p);
-
             drawerTranslateX.value = fromX + (toX - fromX) * e;
             overlayOpacity.value = fromO + (toOpacity - fromO) * e;
-
             if (p < 1) requestAnimationFrame(frame);
         }
 
         requestAnimationFrame(frame);
     }
 
-    /** פותחים drawer */
     async function openMobileNav() {
         mobileNavOpen.value = true;
-
-        // מחכים שייכנס ל-DOM כדי שנוכל לחשב רוחב
         await nextTick();
 
-        const w = Math.min(window.innerWidth * 0.86, 360); // תואם ל-template
+        const w = Math.min(window.innerWidth * 0.86, 360);
         drawerTranslateX.value = -w;
         overlayOpacity.value = 0;
-
-        // animate in
         animateDrawer(0, 1, 220);
     }
 
-    /** סוגרים drawer */
     function closeMobileNav() {
         const w = Math.min(window.innerWidth * 0.86, 360);
         animateDrawer(-w, 0, 200);
-
-        // אחרי האנימציה – מורידים מה-DOM
         window.setTimeout(() => {
             mobileNavOpen.value = false;
         }, 210);
     }
 
+    /* ✅ Freeze background when drawer open */
+    watch(mobileNavOpen, (open) => {
+        if (open) {
+            document.documentElement.style.overflow = "hidden";
+            document.body.style.overflow = "hidden";
+        } else {
+            document.documentElement.style.overflow = "";
+            document.body.style.overflow = "";
+        }
+    });
+
     /* =========================
-       ✅ SWIPE GESTURE (CLOSE)
+       ✅ SWIPE (CLOSE)
        ========================= */
     const touchStartX = ref(0);
     const touchDragging = ref(false);
@@ -411,15 +362,11 @@
         const x = e.touches[0].clientX;
         const dx = x - touchStartX.value;
 
-        // כי drawer בצד שמאל:
-        // גרירה שמאלה => dx שלילי => סוגר
-        // גרירה ימינה => לא פותחים מעבר ל-0
         const w = Math.min(window.innerWidth * 0.86, 360);
         const next = Math.max(-w, Math.min(0, touchStartTranslate.value + dx));
 
         drawerTranslateX.value = next;
 
-        // opacity לפי פתיחה (0..1)
         const openness = 1 - Math.abs(next) / w;
         overlayOpacity.value = Math.max(0, Math.min(1, openness));
     }
@@ -429,22 +376,15 @@
         touchDragging.value = false;
 
         const w = Math.min(window.innerWidth * 0.86, 360);
-
-        // אם גררת יותר מ-35% לסגירה => נסגור
         const closedAmount = Math.abs(drawerTranslateX.value) / w;
-        if (closedAmount > 0.35) {
-            closeMobileNav();
-        } else {
-            // תחזיר לפתוח
-            animateDrawer(0, 1, 160);
-        }
+
+        if (closedAmount > 0.35) closeMobileNav();
+        else animateDrawer(0, 1, 160);
     }
 
     /* =========================
-       ✅ EXISTING LOGIC (UNCHANGED)
+       ✅ EXISTING LOGIC
        ========================= */
-
-    // קליק מחוץ לתפריט הבית יסגור אותו
     function onDocPointerDown(e) {
         if (!e.target?.closest?.("[data-house-menu]")) {
             houseMenuOpen.value = false;
@@ -456,26 +396,18 @@
 
         house.hydrateCurrentHouse?.();
 
-        // אם אין currentHouseId, דואגים לפחות לבית הציבורי
         if (!house.currentHouseId) {
             const { data, error } = await supabase.rpc("ensure_public_house_membership");
-            if (!error && data) {
-                house.setCurrentHouse?.(data);
-            }
+            if (!error && data) house.setCurrentHouse?.(data);
         }
 
-        // ✅ טוען את רשימת הבתים כדי ש-headerTitle יציג שם אמיתי
         await house.loadMyHouses();
 
-        // ✅ טוען rooms פעם אחת לבית הנוכחי (מספיק לצ׳אט)
         if (house.currentHouseId) {
             void roomsStore.loadForHouse(house.currentHouseId).catch((e) => {
                 console.error("roomsStore.loadForHouse failed in AppShell:", e);
             });
-        }
 
-        // ✅ חיבור presence לבית הנוכחי
-        if (house.currentHouseId) {
             void (async () => {
                 const ok = await presence.connect(house.currentHouseId);
                 if (ok) await presence.setRoom("living");
@@ -485,23 +417,19 @@
 
     onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocPointerDown));
 
-    // כשהבית מתחלף → מחברים presence מחדש לערוץ הנכון
     watch(
         () => house.currentHouseId,
         (houseId) => {
             if (!houseId) return;
 
-            // ✅ טען rooms לבית החדש
-            void roomsStore.loadForHouse(house.currentHouseId).catch(console.error);
+            void roomsStore.loadForHouse(houseId).catch(console.error);
 
-            // ✅ presence reconnect (כבר יש אצלך)
             void (async () => {
                 const ok = await presence.connect(houseId);
                 if (ok) await presence.setRoom("living");
             })();
         }
     );
-
 
     const isHome = computed(() => route.name === "home");
     function goHome() {
@@ -548,19 +476,18 @@
 
     async function enterRoom(roomKey) {
         await presence.setRoom(roomKey);
-
         house.enterRoom?.(roomKey);
         router.push({ name: "room", params: { id: roomKey } });
     }
 
-    /**
-     * אם retryPresence לא קיים אצלך בפועל, תבטל את הכפתור או תגדיר:
-     * const retryPresence = () => presence.connect(house.currentHouseId)
-     */
+    const retryPresence = () => {
+        if (!house.currentHouseId) return;
+        void presence.connect(house.currentHouseId);
+    };
 </script>
 
 <style>
-    /* השארתי את כל ה-CSS שלך בדיוק כמו שהיה (לא נגעתי) */
+    /* השארתי את כל ה-CSS שלך בדיוק כמו שהיה */
     :root {
         --gio-bg: #070a0d;
         --gio-panel: #0b0f12;

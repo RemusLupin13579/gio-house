@@ -1,8 +1,9 @@
 <template>
-    <div class="min-h-screen bg-black text-white flex flex-col overflow-hidden"
+    <div class="h-full min-h-0 bg-black text-white flex flex-col overflow-hidden"
          @touchstart="handleTouchStart"
          @touchmove="handleTouchMove"
          @touchend="handleTouchEnd">
+        <!-- Single back button (no duplicates) -->
         <div class="absolute top-3 left-3 z-30" :style="safeTopStyle">
             <button @click="goBack"
                     class="px-4 py-2 bg-black/50 backdrop-blur border border-white/10 rounded-xl
@@ -14,11 +15,14 @@
         </div>
 
         <div class="flex-1 min-h-0 grid" :style="gridStyle">
+            <!-- Scene -->
             <div class="min-h-0 overflow-hidden">
                 <RoomScene class="h-full w-full" />
             </div>
 
-            <div class="min-h-0 overflow-hidden border-t border-white/10 bg-black/40 backdrop-blur" :style="safeBottomStyle">
+            <!-- Chat wrapper (keyboard-aware padding) -->
+            <div class="min-h-0 overflow-hidden border-t border-white/10 bg-black/40 backdrop-blur"
+                 :style="chatWrapStyle">
                 <ChatPanel class="h-full" />
             </div>
         </div>
@@ -26,7 +30,7 @@
 </template>
 
 <script setup>
-    import { ref, onMounted, computed, provide } from "vue";
+    import { ref, onMounted, computed, provide, onBeforeUnmount, watch } from "vue";
     import { useRouter, useRoute } from "vue-router";
 
     import RoomScene from "../components/RoomScene.vue";
@@ -34,7 +38,6 @@
 
     import { useHouseStore } from "../stores/house";
     import { usePresenceStore } from "../stores/presence";
-    import { watch } from "vue";
 
     const presence = usePresenceStore();
     const router = useRouter();
@@ -43,23 +46,63 @@
 
     /* Safe-area */
     const safeTopStyle = computed(() => ({ paddingTop: "env(safe-area-inset-top)" }));
-    const safeBottomStyle = computed(() => ({ paddingBottom: "env(safe-area-inset-bottom)" }));
 
-    /* Split layout controller (for ChatPanel expand/collapse) */
+    /* ✅ Keyboard (iOS/Android) using VisualViewport */
+    const keyboardPx = ref(0);
+
+    function updateKeyboard() {
+        const vv = window.visualViewport;
+        if (!vv) {
+            keyboardPx.value = 0;
+            return;
+        }
+        const px = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop));
+        keyboardPx.value = px;
+    }
+
+    onMounted(() => {
+        updateKeyboard();
+        window.visualViewport?.addEventListener("resize", updateKeyboard);
+        window.visualViewport?.addEventListener("scroll", updateKeyboard);
+    });
+
+    onBeforeUnmount(() => {
+        window.visualViewport?.removeEventListener("resize", updateKeyboard);
+        window.visualViewport?.removeEventListener("scroll", updateKeyboard);
+    });
+
+    /* Split layout controller */
     const chatExpanded = ref(false);
 
     provide("chatLayout", {
         chatExpanded,
         toggle: () => (chatExpanded.value = !chatExpanded.value),
         collapse: () => (chatExpanded.value = false),
+
+        // Optional: ChatPanel can call these on focus/blur later
+        expandForTyping: () => (chatExpanded.value = true),
+        collapseAfterTyping: () => {
+            if (keyboardPx.value === 0) chatExpanded.value = false;
+        },
     });
 
-    const gridStyle = computed(() => ({
-        gridTemplateRows: chatExpanded.value ? "35fr 65fr" : "55fr 45fr",
+    /* ✅ Grid strategy:
+       - Normal: 55/45 or expanded 35/65
+       - Keyboard open: give chat more real estate */
+    const gridStyle = computed(() => {
+        if (keyboardPx.value > 0) {
+            return { gridTemplateRows: "20fr 80fr" };
+        }
+        return { gridTemplateRows: chatExpanded.value ? "35fr 65fr" : "55fr 45fr" };
+    });
+
+    /* ✅ Push chat above keyboard + safe-area */
+    const chatWrapStyle = computed(() => ({
+        paddingBottom: `calc(env(safe-area-inset-bottom) + ${keyboardPx.value}px)`,
     }));
 
     /**
-     * ✅ CRITICAL:
+     * CRITICAL:
      * RoomView לא עושה connect() בכלל.
      * AppShell אחראי לחיבור presence לבית הנוכחי.
      * כאן רק מעדכנים חדר.
@@ -103,9 +146,4 @@
         const diffY = touchEndY.value - touchStartY.value;
         if (Math.abs(diffX) > Math.abs(diffY) && diffX > 100) goBack();
     }
-
-    onMounted(async () => {
-        // direct entry support
-        await syncRoom(route.params.id);
-    });
 </script>

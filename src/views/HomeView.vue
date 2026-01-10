@@ -1,8 +1,6 @@
 <template>
-    <!-- HomeView container
-         ✅ Mobile-first: padding + max widths + no "crush" -->
-    <div class="min-h-screen bg-black text-white overflow-x-hidden">
-        <!-- Header (mobile-first sizes) -->
+    <div class="h-full min-h-0 bg-black text-white overflow-x-hidden overflow-y-auto">
+        <!-- Header -->
         <header class="pt-6 sm:pt-8 px-4 text-center">
             <h1 class="text-2xl sm:text-4xl font-extrabold text-green-400 mb-1 sm:mb-2 leading-tight">
                 🏠 {{ isPublicHouse ? "GIO HOUSE" : (currentHouse?.name || "My House") }}
@@ -14,23 +12,13 @@
 
         <!-- Clock area -->
         <section class="flex justify-center py-6 sm:py-8 px-3">
-            <!-- ✅ The clock scales with screen width
-                 - w-[min(92vw,24rem)] keeps it inside mobile viewport
-                 - aspect-square keeps perfect circle -->
-            <div ref="clockWrapEl"
-                 class="relative w-[min(92vw,24rem)] aspect-square">
-                <!-- Outer circle -->
+            <div ref="clockWrapEl" class="relative w-[min(92vw,24rem)] aspect-square">
                 <div class="absolute inset-0 rounded-full border-4 border-green-500 bg-gradient-to-br from-gray-900 to-black shadow-2xl shadow-green-500/30 overflow-hidden">
-                    <!-- Center dot -->
                     <div class="absolute inset-0 flex items-center justify-center">
                         <div class="rounded-full bg-gradient-to-br from-green-400 to-green-600 border-4 border-black shadow-xl"
-                             :style="{
-                width: `${centerDot}px`,
-                height: `${centerDot}px`,
-              }"></div>
+                             :style="{ width: `${centerDot}px`, height: `${centerDot}px` }"></div>
                     </div>
 
-                    <!-- Room markers around the clock -->
                     <div v-for="room in roomPositions"
                          :key="room.id"
                          class="absolute z-10"
@@ -42,29 +30,24 @@
                         </div>
                     </div>
 
-                    <!-- Glass effect -->
                     <div class="absolute inset-0 rounded-full pointer-events-none z-0"
                          style="background: radial-gradient(circle at 30% 20%, rgba(255,255,255,0.10), transparent 45%);"></div>
 
-                    <!-- Presence loading badge -->
                     <div v-if="isPresenceLoading"
                          class="absolute top-3 left-1/2 -translate-x-1/2 z-40 px-3 py-1 rounded-full text-xs font-bold bg-black/70 border border-green-500/40 backdrop-blur">
                         🟢 Syncing…
                     </div>
 
-                    <!-- Presence failed badge -->
                     <div v-else-if="isPresenceFailed"
                          class="absolute top-3 left-1/2 -translate-x-1/2 z-40 px-3 py-1 rounded-full text-xs font-bold bg-red-500/10 border border-red-500/40 text-red-200 backdrop-blur">
                         🔴 Realtime offline
                     </div>
 
-                    <!-- Skeleton avatars layer (shown only while connecting) -->
                     <div v-if="isPresenceLoading" class="absolute inset-0 z-15 pointer-events-none">
                         <div v-for="u in skeletonUsers"
                              :key="u.id"
                              class="absolute inset-0"
                              :style="{ transform: `rotate(${(ROOM_ANGLE[u.roomKey] ?? ROOM_ANGLE.afk) - 90}deg)` }">
-                            <!-- ghost hand -->
                             <div class="absolute left-1/2 top-1/2 origin-left animate-pulse"
                                  :style="{
                   width: `${baseHandLen}px`,
@@ -74,7 +57,6 @@
                   background: 'rgba(34,197,94,0.20)',
                 }"></div>
 
-                            <!-- ghost avatar at end -->
                             <div class="absolute left-1/2 top-1/2"
                                  :style="{ transform: `translate(-50%, -50%) translateX(${baseHandLen}px)` }">
                                 <div class="rounded-full border-4 animate-pulse border-green-500/30 bg-green-500/10 shadow-[0_0_20px_rgba(34,197,94,0.25)]"
@@ -83,12 +65,10 @@
                         </div>
                     </div>
 
-                    <!-- Clock hands (users) -->
                     <div v-for="user in clockUsers"
                          :key="user.id"
                          class="absolute inset-0 z-20 pointer-events-none"
                          :style="{ transform: `rotate(${getUserRotation(user)}deg)` }">
-                        <!-- hand -->
                         <div class="absolute left-1/2 top-1/2 origin-left"
                              :style="{
                 width: `${getHandLen(user)}px`,
@@ -100,12 +80,9 @@
                 opacity: user.status === 'offline' ? '0.25' : '0.85',
               }"></div>
 
-                        <!-- avatar at end -->
                         <div class="absolute left-1/2 top-1/2"
                              :style="{ transform: `translate(-50%, -50%) translateX(${getHandLen(user)}px)` }">
-                            <!-- keep avatar upright -->
                             <div :style="{ transform: `rotate(${-getUserRotation(user)}deg)` }">
-                                <!-- clickable hitbox -->
                                 <div data-avatar-btn="1"
                                      @click.stop="toggleTooltip(user.id)"
                                      class="relative z-30 cursor-pointer select-none pointer-events-auto group"
@@ -126,12 +103,10 @@
                                         </span>
                                     </div>
 
-                                    <!-- status dot -->
                                     <div class="absolute -bottom-1 -right-1 rounded-full border-2 border-black"
                                          :class="getStatusColor(user.status)"
                                          :style="{ width: `${statusDot}px`, height: `${statusDot}px` }"></div>
 
-                                    <!-- tooltip (tap on mobile, hover on desktop) -->
                                     <div class="absolute -bottom-9 left-1/2 -translate-x-1/2 bg-black/90 px-3 py-1 rounded-lg border whitespace-nowrap text-xs font-bold pointer-events-none opacity-0 transition-opacity"
                                          :class="activeTooltipUserId === user.id ? 'opacity-100' : 'group-hover:opacity-100'"
                                          :style="{ borderColor: safeColor(user.color), color: safeColor(user.color) }">
@@ -142,14 +117,12 @@
                         </div>
                     </div>
 
-                    <!-- inner glow -->
-                    <div class="absolute inset-0 rounded-full pointer-events-none z-0"
-                         style="box-shadow: inset 0 0 80px rgba(34,197,94,0.12);"></div>
+                    <div class="absolute inset-0 rounded-full pointer-events-none z-0" style="box-shadow: inset 0 0 80px rgba(34,197,94,0.12);"></div>
                 </div>
             </div>
         </section>
 
-        <!-- Rooms list (mobile-first) -->
+        <!-- Rooms list -->
         <section class="max-w-lg mx-auto px-4 pb-10">
             <h2 class="text-green-400 font-bold mb-4 text-lg sm:text-xl text-center">
                 🚪 חדרים זמינים
@@ -179,11 +152,9 @@
                         <div class="text-green-400 text-xl sm:text-2xl">←</div>
                     </div>
 
-                    <!-- Divider + avatars row -->
                     <div v-if="presence.usersInRoom(room[0]).length > 0" class="mt-3 pt-3">
                         <div class="h-px w-full bg-gradient-to-r from-transparent via-green-500/40 to-transparent mb-3"></div>
 
-                        <!-- ✅ mobile-first: wraps nicely, doesn’t overflow -->
                         <div class="flex flex-row flex-wrap gap-2 justify-end items-center">
                             <div v-for="u in presence.usersInRoom(room[0]).slice(0, 8)"
                                  :key="u.user_id"
@@ -207,36 +178,21 @@
 </template>
 
 <script setup>
-    /**
-     * HomeView (mobile-first)
-     * - הוספנו ResizeObserver כדי שהשעון יהיה דינמי ולא "96x96 קשיח"
-     * - כל החישובים של radius/hand lengths נשענים על clockSize
-     */
-
     import { computed, ref, onMounted, onBeforeUnmount, watch } from "vue";
-    import { useUIStore } from "../stores/ui";
     import { useHouseStore } from "../stores/house";
-    import { useUserStore } from "../stores/users";
     import { useRouter } from "vue-router";
     import { usePresenceStore } from "../stores/presence";
 
     const warmup = ref(true);
     const router = useRouter();
-    const ui = useUIStore();
     const house = useHouseStore();
-    const userStore = useUserStore();
     const presence = usePresenceStore();
 
-    /* Tooltip state */
     const activeTooltipUserId = ref(null);
 
-    /* Presence UI states */
-    const isPresenceLoading = computed(() =>
-        presence.status === "connecting" || warmup.value
-    );
+    const isPresenceLoading = computed(() => presence.status === "connecting" || warmup.value);
     const isPresenceFailed = computed(() => presence.status === "failed");
 
-    /* Skeleton users while connecting */
     const skeletonUsers = computed(() => [
         { id: "s1", roomKey: "living" },
         { id: "s2", roomKey: "gaming" },
@@ -246,7 +202,6 @@
         { id: "s6", roomKey: "afk" },
     ]);
 
-    /* Current house */
     const currentHouse = computed(() => {
         const list = house.myHouses ?? [];
         const id = house.currentHouseId;
@@ -254,7 +209,6 @@
     });
     const isPublicHouse = computed(() => !!currentHouse.value?.is_public);
 
-    /* Users displayed on the clock */
     const clockUsers = computed(() => {
         const list = Object.values(presence.users || {});
         return list
@@ -270,7 +224,6 @@
             .sort((a, b) => String(a.id).localeCompare(String(b.id)));
     });
 
-    /* Tooltip helpers */
     function toggleTooltip(userId) {
         activeTooltipUserId.value = activeTooltipUserId.value === userId ? null : userId;
     }
@@ -282,7 +235,6 @@
         if (!insideAvatar) closeTooltip();
     }
 
-    /* ✅ Dynamic sizing (the key for mobile-first clock) */
     const clockWrapEl = ref(null);
     const clockSize = ref(0);
     let ro = null;
@@ -300,12 +252,13 @@
             { immediate: true }
         );
 
-
         document.addEventListener("pointerdown", onDocPointerDown);
 
         updateClockSize();
         ro = new ResizeObserver(() => updateClockSize());
         if (clockWrapEl.value) ro.observe(clockWrapEl.value);
+
+        return () => clearTimeout(t);
     });
 
     onBeforeUnmount(() => {
@@ -314,10 +267,6 @@
         ro = null;
     });
 
-    /**
-     * ✅ Derived pixel values based on clockSize
-     * (These numbers feel "premium" on mobile and still look good on desktop.)
-     */
     const radius = computed(() => Math.max(110, Math.min(170, Math.floor(clockSize.value * 0.40))));
     const baseHandLen = computed(() => Math.max(100, Math.min(160, Math.floor(clockSize.value * 0.38))));
     const handThickness = computed(() => Math.max(3, Math.min(5, Math.floor(clockSize.value * 0.012))));
@@ -326,7 +275,6 @@
     const ghostAvatar = computed(() => Math.max(44, Math.min(54, Math.floor(clockSize.value * 0.14))));
     const statusDot = computed(() => Math.max(14, Math.min(20, Math.floor(clockSize.value * 0.05))));
 
-    /* Room layout */
     const roomPositions = computed(() => [
         { id: "living", name: "סלון", icon: "🛋️" },
         { id: "gaming", name: "גיימינג", icon: "🎮" },
@@ -349,7 +297,6 @@
         return typeof c === "string" && c.startsWith("#") ? c : "#22c55e";
     }
 
-    /* Hand length: base + small offset per user in same room */
     function getHandLen(user) {
         const sameRoom = clockUsers.value
             .filter((u) => u.roomKey === user.roomKey)
@@ -359,7 +306,6 @@
         return baseHandLen.value + idx * Math.max(6, Math.floor(clockSize.value * 0.02));
     }
 
-    /* Room label positions on circle */
     function getRoomLabelStyle(roomId) {
         const angleDeg = (ROOM_ANGLE[roomId] ?? ROOM_ANGLE.afk) - 90;
         const rad = (angleDeg * Math.PI) / 180;
@@ -374,7 +320,6 @@
         };
     }
 
-    /* User rotation with slight spread per room */
     function getUserRotation(user) {
         const base = (ROOM_ANGLE[user.roomKey] ?? ROOM_ANGLE.afk) - 90;
 
@@ -390,11 +335,8 @@
         return base + offset;
     }
 
-    /* Avatar sizing */
     function getAvatarSize(user) {
         const count = clockUsers.value.filter((u) => u.roomKey === user.roomKey).length;
-
-        // scale relative to clock size (keeps proportions on mobile)
         const base = Math.max(44, Math.min(60, Math.floor(clockSize.value * 0.15)));
 
         if (count >= 7) return Math.max(40, base - 12);
@@ -402,6 +344,7 @@
         if (count >= 3) return Math.max(48, base - 4);
         return base;
     }
+
     function getAvatarFontClass(user) {
         const s = getAvatarSize(user);
         if (s <= 44) return "text-xl";
@@ -409,7 +352,6 @@
         return "text-3xl";
     }
 
-    /* Status color */
     function getStatusColor(status) {
         return (
             {
@@ -420,7 +362,6 @@
         );
     }
 
-    /* Rooms list helpers */
     function getRoomIcon(roomId) {
         const icons = {
             living: "🛋️",
@@ -440,7 +381,6 @@
 </script>
 
 <style scoped>
-    /* keep your active scale helper */
     .active\:scale-98:active {
         transform: scale(0.98);
     }
