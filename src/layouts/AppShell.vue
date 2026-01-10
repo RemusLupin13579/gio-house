@@ -331,7 +331,7 @@
 
         // ✅ Make Android back close the drawer first
         if (!drawerHistoryPushed.value) {
-            history.pushState({ gioDrawer: true }, "");
+            history.pushState({ ...(history.state || {}), gioDrawer: true }, "");
             drawerHistoryPushed.value = true;
         }
     }
@@ -372,6 +372,7 @@
         }
         if (mobileNavOpen.value) closeMobileNav();
     }
+
 
     /* =========================
        ✅ FULL-SCREEN SWIPE OPEN (Discord-like)
@@ -606,15 +607,20 @@
     }
 
     onMounted(() => {
+        // ✅ Make current history entry a "BASE" so Back can close drawer without navigating away
+        try {
+            const st = history.state || {};
+            if (!st.gioBase) history.replaceState({ ...st, gioBase: true }, "");
+        } catch (_) { }
+
         window.addEventListener("popstate", onPopState);
         window.addEventListener("resize", onResize);
 
-        // ✅ Full screen swipe listeners:
-        // touchmove must be passive:false for preventDefault to work
         window.addEventListener("touchstart", onTouchStartGlobal, { capture: true, passive: true });
         window.addEventListener("touchmove", onTouchMoveGlobal, { capture: true, passive: false });
         window.addEventListener("touchend", onTouchEndGlobal, { capture: true, passive: true });
     });
+
 
     onBeforeUnmount(() => {
         window.removeEventListener("popstate", onPopState);
