@@ -243,6 +243,13 @@
             </div>
         </div>
 
+        <!-- ✅ EDGE SWIPE ZONE (OPEN DRAWER) -->
+        <div v-if="!mobileNavOpen"
+             class="md:hidden fixed left-0 top-0 bottom-0 w-[22px] z-[9998] pointer-events-auto"
+             @touchstart.passive="edgeZoneStart"
+             @touchmove.passive="edgeZoneMove"
+             @touchend="edgeZoneEnd"></div>
+
         <HouseSwitcherModal v-if="openHouseModal" @close="openHouseModal=false" />
     </div>
 </template>
@@ -359,45 +366,42 @@
         else animateDrawer(0, 1, 160);
     }
 
-    /* ✅ EDGE SWIPE OPEN – Pointer Events (reliable) + fallback touch */
-    const EDGE_PX = 18;
-    const OPEN_DX = 60;
-    const MAX_DY = 80;
-
-    const edgeTracking = ref(false);
+    /* =========================
+   ✅ EDGE SWIPE (OPEN) — ZONE
+   ========================= */
+    const edgeActive = ref(false);
     const edgeStartX = ref(0);
     const edgeStartY = ref(0);
     const edgeLastX = ref(0);
     const edgeLastY = ref(0);
 
-    function isMobile() {
-        return window.matchMedia?.("(max-width: 767px)")?.matches ?? (window.innerWidth < 768);
-    }
-    function canOpenFromEdge(x) {
-        return x <= EDGE_PX;
-    }
+    const OPEN_DX = 70;  // כמה צריך לגרור ימינה כדי לפתוח
+    const MAX_DY = 90;  // אם זה יותר מדי אנכי — זו גלילה
 
-    function edgeStart(x, y) {
-        if (!isMobile()) return;
+    function edgeZoneStart(e) {
         if (mobileNavOpen.value) return;
+        const t = e.touches?.[0];
+        if (!t) return;
 
-        edgeStartX.value = x;
-        edgeStartY.value = y;
-        edgeLastX.value = x;
-        edgeLastY.value = y;
-
-        edgeTracking.value = canOpenFromEdge(x);
+        edgeActive.value = true;
+        edgeStartX.value = t.clientX;
+        edgeStartY.value = t.clientY;
+        edgeLastX.value = t.clientX;
+        edgeLastY.value = t.clientY;
     }
 
-    function edgeMove(x, y) {
-        if (!edgeTracking.value) return;
-        edgeLastX.value = x;
-        edgeLastY.value = y;
+    function edgeZoneMove(e) {
+        if (!edgeActive.value) return;
+        const t = e.touches?.[0];
+        if (!t) return;
+
+        edgeLastX.value = t.clientX;
+        edgeLastY.value = t.clientY;
     }
 
-    function edgeEnd() {
-        if (!edgeTracking.value) return;
-        edgeTracking.value = false;
+    function edgeZoneEnd() {
+        if (!edgeActive.value) return;
+        edgeActive.value = false;
 
         const dx = edgeLastX.value - edgeStartX.value;
         const dy = edgeLastY.value - edgeStartY.value;
@@ -407,6 +411,7 @@
 
         openMobileNav();
     }
+
 
     /* Pointer listeners (capture: true so it won’t get swallowed by inner components) */
     function onPointerDown(e) {

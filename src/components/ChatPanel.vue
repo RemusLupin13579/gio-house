@@ -28,6 +28,7 @@
 
                 <button type="button"
                         @pointerdown.stop.prevent="onExpandPointerDown"
+@                       click="toggleChatSize"
                         @click="toggleChatSize"
                         class="w-10 h-10 rounded-xl bg-white/5 border border-white/10 hover:border-green-500/40 transition
                  active:scale-[0.98] flex items-center justify-center"
@@ -121,7 +122,7 @@
 </template>
 
 <script setup>
-    import { ref, computed, nextTick, watch, onUnmounted, inject, onErrorCaptured } from "vue";
+    import { ref, computed, nextTick, watch, onMounted, onUnmounted, inject, onErrorCaptured } from "vue";
     import { useHouseStore } from "../stores/house";
     import { useUserStore } from "../stores/users";
     import { useMessagesStore } from "../stores/messages";
@@ -155,6 +156,29 @@
             afk: "😴",
         };
         return icons[roomId] || "🚪";
+    }
+
+    function onExpandPointerDown() {
+        // אם המקלדת סגורה אבל ה-input עדיין בפוקוס (מצב נפוץ במובייל) -> blur כדי לא "להעיר" מקלדת
+        if (!keyboardOpen.value && document.activeElement === inputEl.value) {
+            inputEl.value?.blur?.();
+        }
+    }
+
+    async function toggleChatSize() {
+        const wasTyping = document.activeElement === inputEl.value;
+        const kbWasOpen = keyboardOpen.value;
+
+        // toggle layout
+        chatLayout?.toggle?.();
+
+        await nextTick();
+
+        // אם המקלדת הייתה פתוחה והמשתמש היה באמצע הקלדה -> נשמור פוקוס כדי להמשיך להקליד
+        if (kbWasOpen && wasTyping) {
+            inputEl.value?.focus?.({ preventScroll: true });
+        }
+        // אחרת: לא נוגעים בפוקוס בכלל (כדי לא לפתוח מקלדת סתם)
     }
 
     /* UUID */
@@ -191,6 +215,16 @@
         // שומר UX: לא לעשות scroll-jump מוזר אחרי שינוי grid
         await nextTick();
     }
+
+    const keyboardPx = ref(0);
+
+    function updateKeyboard() {
+        const vv = window.visualViewport;
+        if (!vv) { keyboardPx.value = 0; return; }
+        const px = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop));
+        keyboardPx.value = px;
+    }
+    const keyboardOpen = computed(() => keyboardPx.value > 0);
 
     /* Watchers */
     const chatLoading = ref(false);
@@ -279,10 +313,15 @@
         });
     }
 
-    onUnmounted(async () => {
-        if (activeUuid) {
-            try { await messagesStore.unsubscribe(activeUuid); } catch (e) { console.warn("[ChatPanel] unsubscribe onUnmount failed:", e); }
-        }
+    onMounted(() => {
+        updateKeyboard();
+        window.visualViewport?.addEventListener("resize", updateKeyboard);
+        window.visualViewport?.addEventListener("scroll", updateKeyboard);
+    });
+
+    onUnmounted(() => {
+        window.visualViewport?.removeEventListener("resize", updateKeyboard);
+        window.visualViewport?.removeEventListener("scroll", updateKeyboard);
     });
 
     onErrorCaptured((err, instance, info) => {
