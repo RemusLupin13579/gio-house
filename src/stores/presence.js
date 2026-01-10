@@ -9,7 +9,7 @@ export const usePresenceStore = defineStore("presence", {
         users: {},
         ready: false,
 
-        // ✅ anti-race + retry
+        // anti-race + retry
         connectSeq: 0,
         retryTimer: null,
         status: "idle", // "idle" | "connecting" | "ready" | "failed"
@@ -39,9 +39,14 @@ export const usePresenceStore = defineStore("presence", {
         async _hardDisconnect() {
             this._clearRetry();
 
-            if (!this.channel) return;
+            if (!this.channel) {
+                this.channel = null;
+                this.channelHouseId = null;
+                this.users = {};
+                this.ready = false;
+                return;
+            }
 
-            // unsubscribe לפני removeChannel מפחית TIMEOUT במעברים מהירים
             try {
                 await this.channel.unsubscribe();
             } catch (_) { }
@@ -64,47 +69,72 @@ export const usePresenceStore = defineStore("presence", {
         async connect(houseId) {
             const userId = session.value?.user?.id;
             const token = session.value?.access_token;
-            if (!userId || !houseId) return false;
+
+            console.log("[presence.connect] start", { houseId, userId, hasToken: !!token });
+
+            if (!userId || !houseId) {
+                this.status = "failed";
+                this.ready = false;
+                return false;
+            }
 
             this.connectSeq += 1;
             const seq = this.connectSeq;
 
-            // אם כבר מחובר לבית הזה
-            if (this.channel && this.channelHouseId === houseId) return true;
+            // already connected to this house
+            if (this.channel && this.channelHouseId === houseId) {
+                this.status = "ready";
+                this.ready = true;
+                return true;
+            }
 
-            // ניתוק נקי מכל דבר קודם
+            this.status = "connecting";
+            this.ready = false;
+
+            // clean disconnect
             await this._hardDisconnect();
-
-            // אם התחיל connect חדש בינתיים
             if (seq !== this.connectSeq) return false;
 
-            // חשוב: עדכון auth לרילטיים
+            // realtime auth
             try {
                 if (token && supabase.realtime?.setAuth) supabase.realtime.setAuth(token);
-            } catch (_) { }
+            } catch (e) {
+                console.warn("[presence.connect] realtime setAuth failed", e);
+            }
 
             const channelName = `presence:house:${houseId}`;
 
-            const attemptOnce = async () => {
-                const ch = supabase.channel(channelName, { config: { presence: { key: userId } } });
+            const buildPayload = () => ({
+                user_id: userId,
+                house_id: houseId,
+                nickname: profile.value?.nickname ?? "User",
+                avatar_url: profile.value?.avatar_url ?? null,
+                room_name: "living",
+                ts: Date.now(),
+            });
 
-                ch.on("presence", { event: "sync" }, () => {
-                    const state = ch.presenceState();
-                    const next = {};
-                    for (const [k, arr] of Object.entries(state)) next[k] = arr[arr.length - 1];
-                    this.users = next;
-                    this.ready = true;
-                    this.status = "ready";
+            const attemptOnce = async () => {
+                const ch = supabase.channel(channelName, {
+                    config: { presence: { key: userId } },
                 });
 
-                const payload = {
-                    user_id: userId,
-                    house_id: houseId,
-                    nickname: profile.value?.nickname ?? "User",
-                    avatar_url: profile.value?.avatar_url ?? null,
-                    room_name: "living",
-                    ts: Date.now(),
-                };
+                console.log("[presence.connect] channel created", { houseId, topic: ch?.topic });
+
+                ch.on("presence", { event: "sync" }, () => {
+                    try {
+                        const state = ch.presenceState();
+                        const next = {};
+                        for (const [k, arr] of Object.entries(state)) {
+                            next[k] = arr[arr.length - 1];
+                        }
+                        this.users = next;
+                        this.ready = true;
+                        this.status = "ready";
+                        // console.log("[presence] sync users", Object.keys(next).length);
+                    } catch (e) {
+                        console.warn("[presence] sync handler failed", e);
+                    }
+                });
 
                 const ok = await new Promise((resolve) => {
                     let done = false;
@@ -114,71 +144,99 @@ export const usePresenceStore = defineStore("presence", {
                         resolve(v);
                     };
 
-                    const t = setTimeout(() => finish(false), 9000);
+                    const timer = setTimeout(() => finish(false), 9000);
 
                     ch.subscribe(async (status) => {
+                        console.log("[presence.connect] status", status);
+
                         if (status === "SUBSCRIBED") {
-                            clearTimeout(t);
-                            try { await ch.track(payload); } catch (_) { }
+                            clearTimeout(timer);
+
+                            try {
+                                await ch.track(buildPayload());
+                            } catch (e) {
+                                // track can fail but channel subscribed – we still consider ok
+                                console.warn("[presence.connect] track failed", e);
+                            }
+
                             finish(true);
+                            return;
                         }
+
                         if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-                            clearTimeout(t);
+                            clearTimeout(timer);
                             finish(false);
+                            return;
                         }
                     });
                 });
 
-                // אם בזמן הזה התחלף connect
+                // if another connect started – cleanup
                 if (seq !== this.connectSeq) {
-                    try { await supabase.removeChannel(ch); } catch (_) { }
+                    try {
+                        await ch.unsubscribe();
+                    } catch (_) { }
+                    try {
+                        await supabase.removeChannel(ch);
+                    } catch (_) { }
                     return { ok: false, ch: null };
                 }
 
                 if (!ok) {
-                    // ⚠️ לא להשאיר ערוץ כושל חי
-                    try { await ch.unsubscribe(); } catch (_) { }
-                    try { await supabase.removeChannel(ch); } catch (_) { }
+                    try {
+                        await ch.unsubscribe();
+                    } catch (_) { }
+                    try {
+                        await supabase.removeChannel(ch);
+                    } catch (_) { }
                     return { ok: false, ch: null };
                 }
 
-                // commit channel
+                // commit
                 this.channel = ch;
                 this.channelHouseId = houseId;
 
-                // optimistic self
+                // optimistic self (so UI never shows 0)
+                const payload = buildPayload();
                 this.users = { ...(this.users || {}), [userId]: payload };
+
                 this.ready = true;
                 this.status = "ready";
-
                 return { ok: true, ch };
             };
 
-            this.status = "connecting";
-            this.ready = false;
-
-            // ✅ Retry אמיתי עם backoff (4 נסיונות)
+            // retry with backoff
             const delays = [0, 500, 1200, 2500];
             for (let i = 0; i < delays.length; i++) {
                 if (seq !== this.connectSeq) return false;
                 if (delays[i]) await new Promise((r) => setTimeout(r, delays[i]));
 
-                const res = await attemptOnce();
-                if (res.ok) return true;
+                try {
+                    const res = await attemptOnce();
+                    if (res.ok) return true;
+                } catch (e) {
+                    console.warn("[presence.connect] attempt crashed", e);
+                }
             }
 
             this.status = "failed";
             this.ready = false;
-            console.warn("Presence subscribe failed after retries", { houseId, channelName });
+            this.users = {};
+            console.warn("[presence.connect] failed after retries", { houseId, channelName });
             return false;
         },
-
 
         async setRoom(roomName) {
             if (!this.channel) return false;
 
             const userId = session.value?.user?.id;
             if (!userId) return false;
+
+            console.log("[presence.setRoom]", {
+                roomName,
+                houseId: this.channelHouseId,
+                status: this.status,
+            });
 
             try {
                 await this.channel.track({
@@ -191,7 +249,7 @@ export const usePresenceStore = defineStore("presence", {
                 });
                 return true;
             } catch (e) {
-                console.warn("Presence setRoom failed:", e);
+                console.warn("[presence.setRoom] failed", e);
                 return false;
             }
         },

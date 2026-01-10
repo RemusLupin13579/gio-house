@@ -1,9 +1,6 @@
 <template>
-    <!-- ✅ AppShell (Mobile-first, Discord-like) -->
     <div class="h-[100dvh] w-screen bg-black text-white overflow-hidden flex flex-col md:flex-row">
-        <!-- ========================= -->
-        <!-- ✅ MOBILE TOP BAR (HIDE IN ROOM) -->
-        <!-- ========================= -->
+        <!-- MOBILE TOP BAR (HIDE IN ROOM) -->
         <div v-if="showMobileTopBar"
              class="md:hidden h-12 px-3 flex items-center justify-between border-b border-white/5">
             <button class="w-10 h-10 rounded-xl bg-white/5 border border-white/10 hover:border-green-500/50 transition active:scale-[0.98]"
@@ -23,9 +20,7 @@
             </button>
         </div>
 
-        <!-- ========================= -->
-        <!-- ✅ DESKTOP ICON RAIL       -->
-        <!-- ========================= -->
+        <!-- DESKTOP ICON RAIL -->
         <aside class="hidden md:flex w-16 bg-[#0b0f12] border-r border-white/5 flex-col items-center py-3 gap-3">
             <button class="w-11 h-11 rounded-2xl flex items-center justify-center border border-white/10 hover:border-green-500/50 transition"
                     :class="isHome ? 'bg-green-500/20 border-green-500/60' : 'bg-white/5'"
@@ -48,23 +43,20 @@
             </button>
         </aside>
 
-        <!-- ========================= -->
-        <!-- ✅ DESKTOP LEFT PANEL      -->
-        <!-- ========================= -->
+        <!-- DESKTOP LEFT PANEL -->
         <section class="hidden md:flex w-72 bg-[#0c1116] border-r border-white/5 flex-col">
-            <!-- House header -->
             <div class="h-20 px-4 flex items-center justify-between border-b border-white/5">
                 <div class="flex items-center gap-2">
                     <div class="gio-topbar">
                         <div class="gio-topbar__left">
                             <div class="gio-house-badge">
-                                <span class="gio-house-emoji">{{ isPublicHouse ? '🌍' : '🏠' }}</span>
+                                <span class="gio-house-emoji">{{ isPublicHouse ? "🌍" : "🏠" }}</span>
                                 <div class="gio-house-text">
                                     <div class="gio-house-title">
-                                        {{ isPublicHouse ? 'GIO HOUSE' : (currentHouse?.name || 'My House') }}
+                                        {{ isPublicHouse ? "GIO HOUSE" : (currentHouse?.name || "My House") }}
                                     </div>
                                     <div class="gio-house-subtitle">
-                                        {{ isPublicHouse ? 'איפה כולם עכשיו?' : 'מי בבית עכשיו?' }}
+                                        {{ isPublicHouse ? "איפה כולם עכשיו?" : "מי בבית עכשיו?" }}
                                     </div>
                                 </div>
                             </div>
@@ -94,7 +86,6 @@
                 </div>
             </div>
 
-            <!-- Rooms list -->
             <div class="p-3">
                 <div class="text-xs text-white/40 mb-2">חדרים</div>
 
@@ -134,16 +125,12 @@
                                 <span class="gio-dot" />
                                 <span v-if="presence.status === 'ready'">Online</span>
                                 <span v-else-if="presence.status === 'connecting'" class="gio-sync">
-                                    Syncing
-                                    <span class="gio-dots"><i></i><i></i><i></i></span>
+                                    Syncing <span class="gio-dots"><i></i><i></i><i></i></span>
                                 </span>
                                 <span v-else-if="presence.status === 'failed'">Offline</span>
                                 <span v-else>Idle</span>
 
-                                <button v-if="presence.status === 'failed'"
-                                        class="gio-retry-btn"
-                                        @click="retryPresence"
-                                        title="Retry">
+                                <button v-if="presence.status === 'failed'" class="gio-retry-btn" @click="retryPresence" title="Retry">
                                     Retry
                                 </button>
                             </div>
@@ -157,18 +144,14 @@
             </div>
         </section>
 
-        <!-- ========================= -->
-        <!-- ✅ MAIN CONTENT            -->
-        <!-- ========================= -->
+        <!-- MAIN -->
         <main class="flex-1 bg-black overflow-hidden min-h-0">
             <div class="gio-fade h-full min-h-0" :key="house.currentHouseId">
                 <RouterView />
             </div>
         </main>
 
-        <!-- ========================= -->
-        <!-- ✅ MOBILE DRAWER OVERLAY   -->
-        <!-- ========================= -->
+        <!-- MOBILE DRAWER OVERLAY -->
         <div v-if="mobileNavOpen" class="md:hidden fixed inset-0 z-[9999]">
             <div class="absolute inset-0 bg-black/50 backdrop-blur-[2px] transition-opacity"
                  :style="{ opacity: overlayOpacity }"
@@ -256,7 +239,6 @@
                             ⚙️
                         </button>
                     </div>
-
                 </div>
             </div>
         </div>
@@ -287,9 +269,7 @@
 
     const showMobileTopBar = computed(() => route.name !== "room");
 
-    /* =========================
-       ✅ MOBILE DRAWER STATE
-       ========================= */
+    /* MOBILE DRAWER */
     const mobileNavOpen = ref(false);
     const drawerTranslateX = ref(-400);
     const overlayOpacity = ref(0);
@@ -312,6 +292,7 @@
 
     async function openMobileNav() {
         if (mobileNavOpen.value) return;
+
         mobileNavOpen.value = true;
         await nextTick();
 
@@ -324,14 +305,16 @@
 
     function closeMobileNav() {
         if (!mobileNavOpen.value) return;
+
         const w = Math.min(window.innerWidth * 0.86, 360);
         animateDrawer(-w, 0, 200);
+
         window.setTimeout(() => {
             mobileNavOpen.value = false;
         }, 210);
     }
 
-    /* ✅ Freeze background when drawer open */
+    /* Freeze background when drawer open */
     watch(mobileNavOpen, (open) => {
         if (open) {
             document.documentElement.style.overflow = "hidden";
@@ -342,9 +325,7 @@
         }
     });
 
-    /* =========================
-       ✅ SWIPE GESTURE (CLOSE)
-       ========================= */
+    /* Swipe close (drawer panel) */
     const touchStartX = ref(0);
     const touchDragging = ref(false);
     const touchStartTranslate = ref(0);
@@ -354,10 +335,8 @@
         touchStartX.value = e.touches[0].clientX;
         touchStartTranslate.value = drawerTranslateX.value;
     }
-
     function onDrawerTouchMove(e) {
         if (!touchDragging.value) return;
-
         const x = e.touches[0].clientX;
         const dx = x - touchStartX.value;
 
@@ -369,7 +348,6 @@
         const openness = 1 - Math.abs(next) / w;
         overlayOpacity.value = Math.max(0, Math.min(1, openness));
     }
-
     function onDrawerTouchEnd() {
         if (!touchDragging.value) return;
         touchDragging.value = false;
@@ -381,74 +359,134 @@
         else animateDrawer(0, 1, 160);
     }
 
-    /* =========================
-   ✅ EDGE SWIPE (OPEN) — GLOBAL
-   ========================= */
+    /* ✅ EDGE SWIPE OPEN – Pointer Events (reliable) + fallback touch */
+    const EDGE_PX = 18;
+    const OPEN_DX = 60;
+    const MAX_DY = 80;
+
     const edgeTracking = ref(false);
     const edgeStartX = ref(0);
     const edgeStartY = ref(0);
     const edgeLastX = ref(0);
     const edgeLastY = ref(0);
 
-    const EDGE_PX = 18;   // אזור “אחיזה” בקצה
-    const OPEN_DX = 60;   // כמה לגרור ימינה כדי לפתוח
-    const MAX_DY = 80;    // אם זה יותר מדי אנכי -> זה גלילה, לא swipe
-
     function isMobile() {
         return window.matchMedia?.("(max-width: 767px)")?.matches ?? (window.innerWidth < 768);
     }
+    function canOpenFromEdge(x) {
+        return x <= EDGE_PX;
+    }
 
-    function edgeTouchStart(e) {
+    function edgeStart(x, y) {
         if (!isMobile()) return;
         if (mobileNavOpen.value) return;
-        if (!e.touches || !e.touches[0]) return;
 
-        const t = e.touches[0];
-        edgeStartX.value = t.clientX;
-        edgeStartY.value = t.clientY;
-        edgeLastX.value = t.clientX;
-        edgeLastY.value = t.clientY;
+        edgeStartX.value = x;
+        edgeStartY.value = y;
+        edgeLastX.value = x;
+        edgeLastY.value = y;
 
-        // רק מהקצה השמאלי
-        edgeTracking.value = edgeStartX.value <= EDGE_PX;
+        edgeTracking.value = canOpenFromEdge(x);
     }
 
-    function edgeTouchMove(e) {
+    function edgeMove(x, y) {
         if (!edgeTracking.value) return;
-        if (!e.touches || !e.touches[0]) return;
-
-        const t = e.touches[0];
-        edgeLastX.value = t.clientX;
-        edgeLastY.value = t.clientY;
+        edgeLastX.value = x;
+        edgeLastY.value = y;
     }
 
-    function edgeTouchEnd() {
+    function edgeEnd() {
         if (!edgeTracking.value) return;
         edgeTracking.value = false;
 
         const dx = edgeLastX.value - edgeStartX.value;
         const dy = edgeLastY.value - edgeStartY.value;
 
-        if (Math.abs(dy) > MAX_DY) return;   // זה גלילה
-        if (dx < OPEN_DX) return;            // לא מספיק ימינה
+        if (Math.abs(dy) > MAX_DY) return;
+        if (dx < OPEN_DX) return;
 
         openMobileNav();
     }
 
-    onMounted(() => {
-        // ✅ listeners גלובליים (אמין)
-        window.addEventListener("touchstart", edgeTouchStart, { passive: true });
-        window.addEventListener("touchmove", edgeTouchMove, { passive: true });
-        window.addEventListener("touchend", edgeTouchEnd, { passive: true });
+    /* Pointer listeners (capture: true so it won’t get swallowed by inner components) */
+    function onPointerDown(e) {
+        if (e.pointerType !== "touch") return;
+        edgeStart(e.clientX, e.clientY);
+    }
+    function onPointerMove(e) {
+        if (e.pointerType !== "touch") return;
+        edgeMove(e.clientX, e.clientY);
+    }
+    function onPointerUp(e) {
+        if (e.pointerType !== "touch") return;
+        edgeEnd();
+    }
+    function onPointerCancel(e) {
+        if (e.pointerType !== "touch") return;
+        edgeTracking.value = false;
+    }
+
+    /* Fallback touch listeners */
+    function onTouchStart(e) {
+        const t = e.touches?.[0];
+        if (!t) return;
+        edgeStart(t.clientX, t.clientY);
+    }
+    function onTouchMove(e) {
+        const t = e.touches?.[0];
+        if (!t) return;
+        edgeMove(t.clientX, t.clientY);
+    }
+    function onTouchEnd() {
+        edgeEnd();
+    }
+
+    onMounted(async () => {
+        // global edge open
+        window.addEventListener("pointerdown", onPointerDown, { passive: true, capture: true });
+        window.addEventListener("pointermove", onPointerMove, { passive: true, capture: true });
+        window.addEventListener("pointerup", onPointerUp, { passive: true, capture: true });
+        window.addEventListener("pointercancel", onPointerCancel, { passive: true, capture: true });
+
+        window.addEventListener("touchstart", onTouchStart, { passive: true, capture: true });
+        window.addEventListener("touchmove", onTouchMove, { passive: true, capture: true });
+        window.addEventListener("touchend", onTouchEnd, { passive: true, capture: true });
+
+        // hydrate house (if you use it here)
+        house.hydrateCurrentHouse?.();
+
+        // ensure public house membership if needed
+        if (!house.currentHouseId) {
+            const { data, error } = await supabase.rpc("ensure_public_house_membership");
+            if (!error && data) {
+                house.setCurrentHouse?.(data);
+            }
+        }
+
+        await house.loadMyHouses();
+
+        if (house.currentHouseId) {
+            void roomsStore.loadForHouse(house.currentHouseId).catch((e) => {
+                console.error("roomsStore.loadForHouse failed in AppShell:", e);
+            });
+
+            void (async () => {
+                const ok = await presence.connect(house.currentHouseId);
+                if (ok) await presence.setRoom("living");
+            })();
+        }
     });
 
     onBeforeUnmount(() => {
-        window.removeEventListener("touchstart", edgeTouchStart);
-        window.removeEventListener("touchmove", edgeTouchMove);
-        window.removeEventListener("touchend", edgeTouchEnd);
-    });
+        window.removeEventListener("pointerdown", onPointerDown, { capture: true });
+        window.removeEventListener("pointermove", onPointerMove, { capture: true });
+        window.removeEventListener("pointerup", onPointerUp, { capture: true });
+        window.removeEventListener("pointercancel", onPointerCancel, { capture: true });
 
-    onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocPointerDown));
+        window.removeEventListener("touchstart", onTouchStart, { capture: true });
+        window.removeEventListener("touchmove", onTouchMove, { capture: true });
+        window.removeEventListener("touchend", onTouchEnd, { capture: true });
+    });
 
     watch(
         () => house.currentHouseId,
@@ -520,7 +558,7 @@
 </script>
 
 <style>
-    /* נשאר כמו שהיה אצלך */
+    /* השארתי את ה-CSS שלך כמו שהיה */
     :root {
         --gio-bg: #070a0d;
         --gio-panel: #0b0f12;
@@ -659,11 +697,11 @@
 
     @keyframes gioDots {
         0%,100% {
-            transform: translateY(0);
+            transform: translateY(0)
         }
 
         50% {
-            transform: translateY(-4px);
+            transform: translateY(-4px)
         }
     }
 
@@ -701,11 +739,11 @@
 
     @keyframes gioShimmer {
         0% {
-            background-position: 0% 0;
+            background-position: 0% 0
         }
 
         100% {
-            background-position: 200% 0;
+            background-position: 200% 0
         }
     }
 
@@ -716,12 +754,12 @@
     @keyframes gioFade {
         from {
             opacity: 0;
-            transform: translateY(4px);
+            transform: translateY(4px)
         }
 
         to {
             opacity: 1;
-            transform: translateY(0);
+            transform: translateY(0)
         }
     }
 </style>

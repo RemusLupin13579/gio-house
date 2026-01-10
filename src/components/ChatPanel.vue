@@ -27,14 +27,13 @@
                 </div>
 
                 <button type="button"
-                        @pointerdown.stop.prevent
+                        @pointerdown.stop.prevent="onExpandPointerDown"
                         @click="toggleChatSize"
                         class="w-10 h-10 rounded-xl bg-white/5 border border-white/10 hover:border-green-500/40 transition
-                            active:scale-[0.98] flex items-center justify-center"
+                 active:scale-[0.98] flex items-center justify-center"
                         :title="chatExpanded ? 'הקטן צ׳אט' : 'הגדל צ׳אט'">
                     <span class="text-lg">{{ chatExpanded ? "▾" : "▴" }}</span>
                 </button>
-
             </div>
         </div>
 
@@ -122,7 +121,7 @@
 </template>
 
 <script setup>
-    import { ref, computed, nextTick, watch, onMounted, onUnmounted, inject, onErrorCaptured } from "vue";
+    import { ref, computed, nextTick, watch, onUnmounted, inject, onErrorCaptured } from "vue";
     import { useHouseStore } from "../stores/house";
     import { useUserStore } from "../stores/users";
     import { useMessagesStore } from "../stores/messages";
@@ -137,7 +136,7 @@
     const messagesContainer = ref(null);
     const inputEl = ref(null);
 
-    /* ✅ Hook to RoomView layout controller */
+    /* Hook to RoomView layout controller */
     const chatLayout = inject("chatLayout", null);
     const chatExpanded = computed(() => chatLayout?.chatExpanded?.value ?? false);
 
@@ -146,7 +145,6 @@
         paddingBottom: "env(safe-area-inset-bottom)",
     }));
 
-    /* Icons */
     function getRoomIcon(roomId) {
         const icons = {
             living: "🛋️",
@@ -169,29 +167,32 @@
     const roomsError = computed(() => roomsStore.error);
 
     /* Derived */
-    const currentRoomName = computed(() => {
-        return house.rooms?.[house.currentRoom]?.name || "חדר";
-    });
+    const currentRoomName = computed(() => house.rooms?.[house.currentRoom]?.name || "חדר");
     const onlineCount = computed(() => userStore.usersInRoom(house.currentRoom).length);
     const currentRoomMessages = computed(() => {
         if (!roomUuid.value) return [];
         return messagesStore.messagesInRoom(roomUuid.value);
     });
 
-    /* ✅ Keep keyboard open on expand/shrink */
-    async function toggleChatSize() {
-        const wasTyping = document.activeElement === inputEl.value;
-
-        if (chatLayout?.toggle) chatLayout.toggle();
-
-        // אם המשתמש היה באמצע הקלדה — נחזיר פוקוס מיד (כדי שלא יסגור מקלדת)
-        if (wasTyping) {
-            await nextTick();
-            inputEl.value?.focus?.({ preventScroll: true });
+    /**
+     * ✅ CRITICAL:
+     * - אם מקלדת פתוחה (input בפוקוס) ולוחצים expand/shrink -> נסגור מקלדת (blur)
+     * - לעולם לא נחזיר focus אוטומטית (זה מה שגרם לפתיחת מקלדת "בלי רצון")
+     */
+    function onExpandPointerDown() {
+        if (document.activeElement === inputEl.value) {
+            inputEl.value?.blur?.();
         }
     }
 
-    /* Watchers (existing robust sync) */
+    async function toggleChatSize() {
+        if (chatLayout?.toggle) chatLayout.toggle();
+
+        // שומר UX: לא לעשות scroll-jump מוזר אחרי שינוי grid
+        await nextTick();
+    }
+
+    /* Watchers */
     const chatLoading = ref(false);
     const chatError = ref(null);
     let activeUuid = null;
@@ -236,10 +237,9 @@
         }
     }
 
-    /* Watch */
     watch(
         [() => house.currentHouseId, () => house.currentRoom],
-        async ([houseId, roomKey], [oldHouseId, oldRoomKey]) => {
+        async ([houseId, roomKey], [, oldRoomKey]) => {
             if (!houseId || !roomKey) return;
 
             await roomsStore.loadForHouse(houseId);
@@ -261,7 +261,6 @@
         { immediate: true }
     );
 
-    /* Actions */
     async function sendMessage() {
         const text = newMessage.value.trim();
         if (!text) return;
@@ -279,10 +278,6 @@
             }
         });
     }
-
-    onMounted(() => {
-        // watcher handles sync
-    });
 
     onUnmounted(async () => {
         if (activeUuid) {
