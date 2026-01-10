@@ -1,7 +1,9 @@
 <template>
     <!-- ✅ AppShell (Mobile-first, Discord-like) -->
-    <div class="h-[100dvh] w-screen bg-black text-white overflow-hidden flex flex-col md:flex-row">
-
+    <div class="h-[100dvh] w-screen bg-black text-white overflow-hidden flex flex-col md:flex-row"
+         @touchstart.passive="onEdgeTouchStart"
+         @touchmove.passive="onEdgeTouchMove"
+         @touchend="onEdgeTouchEnd">
         <!-- ========================= -->
         <!-- ✅ MOBILE TOP BAR (HIDE IN ROOM) -->
         <!-- ========================= -->
@@ -134,12 +136,10 @@
                             <div class="h-5 gio-presence-chip" :data-state="presence.status">
                                 <span class="gio-dot" />
                                 <span v-if="presence.status === 'ready'">Online</span>
-
                                 <span v-else-if="presence.status === 'connecting'" class="gio-sync">
                                     Syncing
                                     <span class="gio-dots"><i></i><i></i><i></i></span>
                                 </span>
-
                                 <span v-else-if="presence.status === 'failed'">Offline</span>
                                 <span v-else>Idle</span>
 
@@ -310,21 +310,23 @@
             overlayOpacity.value = fromO + (toOpacity - fromO) * e;
             if (p < 1) requestAnimationFrame(frame);
         }
-
         requestAnimationFrame(frame);
     }
 
     async function openMobileNav() {
+        if (mobileNavOpen.value) return;
         mobileNavOpen.value = true;
         await nextTick();
 
         const w = Math.min(window.innerWidth * 0.86, 360);
         drawerTranslateX.value = -w;
         overlayOpacity.value = 0;
+
         animateDrawer(0, 1, 220);
     }
 
     function closeMobileNav() {
+        if (!mobileNavOpen.value) return;
         const w = Math.min(window.innerWidth * 0.86, 360);
         animateDrawer(-w, 0, 200);
         window.setTimeout(() => {
@@ -344,7 +346,7 @@
     });
 
     /* =========================
-       ✅ SWIPE (CLOSE)
+       ✅ SWIPE GESTURE (CLOSE)
        ========================= */
     const touchStartX = ref(0);
     const touchDragging = ref(false);
@@ -380,6 +382,60 @@
 
         if (closedAmount > 0.35) closeMobileNav();
         else animateDrawer(0, 1, 160);
+    }
+
+    /* =========================
+       ✅ EDGE SWIPE (OPEN) — FROM ANY SCREEN
+       ========================= */
+    const edgeTracking = ref(false);
+    const edgeStartX = ref(0);
+    const edgeStartY = ref(0);
+    const edgeLastX = ref(0);
+    const edgeLastY = ref(0);
+
+    const EDGE_PX = 18;      // “מסילה” דקה בקצה
+    const OPEN_DX = 62;      // כמה צריך לגרור כדי לפתוח
+    const MAX_DY = 80;       // אם המשתמש גולל למעלה/למטה – לא נפתח
+
+    function isMobile() {
+        return window.matchMedia?.("(max-width: 767px)")?.matches ?? (window.innerWidth < 768);
+    }
+
+    function onEdgeTouchStart(e) {
+        if (!isMobile()) return;
+        if (mobileNavOpen.value) return;
+
+        const t = e.touches[0];
+        edgeStartX.value = t.clientX;
+        edgeStartY.value = t.clientY;
+        edgeLastX.value = t.clientX;
+        edgeLastY.value = t.clientY;
+
+        // רק מהקצה השמאלי (לא סתם swipe בכל מקום)
+        edgeTracking.value = edgeStartX.value <= EDGE_PX;
+    }
+
+    function onEdgeTouchMove(e) {
+        if (!edgeTracking.value) return;
+        const t = e.touches[0];
+        edgeLastX.value = t.clientX;
+        edgeLastY.value = t.clientY;
+    }
+
+    function onEdgeTouchEnd() {
+        if (!edgeTracking.value) return;
+        edgeTracking.value = false;
+
+        const dx = edgeLastX.value - edgeStartX.value;
+        const dy = edgeLastY.value - edgeStartY.value;
+
+        // אם זה יותר “גלילה” מאשר swipe ימינה — לא לפתוח
+        if (Math.abs(dy) > MAX_DY) return;
+        if (Math.abs(dx) < OPEN_DX) return;
+        if (dx <= 0) return;
+
+        // ✅ OPEN
+        openMobileNav();
     }
 
     /* =========================
@@ -487,7 +543,7 @@
 </script>
 
 <style>
-    /* השארתי את כל ה-CSS שלך בדיוק כמו שהיה */
+    /* נשאר כמו שהיה אצלך */
     :root {
         --gio-bg: #070a0d;
         --gio-panel: #0b0f12;
@@ -513,20 +569,20 @@
         gap: 10px;
         padding: 10px 12px;
         border: 1px solid var(--gio-border);
-        background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.015));
+        background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.015));
         border-radius: 16px;
-        box-shadow: 0 0 22px rgba(34, 197, 94, 0.08);
+        box-shadow: 0 0 22px rgba(34,197,94,0.08);
     }
 
     .gio-house-emoji {
         font-size: 20px;
-        filter: drop-shadow(0 0 10px rgba(34, 197, 94, 0.2));
+        filter: drop-shadow(0 0 10px rgba(34,197,94,0.2));
     }
 
     .gio-house-title {
         font-weight: 800;
         letter-spacing: 0.2px;
-        color: rgba(180, 255, 210, 0.92);
+        color: rgba(180,255,210,0.92);
         line-height: 1.1;
     }
 
@@ -543,52 +599,52 @@
         padding: 10px 12px;
         border-radius: 999px;
         border: 1px solid var(--gio-border);
-        background: rgba(255, 255, 255, 0.03);
+        background: rgba(255,255,255,0.03);
         font-size: 12px;
-        color: rgba(255, 255, 255, 0.75);
+        color: rgba(255,255,255,0.75);
         position: relative;
         overflow: hidden;
     }
 
         .gio-presence-chip[data-state="ready"] {
-            border-color: rgba(34, 197, 94, 0.35);
-            box-shadow: 0 0 18px rgba(34, 197, 94, 0.1);
+            border-color: rgba(34,197,94,0.35);
+            box-shadow: 0 0 18px rgba(34,197,94,0.1);
         }
 
         .gio-presence-chip[data-state="connecting"] {
-            border-color: rgba(34, 197, 94, 0.25);
+            border-color: rgba(34,197,94,0.25);
         }
 
         .gio-presence-chip[data-state="failed"] {
-            border-color: rgba(239, 68, 68, 0.35);
-            color: rgba(255, 200, 200, 0.85);
+            border-color: rgba(239,68,68,0.35);
+            color: rgba(255,200,200,0.85);
         }
 
     .gio-dot {
         width: 10px;
         height: 10px;
         border-radius: 999px;
-        background: rgba(255, 255, 255, 0.25);
-        box-shadow: 0 0 12px rgba(255, 255, 255, 0.12);
+        background: rgba(255,255,255,0.25);
+        box-shadow: 0 0 12px rgba(255,255,255,0.12);
     }
 
     .gio-presence-chip[data-state="ready"] .gio-dot {
-        background: rgb(34, 197, 94);
-        box-shadow: 0 0 14px rgba(34, 197, 94, 0.35);
+        background: rgb(34,197,94);
+        box-shadow: 0 0 14px rgba(34,197,94,0.35);
     }
 
     .gio-presence-chip[data-state="connecting"] .gio-dot {
-        background: rgba(34, 197, 94, 0.55);
+        background: rgba(34,197,94,0.55);
         animation: gioPulse 1.1s ease-in-out infinite;
     }
 
     .gio-presence-chip[data-state="failed"] .gio-dot {
-        background: rgb(239, 68, 68);
-        box-shadow: 0 0 14px rgba(239, 68, 68, 0.3);
+        background: rgb(239,68,68);
+        box-shadow: 0 0 14px rgba(239,68,68,0.3);
     }
 
     @keyframes gioPulse {
-        0%, 100% {
+        0%,100% {
             transform: scale(1);
             opacity: 0.75;
         }
@@ -609,7 +665,7 @@
             width: 4px;
             height: 4px;
             border-radius: 999px;
-            background: rgba(34, 197, 94, 0.85);
+            background: rgba(34,197,94,0.85);
             display: inline-block;
             animation: gioDots 0.95s infinite ease-in-out;
         }
@@ -625,7 +681,7 @@
             }
 
     @keyframes gioDots {
-        0%, 100% {
+        0%,100% {
             transform: translateY(0);
         }
 
@@ -638,16 +694,16 @@
         margin-right: 8px;
         padding: 6px 10px;
         border-radius: 999px;
-        border: 1px solid rgba(239, 68, 68, 0.35);
-        background: rgba(239, 68, 68, 0.1);
-        color: rgba(255, 220, 220, 0.95);
+        border: 1px solid rgba(239,68,68,0.35);
+        background: rgba(239,68,68,0.1);
+        color: rgba(255,220,220,0.95);
         font-weight: 700;
         cursor: pointer;
         transition: transform 0.12s ease, border-color 0.12s ease;
     }
 
         .gio-retry-btn:hover {
-            border-color: rgba(239, 68, 68, 0.55);
+            border-color: rgba(239,68,68,0.55);
             transform: translateY(-1px);
         }
 
@@ -660,7 +716,7 @@
         width: 18px;
         height: 12px;
         border-radius: 6px;
-        background: linear-gradient(90deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.06));
+        background: linear-gradient(90deg, rgba(255,255,255,0.06), rgba(255,255,255,0.12), rgba(255,255,255,0.06));
         background-size: 200% 100%;
         animation: gioShimmer 1.1s ease-in-out infinite;
         vertical-align: middle;

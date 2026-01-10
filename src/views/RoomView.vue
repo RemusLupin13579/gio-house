@@ -3,7 +3,6 @@
          @touchstart="handleTouchStart"
          @touchmove="handleTouchMove"
          @touchend="handleTouchEnd">
-        <!-- Single back button (no duplicates) -->
         <div class="absolute top-3 left-3 z-30" :style="safeTopStyle">
             <button @click="goBack"
                     class="px-4 py-2 bg-black/50 backdrop-blur border border-white/10 rounded-xl
@@ -15,12 +14,10 @@
         </div>
 
         <div class="flex-1 min-h-0 grid" :style="gridStyle">
-            <!-- Scene -->
             <div class="min-h-0 overflow-hidden">
                 <RoomScene class="h-full w-full" />
             </div>
 
-            <!-- Chat wrapper (keyboard-aware padding) -->
             <div class="min-h-0 overflow-hidden border-t border-white/10 bg-black/40 backdrop-blur"
                  :style="chatWrapStyle">
                 <ChatPanel class="h-full" />
@@ -44,18 +41,14 @@
     const route = useRoute();
     const house = useHouseStore();
 
-    /* Safe-area */
     const safeTopStyle = computed(() => ({ paddingTop: "env(safe-area-inset-top)" }));
 
-    /* ✅ Keyboard (iOS/Android) using VisualViewport */
+    /* ✅ Keyboard using VisualViewport */
     const keyboardPx = ref(0);
 
     function updateKeyboard() {
         const vv = window.visualViewport;
-        if (!vv) {
-            keyboardPx.value = 0;
-            return;
-        }
+        if (!vv) { keyboardPx.value = 0; return; }
         const px = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop));
         keyboardPx.value = px;
     }
@@ -79,34 +72,21 @@
         toggle: () => (chatExpanded.value = !chatExpanded.value),
         collapse: () => (chatExpanded.value = false),
 
-        // Optional: ChatPanel can call these on focus/blur later
         expandForTyping: () => (chatExpanded.value = true),
         collapseAfterTyping: () => {
             if (keyboardPx.value === 0) chatExpanded.value = false;
         },
     });
 
-    /* ✅ Grid strategy:
-       - Normal: 55/45 or expanded 35/65
-       - Keyboard open: give chat more real estate */
     const gridStyle = computed(() => {
-        if (keyboardPx.value > 0) {
-            return { gridTemplateRows: "20fr 80fr" };
-        }
+        if (keyboardPx.value > 0) return { gridTemplateRows: "20fr 80fr" };
         return { gridTemplateRows: chatExpanded.value ? "35fr 65fr" : "55fr 45fr" };
     });
 
-    /* ✅ Push chat above keyboard + safe-area */
     const chatWrapStyle = computed(() => ({
         paddingBottom: `calc(env(safe-area-inset-bottom) + ${keyboardPx.value}px)`,
     }));
 
-    /**
-     * CRITICAL:
-     * RoomView לא עושה connect() בכלל.
-     * AppShell אחראי לחיבור presence לבית הנוכחי.
-     * כאן רק מעדכנים חדר.
-     */
     async function syncRoom(roomKey) {
         if (roomKey && house.rooms[roomKey]) {
             house.enterRoom(roomKey);
@@ -127,11 +107,13 @@
         router.push("/");
     }
 
-    /* Swipe back */
+    /* Swipe back (but NOT from left edge - reserved for drawer open) */
     const touchStartX = ref(0);
     const touchStartY = ref(0);
     const touchEndX = ref(0);
     const touchEndY = ref(0);
+
+    const EDGE_PX = 18;
 
     function handleTouchStart(e) {
         touchStartX.value = e.touches[0].clientX;
@@ -142,6 +124,9 @@
         touchEndY.value = e.touches[0].clientY;
     }
     function handleTouchEnd() {
+        // ✅ אם התחלת בקצה — לא עושים back (כדי לא להתנגש עם drawer swipe)
+        if (touchStartX.value <= EDGE_PX) return;
+
         const diffX = touchEndX.value - touchStartX.value;
         const diffY = touchEndY.value - touchStartY.value;
         if (Math.abs(diffX) > Math.abs(diffY) && diffX > 100) goBack();

@@ -26,7 +26,10 @@
                     </div>
                 </div>
 
-                <button @click="toggleChatSize"
+                <button type="button"
+                        @pointerdown.prevent
+                        @touchstart.prevent
+                        @click="toggleChatSize"
                         class="w-10 h-10 rounded-xl bg-white/5 border border-white/10 hover:border-green-500/40 transition
                  active:scale-[0.98] flex items-center justify-center"
                         :title="chatExpanded ? 'הקטן צ׳אט' : 'הגדל צ׳אט'">
@@ -37,7 +40,6 @@
 
         <!-- Messages -->
         <div ref="messagesContainer" class="flex-1 min-h-0 overflow-y-auto px-3 sm:px-4 py-3 space-y-3">
-            <!-- Loading / error banner -->
             <div v-if="chatLoading" class="text-center text-white/60 py-6">
                 <div class="text-3xl mb-2">⏳</div>
                 טוען את הצ׳אט…
@@ -49,9 +51,7 @@
             </div>
 
             <template v-else>
-                <div v-for="msg in currentRoomMessages"
-                     :key="msg.id"
-                     class="flex items-start gap-3">
+                <div v-for="msg in currentRoomMessages" :key="msg.id" class="flex items-start gap-3">
                     <div class="w-9 h-9 sm:w-10 sm:h-10 rounded-full overflow-hidden flex items-center justify-center
                    border border-white/10 flex-shrink-0 shadow-sm"
                          :style="{
@@ -96,7 +96,8 @@
             </div>
 
             <form @submit.prevent="sendMessage" class="p-3 sm:p-4 flex gap-2">
-                <input :disabled="!roomReady"
+                <input ref="inputEl"
+                       :disabled="!roomReady"
                        id="chat-message"
                        name="chat-message"
                        v-model="newMessage"
@@ -134,15 +135,11 @@
 
     const newMessage = ref("");
     const messagesContainer = ref(null);
+    const inputEl = ref(null);
 
     /* ✅ Hook to RoomView layout controller */
     const chatLayout = inject("chatLayout", null);
     const chatExpanded = computed(() => chatLayout?.chatExpanded?.value ?? false);
-
-    function toggleChatSize() {
-        if (chatLayout?.toggle) return chatLayout.toggle();
-        // fallback (shouldn't happen if provide exists)
-    }
 
     /* Safe bottom */
     const safeBottomPad = computed(() => ({
@@ -173,7 +170,6 @@
 
     /* Derived */
     const currentRoomName = computed(() => {
-        // NOTE: אם אתה רוצה שם+אייקון מה DB – נחבר בהמשך.
         return house.rooms?.[house.currentRoom]?.name || "חדר";
     });
     const onlineCount = computed(() => userStore.usersInRoom(house.currentRoom).length);
@@ -182,7 +178,20 @@
         return messagesStore.messagesInRoom(roomUuid.value);
     });
 
-    /* ✅ Robust sync (prevents race) */
+    /* ✅ Keep keyboard open on expand/shrink */
+    async function toggleChatSize() {
+        const wasTyping = document.activeElement === inputEl.value;
+
+        if (chatLayout?.toggle) chatLayout.toggle();
+
+        // אם המשתמש היה באמצע הקלדה — נחזיר פוקוס מיד (כדי שלא יסגור מקלדת)
+        if (wasTyping) {
+            await nextTick();
+            inputEl.value?.focus?.({ preventScroll: true });
+        }
+    }
+
+    /* Watchers (existing robust sync) */
     const chatLoading = ref(false);
     const chatError = ref(null);
     let activeUuid = null;
@@ -202,27 +211,16 @@
         try {
             const ok = await ensureRoomsLoaded();
             if (!ok) return;
-
             if (token !== runToken) return;
 
             const uuid = roomUuid.value;
-            if (!uuid) {
-                // עדיין אין UUID → נשארים במצב לא-מוכן
-                return;
-            }
+            if (!uuid) return;
 
-            // אם עברנו חדר: מנתקים מהקודם
             if (activeUuid && activeUuid !== uuid) {
-                try {
-                    await messagesStore.unsubscribe(activeUuid);
-                } catch (e) {
-                    console.warn("[ChatPanel] unsubscribe failed:", e);
-                }
+                try { await messagesStore.unsubscribe(activeUuid); } catch (e) { console.warn("[ChatPanel] unsubscribe failed:", e); }
             }
-
             if (token !== runToken) return;
 
-            // טוענים ומתחברים רק אם חדש/שונה
             if (activeUuid !== uuid) {
                 await messagesStore.load(uuid);
                 messagesStore.subscribe(uuid);
@@ -234,14 +232,11 @@
             chatError.value = e;
             console.error("[ChatPanel] syncChat failed:", e);
         } finally {
-            if (token === runToken) {
-                chatLoading.value = false;
-            }
+            if (token === runToken) chatLoading.value = false;
         }
     }
-    console.log("[ChatPanel] houseId:", house.currentHouseId, "roomKey:", house.currentRoom, "uuid:", roomUuid.value);
 
-    /* Watchers */
+    /* Watch */
     watch(
         [() => house.currentHouseId, () => house.currentRoom],
         async ([houseId, roomKey], [oldHouseId, oldRoomKey]) => {
@@ -260,12 +255,11 @@
 
             await messagesStore.load(newUuid);
             messagesStore.subscribe(newUuid);
+            activeUuid = newUuid;
             scrollToBottom();
         },
         { immediate: true }
     );
-
-
 
     /* Actions */
     async function sendMessage() {
@@ -286,27 +280,21 @@
         });
     }
 
-    /* Lifecycle */
     onMounted(() => {
-        // 👌 nothing else needed; watcher handles sync
+        // watcher handles sync
     });
 
     onUnmounted(async () => {
         if (activeUuid) {
-            try {
-                await messagesStore.unsubscribe(activeUuid);
-            } catch (e) {
-                console.warn("[ChatPanel] unsubscribe onUnmount failed:", e);
-            }
+            try { await messagesStore.unsubscribe(activeUuid); } catch (e) { console.warn("[ChatPanel] unsubscribe onUnmount failed:", e); }
         }
     });
 
-    /* ✅ אם Vue מפילה את הקומפוננטה, זה יראה בקונסול */
     onErrorCaptured((err, instance, info) => {
         console.error("[ChatPanel] errorCaptured:", err, info);
         chatError.value = err;
         chatLoading.value = false;
-        return false; // אל תבלע
+        return false;
     });
 </script>
 
