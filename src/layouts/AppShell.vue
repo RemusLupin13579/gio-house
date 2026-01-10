@@ -243,12 +243,15 @@
             </div>
         </div>
 
-        <!-- ✅ SWIPE CATCHER (OPEN DRAWER) — Discord-like -->
-        <div v-if="!mobileNavOpen"
-             class="md:hidden fixed inset-0 z-[9997] pointer-events-auto"
-             @touchstart.passive="swipeOpenStart"
-             @touchmove="swipeOpenMove"
-             @touchend="swipeOpenEnd"></div>
+        <!-- ✅ SWIPE CATCHER (OPEN DRAWER) — only LEFT zone, doesn't block the app -->
+        <div v-if="!mobileNavOpen" class="md:hidden fixed inset-0 z-[9997] pointer-events-none">
+            <div class="h-full pointer-events-auto"
+                 :style="{ width: `${Math.round(windowWidth * OPEN_ZONE_RATIO)}px` }"
+                 @touchstart.passive="swipeOpenStart"
+                 @touchmove="swipeOpenMove"
+                 @touchend="swipeOpenEnd" />
+        </div>
+
 
 
         <HouseSwitcherModal v-if="openHouseModal" @close="openHouseModal=false" />
@@ -264,6 +267,10 @@
     import { usePresenceStore } from "../stores/presence";
     import { profile } from "../stores/auth";
     import { useRoomsStore } from "../stores/rooms";
+
+    const drawerHistoryPushed = ref(false);
+    let suppressNextPop = false;
+
 
     const roomsStore = useRoomsStore();
     const router = useRouter();
@@ -309,6 +316,13 @@
         overlayOpacity.value = 0;
 
         animateDrawer(0, 1, 220);
+
+        // ✅ Make Android back close the drawer first
+        if (!drawerHistoryPushed.value) {
+            history.pushState({ gioDrawer: true }, "");
+            drawerHistoryPushed.value = true;
+        }
+
     }
 
     function closeMobileNav() {
@@ -320,6 +334,14 @@
         window.setTimeout(() => {
             mobileNavOpen.value = false;
         }, 210);
+
+        // ✅ remove the drawer history state without navigating away
+        if (drawerHistoryPushed.value) {
+            suppressNextPop = true;
+            history.back(); // will trigger popstate; we’ll ignore once
+            drawerHistoryPushed.value = false;
+        }
+
     }
 
     /* Freeze background when drawer open */
@@ -347,10 +369,21 @@
     const swipeLastX = ref(0);
     const swipeLastY = ref(0);
 
-    const SYS_EDGE_PX = 28;                 // האזור שהמערכת "חוטפת" - אנחנו מתחילים אחרי זה
-    const OPEN_ZONE_RATIO = 0.40;           // “חלק מכובד” מהצד השמאלי
-    const INTENT_SLOP = 10;                 // כמה פיקסלים כדי להחליט כיוון
-    const OPEN_COMMIT_RATIO = 0.35;         // כמה מהדראור צריך להיפתח כדי “להינעל” לפתיחה
+    /* =========================
+   ✅ SWIPE tuning
+   ========================= */
+    const OPEN_ZONE_RATIO = 0.40;   // כמה מהשמאל רגיש לפתיחה
+    const SYS_EDGE_PX = 28;         // לא מתחילים ממש בקצה (Android gesture)
+    const INTENT_SLOP = 8;          // החלטת כיוון יותר מהר
+    const OPEN_COMMIT_RATIO = 0.18; // התחייבות לפתיחה מוקדם יותר
+    const CLOSE_COMMIT_RATIO = 0.18;// התחייבות לסגירה מוקדם יותר
+    const SWIPE_GAIN = 1.55;        // פחות תנועה = יותר פתיחה לכל פיקסל
+
+    /* window width reactive (for the swipe catcher width) */
+    const windowWidth = ref(window.innerWidth);
+    function onResize() {
+        windowWidth.value = window.innerWidth;
+    }
 
     function drawerWidth() {
         return Math.min(window.innerWidth * 0.86, 360);
@@ -399,37 +432,32 @@
         const dx = swipeLastX.value - swipeStartX.value;
         const dy = swipeLastY.value - swipeStartY.value;
 
-        // ✅ אם עוד לא החלטנו כיוון — נחכה קצת
         if (!swipeOpenLock.value) {
             if (Math.abs(dx) < INTENT_SLOP && Math.abs(dy) < INTENT_SLOP) return;
 
-            // אם זה יותר אנכי → זה scroll, מבטלים ומחזירים הכל
             if (Math.abs(dy) > Math.abs(dx) * 1.2) {
-                // לסגור את הדראור שפתחנו זמנית
                 mobileNavOpen.value = false;
                 resetSwipeState();
                 return;
             }
 
-            // אחרת זה swipe אופקי → ננעל ונמנע גלילה
             swipeOpenLock.value = true;
         }
 
-        // אם ננעלנו על swipe אופקי — נבטל scroll
         e.preventDefault();
 
         const w = drawerWidth();
 
-        // dx>0 פותח, dx<0 סוגר (אבל אנחנו רק בפתיחה כרגע)
-        const openPx = Math.max(0, dx);
+        // ✅ Gain => פחות תנועה לפתיחה
+        const openPx = Math.max(0, dx) * SWIPE_GAIN;
         const translate = Math.max(-w, Math.min(0, -w + openPx));
 
         drawerTranslateX.value = translate;
 
-        // opacity לפי פתיחה
         const openness = 1 - Math.abs(translate) / w;
         overlayOpacity.value = Math.max(0, Math.min(1, openness));
     }
+
 
     function swipeOpenEnd() {
         if (!swipeOpenActive.value) return;
@@ -482,9 +510,9 @@
 
         const w = Math.min(window.innerWidth * 0.86, 360);
         const closedAmount = Math.abs(drawerTranslateX.value) / w;
+        if (closedAmount > CLOSE_COMMIT_RATIO) closeMobileNav();
+        else animateDrawer(0, 1, 140);
 
-        if (closedAmount > 0.35) closeMobileNav();
-        else animateDrawer(0, 1, 160);
     }
 
     /* Pointer listeners (capture: true so it won’t get swallowed by inner components) */
@@ -520,41 +548,30 @@
         edgeEnd();
     }
 
-    onMounted(async () => {
-        // global edge open
-        window.addEventListener("pointerdown", onPointerDown, { passive: true, capture: true });
-        window.addEventListener("pointermove", onPointerMove, { passive: true, capture: true });
-        window.addEventListener("pointerup", onPointerUp, { passive: true, capture: true });
-        window.addEventListener("pointercancel", onPointerCancel, { passive: true, capture: true });
-
-        window.addEventListener("touchstart", onTouchStart, { passive: true, capture: true });
-        window.addEventListener("touchmove", onTouchMove, { passive: true, capture: true });
-        window.addEventListener("touchend", onTouchEnd, { passive: true, capture: true });
-
-        // hydrate house (if you use it here)
-        house.hydrateCurrentHouse?.();
-
-        // ensure public house membership if needed
-        if (!house.currentHouseId) {
-            const { data, error } = await supabase.rpc("ensure_public_house_membership");
-            if (!error && data) {
-                house.setCurrentHouse?.(data);
-            }
+    function onPopState() {
+        // אם אנחנו סוגרים state בעצמנו — מתעלמים פעם אחת
+        if (suppressNextPop) {
+            suppressNextPop = false;
+            return;
         }
 
-        await house.loadMyHouses();
-
-        if (house.currentHouseId) {
-            void roomsStore.loadForHouse(house.currentHouseId).catch((e) => {
-                console.error("roomsStore.loadForHouse failed in AppShell:", e);
-            });
-
-            void (async () => {
-                const ok = await presence.connect(house.currentHouseId);
-                if (ok) await presence.setRoom("living");
-            })();
+        // ✅ אם הדראור פתוח — back סוגר אותו, לא ניווט
+        if (mobileNavOpen.value) {
+            closeMobileNav();
+            // חשוב: לא לדחוף שוב state פה (כבר נסגר)
         }
+    }
+
+    onMounted(() => {
+        window.addEventListener("popstate", onPopState);
+        window.addEventListener("resize", onResize);
     });
+
+    onBeforeUnmount(() => {
+        window.removeEventListener("popstate", onPopState);
+        window.removeEventListener("resize", onResize);
+    });
+
 
     onBeforeUnmount(() => {
         window.removeEventListener("pointerdown", onPointerDown, { capture: true });
