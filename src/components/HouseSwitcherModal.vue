@@ -1,17 +1,15 @@
 <template>
     <div class="fixed inset-0 z-[9999]">
-        <div class="absolute inset-0 bg-black/60" @click="$emit('close')"></div>
+        <div class="absolute inset-0 bg-black/60" @click="closeModal"></div>
 
         <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2
                 w-[520px] max-w-[94vw] bg-[#0b0f12] border border-white/10 rounded-2xl shadow-2xl overflow-hidden">
-            <!-- Header -->
             <div class="px-4 py-3 border-b border-white/10 flex items-center justify-between">
                 <div class="font-bold text-green-300">Houses</div>
-                <button class="w-9 h-9 rounded-xl bg-white/5 border border-white/10" @click="$emit('close')">✕</button>
+                <button class="w-9 h-9 rounded-xl bg-white/5 border border-white/10" @click="closeModal">✕</button>
             </div>
 
             <div class="p-4 space-y-4">
-                <!-- Tabs -->
                 <div class="flex gap-2">
                     <button class="flex-1 px-3 py-2 rounded-xl border transition"
                             :class="tab==='switch' ? 'bg-white/5 border-green-500/40' : 'bg-transparent border-white/10 hover:border-green-500/30'"
@@ -30,7 +28,6 @@
                     </button>
                 </div>
 
-                <!-- SWITCH -->
                 <div v-if="tab==='switch'" class="space-y-2">
                     <div class="text-xs text-white/50 flex items-center justify-between">
                         <span>בחר בית פעיל</span>
@@ -68,7 +65,6 @@
                     </div>
                 </div>
 
-                <!-- JOIN -->
                 <div v-else-if="tab==='join'" class="space-y-3">
                     <div class="text-sm text-white/70">
                         הכנס קוד בית כדי להצטרף.
@@ -88,7 +84,6 @@
                     </button>
                 </div>
 
-                <!-- CREATE -->
                 <div v-else class="space-y-3">
                     <div class="text-sm text-white/70">
                         תן שם לבית. קוד הצטרפות — אופציונלי (אפשר להשאיר ריק).
@@ -111,55 +106,57 @@
                         {{ loading ? 'יוצר…' : 'צור בית' }}
                     </button>
 
-
                     <div class="text-xs text-white/40">
                         טיפ: אם כתבת קוד והוא תפוס — תקבל הודעה ותוכל לבחור אחר.
                     </div>
                 </div>
-            </div>
-
-            <!-- Footer -->
-            <div class="px-4 py-3 border-t border-white/10 text-xs text-white/40">
-                אחרי Create/Join אנחנו עוברים אוטומטית לבית החדש ומחברים Presence.
             </div>
         </div>
     </div>
 </template>
 
 <script setup>
-import { computed, ref, onMounted } from "vue";
-import { useHouseStore } from "../stores/house";
-import { usePresenceStore } from "../stores/presence";
+    import { computed, ref, onMounted, onUnmounted } from "vue";
+    import { useHouseStore } from "../stores/house";
 
-const emit = defineEmits(["close"]);
+    const emit = defineEmits(["close"]);
 
-const house = useHouseStore();
-const presence = usePresenceStore();
+    const house = useHouseStore();
 
-const tab = ref("switch");
-const loading = ref(false);
-const errorMsg = ref("");
+    const tab = ref("switch");
+    const loading = ref(false);
+    const errorMsg = ref("");
 
-const joinCode = ref("");
-const createName = ref("");
-const createCode = ref("");
+    const joinCode = ref("");
+    const createName = ref("");
+    const createCode = ref("");
 
-const houses = computed(() => house.myHouses ?? []);
-const currentHouseId = computed(() => house.currentHouseId ?? null);
+    const houses = computed(() => house.myHouses ?? []);
+    const currentHouseId = computed(() => house.currentHouseId ?? null);
 
-async function reload() {
-  loading.value = true;
-  errorMsg.value = "";
-  try {
-    await house.loadMyHouses();
-  } finally {
-    loading.value = false;
-  }
-}
+    // פונקציית סגירה מסודרת
+    function closeModal() {
+        emit("close");
+    }
+
+    // טיפול בכפתור "חזור" של הדפדפן/טלפון
+    function handlePopState() {
+        closeModal();
+    }
+
+    async function reload() {
+        loading.value = true;
+        errorMsg.value = "";
+        try {
+            await house.loadMyHouses();
+        } finally {
+            loading.value = false;
+        }
+    }
 
     async function selectHouse(houseId) {
         house.setCurrentHouse(houseId);
-        emit("close");
+        closeModal();
     }
 
     async function doJoin() {
@@ -169,7 +166,7 @@ async function reload() {
             const houseId = await house.joinHouseByCode(joinCode.value);
             await house.loadMyHouses();
             house.setCurrentHouse(houseId);
-            emit("close");
+            closeModal();
         } catch (e) {
             errorMsg.value = e?.message || "Join failed";
         } finally {
@@ -184,7 +181,7 @@ async function reload() {
             const houseId = await house.createHouse(createName.value, createCode.value || null);
             await house.loadMyHouses();
             house.setCurrentHouse(houseId);
-            emit("close");
+            closeModal();
         } catch (e) {
             const msg = e?.message || "Create failed";
             errorMsg.value = msg.includes("houses_join_code_unique")
@@ -195,13 +192,19 @@ async function reload() {
         }
     }
 
+    onMounted(async () => {
+        // מונעים מהדף ללכת אחורה וסוגרים את המודאל במקום
+        window.history.pushState({ modal: "houseswitcher" }, "");
+        window.addEventListener("popstate", handlePopState);
 
+        if (!houses.value.length) await reload();
+    });
 
-
-
-
-onMounted(async () => {
-  // טוענים בתים אם עדיין לא נטענו
-  if (!houses.value.length) await reload();
-});
+    onUnmounted(() => {
+        window.removeEventListener("popstate", handlePopState);
+        // אם המשתמש סגר את המודאל ידנית, אנחנו מנקים את ה-History state שהוספנו
+        if (window.history.state?.modal === "houseswitcher") {
+            window.history.back();
+        }
+    });
 </script>
