@@ -1,9 +1,6 @@
 <template>
     <!-- ✅ AppShell (Mobile-first, Discord-like) -->
-    <div class="h-[100dvh] w-screen bg-black text-white overflow-hidden flex flex-col md:flex-row"
-         @touchstart.passive="onEdgeTouchStart"
-         @touchmove.passive="onEdgeTouchMove"
-         @touchend="onEdgeTouchEnd">
+    <div class="h-[100dvh] w-screen bg-black text-white overflow-hidden flex flex-col md:flex-row">
         <!-- ========================= -->
         <!-- ✅ MOBILE TOP BAR (HIDE IN ROOM) -->
         <!-- ========================= -->
@@ -385,25 +382,26 @@
     }
 
     /* =========================
-       ✅ EDGE SWIPE (OPEN) — FROM ANY SCREEN
-       ========================= */
+   ✅ EDGE SWIPE (OPEN) — GLOBAL
+   ========================= */
     const edgeTracking = ref(false);
     const edgeStartX = ref(0);
     const edgeStartY = ref(0);
     const edgeLastX = ref(0);
     const edgeLastY = ref(0);
 
-    const EDGE_PX = 18;      // “מסילה” דקה בקצה
-    const OPEN_DX = 62;      // כמה צריך לגרור כדי לפתוח
-    const MAX_DY = 80;       // אם המשתמש גולל למעלה/למטה – לא נפתח
+    const EDGE_PX = 18;   // אזור “אחיזה” בקצה
+    const OPEN_DX = 60;   // כמה לגרור ימינה כדי לפתוח
+    const MAX_DY = 80;    // אם זה יותר מדי אנכי -> זה גלילה, לא swipe
 
     function isMobile() {
         return window.matchMedia?.("(max-width: 767px)")?.matches ?? (window.innerWidth < 768);
     }
 
-    function onEdgeTouchStart(e) {
+    function edgeTouchStart(e) {
         if (!isMobile()) return;
         if (mobileNavOpen.value) return;
+        if (!e.touches || !e.touches[0]) return;
 
         const t = e.touches[0];
         edgeStartX.value = t.clientX;
@@ -411,64 +409,43 @@
         edgeLastX.value = t.clientX;
         edgeLastY.value = t.clientY;
 
-        // רק מהקצה השמאלי (לא סתם swipe בכל מקום)
+        // רק מהקצה השמאלי
         edgeTracking.value = edgeStartX.value <= EDGE_PX;
     }
 
-    function onEdgeTouchMove(e) {
+    function edgeTouchMove(e) {
         if (!edgeTracking.value) return;
+        if (!e.touches || !e.touches[0]) return;
+
         const t = e.touches[0];
         edgeLastX.value = t.clientX;
         edgeLastY.value = t.clientY;
     }
 
-    function onEdgeTouchEnd() {
+    function edgeTouchEnd() {
         if (!edgeTracking.value) return;
         edgeTracking.value = false;
 
         const dx = edgeLastX.value - edgeStartX.value;
         const dy = edgeLastY.value - edgeStartY.value;
 
-        // אם זה יותר “גלילה” מאשר swipe ימינה — לא לפתוח
-        if (Math.abs(dy) > MAX_DY) return;
-        if (Math.abs(dx) < OPEN_DX) return;
-        if (dx <= 0) return;
+        if (Math.abs(dy) > MAX_DY) return;   // זה גלילה
+        if (dx < OPEN_DX) return;            // לא מספיק ימינה
 
-        // ✅ OPEN
         openMobileNav();
     }
 
-    /* =========================
-       ✅ EXISTING LOGIC
-       ========================= */
-    function onDocPointerDown(e) {
-        if (!e.target?.closest?.("[data-house-menu]")) {
-            houseMenuOpen.value = false;
-        }
-    }
+    onMounted(() => {
+        // ✅ listeners גלובליים (אמין)
+        window.addEventListener("touchstart", edgeTouchStart, { passive: true });
+        window.addEventListener("touchmove", edgeTouchMove, { passive: true });
+        window.addEventListener("touchend", edgeTouchEnd, { passive: true });
+    });
 
-    onMounted(async () => {
-        document.addEventListener("pointerdown", onDocPointerDown);
-
-        house.hydrateCurrentHouse?.();
-
-        if (!house.currentHouseId) {
-            const { data, error } = await supabase.rpc("ensure_public_house_membership");
-            if (!error && data) house.setCurrentHouse?.(data);
-        }
-
-        await house.loadMyHouses();
-
-        if (house.currentHouseId) {
-            void roomsStore.loadForHouse(house.currentHouseId).catch((e) => {
-                console.error("roomsStore.loadForHouse failed in AppShell:", e);
-            });
-
-            void (async () => {
-                const ok = await presence.connect(house.currentHouseId);
-                if (ok) await presence.setRoom("living");
-            })();
-        }
+    onBeforeUnmount(() => {
+        window.removeEventListener("touchstart", edgeTouchStart);
+        window.removeEventListener("touchmove", edgeTouchMove);
+        window.removeEventListener("touchend", edgeTouchEnd);
     });
 
     onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocPointerDown));

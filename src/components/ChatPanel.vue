@@ -27,14 +27,14 @@
                 </div>
 
                 <button type="button"
-                        @pointerdown.prevent
-                        @touchstart.prevent
+                        @pointerdown.stop.prevent
                         @click="toggleChatSize"
                         class="w-10 h-10 rounded-xl bg-white/5 border border-white/10 hover:border-green-500/40 transition
-                 active:scale-[0.98] flex items-center justify-center"
+                            active:scale-[0.98] flex items-center justify-center"
                         :title="chatExpanded ? 'הקטן צ׳אט' : 'הגדל צ׳אט'">
                     <span class="text-lg">{{ chatExpanded ? "▾" : "▴" }}</span>
                 </button>
+
             </div>
         </div>
 
