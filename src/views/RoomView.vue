@@ -108,27 +108,21 @@
     }
 
     /* Swipe back (but NOT from left edge - reserved for drawer open) */
-    const touchStartX = ref(0);
-    const touchStartY = ref(0);
-    const touchEndX = ref(0);
-    const touchEndY = ref(0);
+    const OPEN_ZONE_RATIO = 0.40;
+    const SYS_EDGE_PX = 28;
 
-    const EDGE_PX = 18;
+    function isInDrawerOpenZone(x) {
+        const openZonePx = window.innerWidth * OPEN_ZONE_RATIO;
+        // אם התחלת באזור שפותח drawer (וגם לא ממש מהקצה)
+        return x >= SYS_EDGE_PX && x <= openZonePx;
+    }
 
-    function handleTouchStart(e) {
-        touchStartX.value = e.touches[0].clientX;
-        touchStartY.value = e.touches[0].clientY;
-    }
-    function handleTouchMove(e) {
-        touchEndX.value = e.touches[0].clientX;
-        touchEndY.value = e.touches[0].clientY;
-    }
     function handleTouchEnd() {
-        // ✅ אם התחלת בקצה — לא עושים back (כדי לא להתנגש עם drawer swipe)
-        if (touchStartX.value <= EDGE_PX) return;
+        if (isInDrawerOpenZone(touchStartX.value)) return;
 
         const diffX = touchEndX.value - touchStartX.value;
         const diffY = touchEndY.value - touchStartY.value;
         if (Math.abs(diffX) > Math.abs(diffY) && diffX > 100) goBack();
     }
+
 </script>

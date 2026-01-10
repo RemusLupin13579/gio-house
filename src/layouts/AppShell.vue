@@ -243,12 +243,13 @@
             </div>
         </div>
 
-        <!-- ✅ EDGE SWIPE ZONE (OPEN DRAWER) -->
+        <!-- ✅ SWIPE CATCHER (OPEN DRAWER) — Discord-like -->
         <div v-if="!mobileNavOpen"
-             class="md:hidden fixed left-0 top-0 bottom-0 w-[22px] z-[9998] pointer-events-auto"
-             @touchstart.passive="edgeZoneStart"
-             @touchmove.passive="edgeZoneMove"
-             @touchend="edgeZoneEnd"></div>
+             class="md:hidden fixed inset-0 z-[9997] pointer-events-auto"
+             @touchstart.passive="swipeOpenStart"
+             @touchmove="swipeOpenMove"
+             @touchend="swipeOpenEnd"></div>
+
 
         <HouseSwitcherModal v-if="openHouseModal" @close="openHouseModal=false" />
     </div>
@@ -332,6 +333,126 @@
         }
     });
 
+
+
+    /* =========================
+   ✅ SWIPE OPEN (DISCORD-LIKE)
+   Works with Android gesture nav (avoids system edge)
+   ========================= */
+
+    const swipeOpenActive = ref(false);
+    const swipeOpenLock = ref(false); // ננעל רק אם החלטנו שזה swipe אופקי
+    const swipeStartX = ref(0);
+    const swipeStartY = ref(0);
+    const swipeLastX = ref(0);
+    const swipeLastY = ref(0);
+
+    const SYS_EDGE_PX = 28;                 // האזור שהמערכת "חוטפת" - אנחנו מתחילים אחרי זה
+    const OPEN_ZONE_RATIO = 0.40;           // “חלק מכובד” מהצד השמאלי
+    const INTENT_SLOP = 10;                 // כמה פיקסלים כדי להחליט כיוון
+    const OPEN_COMMIT_RATIO = 0.35;         // כמה מהדראור צריך להיפתח כדי “להינעל” לפתיחה
+
+    function drawerWidth() {
+        return Math.min(window.innerWidth * 0.86, 360);
+    }
+
+    function resetSwipeState() {
+        swipeOpenActive.value = false;
+        swipeOpenLock.value = false;
+    }
+
+    function swipeOpenStart(e) {
+        if (mobileNavOpen.value) return;
+        const t = e.touches?.[0];
+        if (!t) return;
+
+        const x = t.clientX;
+        const y = t.clientY;
+
+        // ✅ תתחיל רק באזור שמאל “רחב”, אבל לא ממש מהקצה (כי gestures)
+        const openZonePx = window.innerWidth * OPEN_ZONE_RATIO;
+        if (x < SYS_EDGE_PX || x > openZonePx) return;
+
+        swipeOpenActive.value = true;
+        swipeOpenLock.value = false;
+
+        swipeStartX.value = x;
+        swipeStartY.value = y;
+        swipeLastX.value = x;
+        swipeLastY.value = y;
+
+        // מכינים מצב “דראור סגור” אבל עם DOM פתוח כדי שנוכל לגרור אותו
+        mobileNavOpen.value = true;
+        const w = drawerWidth();
+        drawerTranslateX.value = -w;
+        overlayOpacity.value = 0;
+    }
+
+    function swipeOpenMove(e) {
+        if (!swipeOpenActive.value) return;
+        const t = e.touches?.[0];
+        if (!t) return;
+
+        swipeLastX.value = t.clientX;
+        swipeLastY.value = t.clientY;
+
+        const dx = swipeLastX.value - swipeStartX.value;
+        const dy = swipeLastY.value - swipeStartY.value;
+
+        // ✅ אם עוד לא החלטנו כיוון — נחכה קצת
+        if (!swipeOpenLock.value) {
+            if (Math.abs(dx) < INTENT_SLOP && Math.abs(dy) < INTENT_SLOP) return;
+
+            // אם זה יותר אנכי → זה scroll, מבטלים ומחזירים הכל
+            if (Math.abs(dy) > Math.abs(dx) * 1.2) {
+                // לסגור את הדראור שפתחנו זמנית
+                mobileNavOpen.value = false;
+                resetSwipeState();
+                return;
+            }
+
+            // אחרת זה swipe אופקי → ננעל ונמנע גלילה
+            swipeOpenLock.value = true;
+        }
+
+        // אם ננעלנו על swipe אופקי — נבטל scroll
+        e.preventDefault();
+
+        const w = drawerWidth();
+
+        // dx>0 פותח, dx<0 סוגר (אבל אנחנו רק בפתיחה כרגע)
+        const openPx = Math.max(0, dx);
+        const translate = Math.max(-w, Math.min(0, -w + openPx));
+
+        drawerTranslateX.value = translate;
+
+        // opacity לפי פתיחה
+        const openness = 1 - Math.abs(translate) / w;
+        overlayOpacity.value = Math.max(0, Math.min(1, openness));
+    }
+
+    function swipeOpenEnd() {
+        if (!swipeOpenActive.value) return;
+
+        const w = drawerWidth();
+        const openness = 1 - Math.abs(drawerTranslateX.value) / w;
+
+        const shouldOpen = swipeOpenLock.value && openness >= OPEN_COMMIT_RATIO;
+
+        resetSwipeState();
+
+        if (shouldOpen) {
+            // ✅ פותחים עד הסוף
+            animateDrawer(0, 1, 140);
+        } else {
+            // ❌ לא מספיק — סוגרים ומורידים מה-DOM
+            animateDrawer(-w, 0, 140);
+            window.setTimeout(() => {
+                mobileNavOpen.value = false;
+            }, 160);
+        }
+    }
+
     /* Swipe close (drawer panel) */
     const touchStartX = ref(0);
     const touchDragging = ref(false);
@@ -365,53 +486,6 @@
         if (closedAmount > 0.35) closeMobileNav();
         else animateDrawer(0, 1, 160);
     }
-
-    /* =========================
-   ✅ EDGE SWIPE (OPEN) — ZONE
-   ========================= */
-    const edgeActive = ref(false);
-    const edgeStartX = ref(0);
-    const edgeStartY = ref(0);
-    const edgeLastX = ref(0);
-    const edgeLastY = ref(0);
-
-    const OPEN_DX = 70;  // כמה צריך לגרור ימינה כדי לפתוח
-    const MAX_DY = 90;  // אם זה יותר מדי אנכי — זו גלילה
-
-    function edgeZoneStart(e) {
-        if (mobileNavOpen.value) return;
-        const t = e.touches?.[0];
-        if (!t) return;
-
-        edgeActive.value = true;
-        edgeStartX.value = t.clientX;
-        edgeStartY.value = t.clientY;
-        edgeLastX.value = t.clientX;
-        edgeLastY.value = t.clientY;
-    }
-
-    function edgeZoneMove(e) {
-        if (!edgeActive.value) return;
-        const t = e.touches?.[0];
-        if (!t) return;
-
-        edgeLastX.value = t.clientX;
-        edgeLastY.value = t.clientY;
-    }
-
-    function edgeZoneEnd() {
-        if (!edgeActive.value) return;
-        edgeActive.value = false;
-
-        const dx = edgeLastX.value - edgeStartX.value;
-        const dy = edgeLastY.value - edgeStartY.value;
-
-        if (Math.abs(dy) > MAX_DY) return;
-        if (dx < OPEN_DX) return;
-
-        openMobileNav();
-    }
-
 
     /* Pointer listeners (capture: true so it won’t get swallowed by inner components) */
     function onPointerDown(e) {
