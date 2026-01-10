@@ -28,7 +28,7 @@
 
                 <button type="button"
                         @pointerdown.stop.prevent="onExpandPointerDown"
-@                       click="toggleChatSize"
+                       click="toggleChatSize"
                         @click="toggleChatSize"
                         class="w-10 h-10 rounded-xl bg-white/5 border border-white/10 hover:border-green-500/40 transition
                  active:scale-[0.98] flex items-center justify-center"
@@ -198,23 +198,6 @@
         return messagesStore.messagesInRoom(roomUuid.value);
     });
 
-    /**
-     * ✅ CRITICAL:
-     * - אם מקלדת פתוחה (input בפוקוס) ולוחצים expand/shrink -> נסגור מקלדת (blur)
-     * - לעולם לא נחזיר focus אוטומטית (זה מה שגרם לפתיחת מקלדת "בלי רצון")
-     */
-    function onExpandPointerDown() {
-        if (document.activeElement === inputEl.value) {
-            inputEl.value?.blur?.();
-        }
-    }
-
-    async function toggleChatSize() {
-        if (chatLayout?.toggle) chatLayout.toggle();
-
-        // שומר UX: לא לעשות scroll-jump מוזר אחרי שינוי grid
-        await nextTick();
-    }
 
     const keyboardPx = ref(0);
 
