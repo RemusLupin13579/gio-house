@@ -66,9 +66,10 @@ export const usePresenceStore = defineStore("presence", {
             this.ready = false;
         },
 
-        async connect(houseId) {
+        async connect(houseId, initialRoom = "living") {
             const userId = session.value?.user?.id;
             const token = session.value?.access_token;
+            const safeInitial = initialRoom || "living";
 
             console.log("[presence.connect] start", { houseId, userId, hasToken: !!token });
 
@@ -169,8 +170,12 @@ export const usePresenceStore = defineStore("presence", {
                             clearTimeout(timer);
 
                             try {
-                                // ✅ on connect: online + living as last_room (safe default)
-                                await ch.track(buildPayload({ user_status: "online", room_name: "living", last_room: "living" }));
+                                // ✅ on connect:
+                                await ch.track(buildPayload({
+                                    user_status: "online",
+                                    room_name: safeInitial,
+                                    last_room: safeInitial,
+                                }));
                             } catch (e) {
                                 console.warn("[presence.connect] track failed", e);
                             }
@@ -212,7 +217,7 @@ export const usePresenceStore = defineStore("presence", {
                 this.channelHouseId = houseId;
 
                 // optimistic self
-                const payload = buildPayload({ user_status: "online", room_name: "living", last_room: "living" });
+                const payload = buildPayload({ user_status: "online", room_name: safeInitial, last_room: safeInitial });
                 this.users = { ...(this.users || {}), [userId]: payload };
                 this.myUserStatus = payload.user_status;
 

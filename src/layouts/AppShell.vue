@@ -8,7 +8,7 @@
                 ☰
             </button>
 
-            <div class="font-bold text-green-300 truncate max-w-[60vw]">
+            <div class="font-bold text-green-300 truncate max-w-[60vw] mx-auto text-center">
                 {{ headerTitle }}
             </div>
 
@@ -395,6 +395,27 @@
         }
     });
 
+    watch(
+        [() => house.currentHouseId, () => route.name, () => route.params.id],
+        ([houseId, rName, rId]) => {
+            if (!houseId) return;
+            void roomsStore.loadForHouse(houseId).catch(console.error);
+
+            const initialRoom =
+                rName === "room" && typeof rId === "string" && rId.length ? rId : "living";
+
+            void (async () => {
+                const ok = await presence.connect(houseId, initialRoom);
+                // ❌ לא עושים setRoom("living") כאן
+                // ✅ connect כבר עושה track עם initialRoom
+                // ואם תרצה “ליישר קו” בכל זאת:
+                // if (ok) await presence.setRoom(initialRoom);
+            })();
+        },
+        { immediate: true }
+    );
+
+
     /* =========================
        ✅ FULL-SCREEN SWIPE OPEN (Discord-like)
        ========================= */
@@ -529,7 +550,7 @@
             const insideHeaderMenu = e.target?.closest?.("[data-house-menu]");
             if (!insideHeaderMenu) houseMenuOpen.value = false;
         }
-       
+
     }
 
     /* =========================
@@ -588,8 +609,8 @@
     /* =========================
        ✅ AFK automation (status only — NOT a room)
        ========================= */
-    // ✅:דיבוג 5000
-    const AFK_MS = 10 * 60 * 1000; // 10 דקות  
+    //const AFK_MS = 5000; // ✅:דיבוג 5000 - 5 שניות
+    const AFK_MS = 10 * 60 * 1000; // 10 דקות
 
     let afkTimer = null;
     let wakeDebounce = null;
@@ -680,17 +701,26 @@
     }
 
     async function enterRoom(roomKey, options = {}) {
-        await presence.setRoom(roomKey);
         house.enterRoom?.(roomKey);
-        router.push({ name: "room", params: { id: roomKey } });
+        await router.push({ name: "room", params: { id: roomKey } });
+
+        // אחרי הניווט, תוודא שיש channel ואז track
+        if (house.currentHouseId) {
+            await presence.connect(house.currentHouseId, roomKey);
+        }
+        await presence.setRoom(roomKey);
+
         if (options.closeDrawer && mobileNavOpen.value) closeMobileNav();
     }
 
-    
+
+
 
     function switchHouse(houseId) {
         if (!houseId) return;
         house.setCurrentHouse(houseId);
+        // ✅ סוגר מגירה במובייל
+        if (mobileNavOpen.value) closeMobileNav();
         if (route.name !== "home" && route.name !== "members") {
             router.push({ name: "home" });
         }
@@ -698,7 +728,11 @@
 
     const retryPresence = () => house.currentHouseId && presence.connect(house.currentHouseId);
 
+    const roomKeyFromRoute = computed(() => route.params.id);
+
+
     onMounted(() => {
+
         attachAfkListeners();
         scheduleAfk();
 

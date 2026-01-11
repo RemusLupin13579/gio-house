@@ -28,7 +28,6 @@
 
                 <button type="button"
                         @pointerdown.stop.prevent="onExpandPointerDown"
-                       click="toggleChatSize"
                         @click="toggleChatSize"
                         class="w-10 h-10 rounded-xl bg-white/5 border border-white/10 hover:border-green-500/40 transition
                  active:scale-[0.98] flex items-center justify-center"
@@ -255,28 +254,24 @@
     }
 
     watch(
-        [() => house.currentHouseId, () => house.currentRoom],
-        async ([houseId, roomKey], [, oldRoomKey]) => {
-            if (!houseId || !roomKey) return;
+        [() => house.currentHouseId, () => house.currentRoom, () => roomUuid.value],
+        async ([houseId, roomKey, uuid], [oldHouseId, oldRoomKey, oldUuid]) => {
+            if (!houseId || !roomKey || !uuid) return;
 
-            await roomsStore.loadForHouse(houseId);
-
-            const newUuid = roomsStore.getRoomUuidByKey(roomKey);
-            const oldUuid = oldRoomKey ? roomsStore.getRoomUuidByKey(oldRoomKey) : null;
-
-            if (oldUuid && oldUuid !== newUuid) {
+            // אם עברנו חדר/בית - ננתק uuid קודם
+            if (oldUuid && oldUuid !== uuid) {
                 await messagesStore.unsubscribe(oldUuid);
             }
 
-            if (!newUuid) return;
-
-            await messagesStore.load(newUuid);
-            messagesStore.subscribe(newUuid);
-            activeUuid = newUuid;
+            // טען+subscribe ל-uuid הנוכחי
+            await messagesStore.load(uuid);
+            messagesStore.subscribe(uuid);
+            activeUuid = uuid;
             scrollToBottom();
         },
         { immediate: true }
     );
+
 
     async function sendMessage() {
         const text = newMessage.value.trim();

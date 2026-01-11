@@ -1,5 +1,5 @@
 <template>
-    <div class="flex h-full flex-col items-center gap-3 py-3">
+    <div class="flex h-full flex-col items-center gap-3 py-3 max-w-[60vw] mx-auto text-center">
         <div class="flex w-full flex-col items-center gap-3">
             <button v-for="houseItem in housesList"
                     :key="houseItem.id"

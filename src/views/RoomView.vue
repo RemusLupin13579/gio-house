@@ -88,19 +88,26 @@
     }));
 
     async function syncRoom(roomKey) {
-        if (roomKey && house.rooms[roomKey]) {
+        if (!roomKey) return;
+
+        if (house.rooms?.[roomKey]) {
             house.enterRoom(roomKey);
         }
         await presence.setRoom(roomKey);
     }
 
+    const roomParam = computed(() =>
+        route.params.key ?? route.params.roomKey ?? route.params.id ?? null
+    );
+
     watch(
-        () => route.params.id,
-        async (newRoom) => {
-            await syncRoom(newRoom);
+        roomParam,
+        async (newRoomKey) => {
+            await syncRoom(newRoomKey);
         },
         { immediate: true }
     );
+
 
     async function goBack() {
         await presence.setRoom("living");
