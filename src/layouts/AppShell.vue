@@ -12,11 +12,7 @@
                 {{ headerTitle }}
             </div>
 
-            <button class="w-10 h-10 rounded-xl bg-white/5 border border-white/10 hover:border-green-500/50 transition active:scale-[0.98]"
-                    @click="openHouseModal = true"
-                    title="Houses">
-                ➕
-            </button>
+            
         </div>
 
         <aside class="hidden md:flex w-16 bg-[#0b0f12] border-r border-white/5 flex-col items-center py-3 gap-3">
@@ -36,8 +32,10 @@
             <div class="flex-1"></div>
 
             <button class="w-11 h-11 rounded-2xl flex items-center justify-center border border-white/10 bg-white/5 hover:border-green-500/50 transition"
-                    title="Profile">
-                👤
+                    :class="isMembers ? 'bg-green-500/20 border-green-500/60' : ''"
+                    title="Members"
+                    @click="goMembers">
+                👥
             </button>
         </aside>
 
@@ -202,8 +200,10 @@
                                 </button>
 
                                 <button class="flex-1 h-11 rounded-2xl flex items-center justify-center border border-white/10 bg-white/5 hover:border-green-500/50 transition"
-                                        title="Profile">
-                                    👤
+                                        :class="isMembers ? 'bg-green-500/20 border-green-500/60' : ''"
+                                        title="Members"
+                                        @click="goMembers(); closeMobileNav({ skipHistoryBack: true })">
+                                    👥
                                 </button>
                             </div>
                         </div>
@@ -362,7 +362,7 @@
         }
     }
 
-    function closeMobileNav() {
+    function closeMobileNav(options = {}) {
         if (!mobileNavOpen.value) return;
 
         const w = drawerWidth();
@@ -372,7 +372,7 @@
             mobileNavOpen.value = false;
         }, 155);
 
-        if (drawerHistoryPushed.value) {
+        if (drawerHistoryPushed.value && !options.skipHistoryBack) {
             suppressNextPop = true;
             history.back();
             drawerHistoryPushed.value = false;
@@ -636,8 +636,12 @@
        ✅ Navigation / header / rooms
        ========================= */
     const isHome = computed(() => route.name === "home");
+    const isMembers = computed(() => route.name === "members");
     function goHome() {
         router.push({ name: "home" });
+    }
+    function goMembers() {
+        router.push({ name: "members" });
     }
 
     const currentHouse = computed(() => {

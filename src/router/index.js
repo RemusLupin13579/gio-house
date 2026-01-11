@@ -6,7 +6,7 @@ import RoomView from "../views/RoomView.vue";
 import LoginView from "../views/LoginView.vue";
 import AuthCallbackView from "../views/AuthCallbackView.vue";
 import OnboardingView from "../views/OnboardingView.vue";
-
+import MembersView from "../views/MembersView.vue";
 import { authReady, session, profile } from "../stores/auth";
 
 const routes = [
@@ -19,6 +19,7 @@ const routes = [
         component: AppShell,
         children: [
             { path: "", name: "home", component: HomeView },
+            { path: "members", name: "members", component: MembersView },
             { path: "room/:id", name: "room", component: RoomView, props: true },
         ],
     },
