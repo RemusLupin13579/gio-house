@@ -16,26 +16,49 @@
         </div>
 
         <aside class="hidden md:flex w-16 bg-[#0b0f12] border-r border-white/5 flex-col items-center py-3 gap-3">
-            <button class="w-11 h-11 rounded-2xl flex items-center justify-center border border-white/10 hover:border-green-500/50 transition"
-                    :class="isHome ? 'bg-green-500/20 border-green-500/60' : 'bg-white/5'"
-                    @click="goHome"
-                    title="Home">
-                🏠
-            </button>
+            <div class="flex flex-col items-center gap-3 w-full">
+                <div v-for="houseItem in houseRail"
+                     :key="houseItem.id"
+                     class="relative flex items-center justify-center w-full">
+                    <button class="w-11 h-11 rounded-2xl flex items-center justify-center border border-white/10 transition"
+                            :class="houseItem.id === house.currentHouseId
+                                ? 'bg-green-500/20 border-green-500/60 ring-2 ring-green-500/40'
+                                : 'bg-white/5 hover:border-green-500/50'"
+                            @click="switchHouse(houseItem.id)"
+                            @contextmenu.prevent="openHouseActions(houseItem.id)"
+                            :title="houseItem.name || 'House'">
+                        <span v-if="houseItem.is_public">🌍</span>
+                        <span v-else>{{ houseInitial(houseItem) }}</span>
+                    </button>
 
-            <button class="w-11 h-11 rounded-2xl flex items-center justify-center border border-white/10 bg-white/5 hover:border-green-500/50 transition"
-                    @click="openHouseModal = true"
-                    title="Houses">
-                ➕
-            </button>
+                    <button class="absolute -right-1 -top-1 w-5 h-5 rounded-full bg-black/80 border border-white/10 text-[10px] leading-none hover:border-green-500/50 transition"
+                            title="House actions"
+                            data-house-actions-btn="true"
+                            @click.stop="toggleHouseActions(houseItem.id)">
+                        ⋯
+                    </button>
+
+                    <div v-if="houseActionsOpenId === houseItem.id"
+                         data-house-actions="true"
+                         class="absolute left-14 top-1 z-50 w-40 bg-[#0b0f12] border border-white/10 rounded-xl shadow-xl overflow-hidden">
+                        <button class="w-full px-3 py-2 text-right hover:bg-white/5"
+                                @click="openInviteForHouse(houseItem.id)">
+                            הזמן חברים
+                        </button>
+                        <button class="w-full px-3 py-2 text-right hover:bg-white/5"
+                                @click="openSettingsForHouse(houseItem.id)">
+                            הגדרות
+                        </button>
+                    </div>
+                </div>
+            </div>
 
             <div class="flex-1"></div>
 
             <button class="w-11 h-11 rounded-2xl flex items-center justify-center border border-white/10 bg-white/5 hover:border-green-500/50 transition"
-                    :class="isMembers ? 'bg-green-500/20 border-green-500/60' : ''"
-                    title="Members"
-                    @click="goMembers">
-                👥
+                    @click="openHouseModal = true"
+                    title="Add or Join house">
+                ➕
             </button>
         </aside>
 
@@ -309,7 +332,7 @@
 
     const openHouseModal = ref(false);
     const houseMenuOpen = ref(false);
-
+    const houseActionsOpenId = ref(null);
     const showMobileTopBar = computed(() => route.name !== "room");
 
     /* =========================
@@ -320,6 +343,7 @@
     const overlayOpacity = ref(0);
 
     function drawerWidth() {
+        if (isMobile()) return window.innerWidth;
         return Math.min(window.innerWidth * 0.86, 360);
     }
 
@@ -519,6 +543,17 @@
         else animateDrawer(0, 1, 120);
     }
 
+    function onGlobalPointerDown(e) {
+        if (houseMenuOpen.value) {
+            const insideHeaderMenu = e.target?.closest?.("[data-house-menu]");
+            if (!insideHeaderMenu) houseMenuOpen.value = false;
+        }
+        if (!houseActionsOpenId.value) return;
+        const insideMenu = e.target?.closest?.("[data-house-actions]");
+        const insideButton = e.target?.closest?.("[data-house-actions-btn]");
+        if (!insideMenu && !insideButton) houseActionsOpenId.value = null;
+    }
+
     /* =========================
        ✅ Presence bootstrap
        ========================= */
@@ -654,6 +689,16 @@
         currentHouse.value?.is_public ? "GIO HOUSE" : currentHouse.value?.name || "My House"
     );
 
+    const houseRail = computed(() => {
+        const list = house.myHouses ?? [];
+        const sorted = [...list].sort((a, b) => {
+            if (a.is_public && !b.is_public) return -1;
+            if (!a.is_public && b.is_public) return 1;
+            return (a.name || "").localeCompare(b.name || "");
+        });
+        return sorted;
+    });
+
     const nickname = computed(() => profile.value?.nickname ?? "User");
     const avatarUrl = computed(() => profile.value?.avatar_url ?? null);
 
@@ -678,6 +723,42 @@
         router.push({ name: "room", params: { id: roomKey } });
     }
 
+    function houseInitial(houseItem) {
+        const name = houseItem?.name?.trim();
+        return name ? name[0].toUpperCase() : "🏠";
+    }
+
+    function switchHouse(houseId) {
+        if (!houseId) return;
+        house.setCurrentHouse(houseId);
+        houseActionsOpenId.value = null;
+        if (route.name !== "home" && route.name !== "members") {
+            router.push({ name: "home" });
+        }
+    }
+
+    function openHouseActions(houseId) {
+        houseActionsOpenId.value = houseActionsOpenId.value === houseId ? null : houseId;
+    }
+
+    function toggleHouseActions(houseId) {
+        openHouseActions(houseId);
+    }
+
+    function openInviteForHouse(houseId) {
+        if (!houseId) return;
+        house.setCurrentHouse(houseId);
+        openInviteModal.value = true;
+        houseActionsOpenId.value = null;
+    }
+
+    function openSettingsForHouse(houseId) {
+        if (!houseId) return;
+        house.setCurrentHouse(houseId);
+        openHouseModal.value = true;
+        houseActionsOpenId.value = null;
+    }
+
     const retryPresence = () => house.currentHouseId && presence.connect(house.currentHouseId);
 
     onMounted(() => {
@@ -688,6 +769,7 @@
         window.addEventListener("touchstart", onTouchStartGlobal, { capture: true, passive: true });
         window.addEventListener("touchmove", onTouchMoveGlobal, { capture: true, passive: false });
         window.addEventListener("touchend", onTouchEndGlobal, { capture: true, passive: true });
+        window.addEventListener("pointerdown", onGlobalPointerDown, { capture: true });
     });
 
     onBeforeUnmount(() => {
@@ -698,6 +780,7 @@
         window.removeEventListener("touchstart", onTouchStartGlobal, { capture: true });
         window.removeEventListener("touchmove", onTouchMoveGlobal, { capture: true });
         window.removeEventListener("touchend", onTouchEndGlobal, { capture: true });
+        window.removeEventListener("pointerdown", onGlobalPointerDown, { capture: true });
     });
 </script>
 
