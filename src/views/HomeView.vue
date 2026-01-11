@@ -43,6 +43,7 @@
                         🔴 Realtime offline
                     </div>
 
+                    <!-- Skeleton -->
                     <div v-if="isPresenceLoading" class="absolute inset-0 z-15 pointer-events-none">
                         <div v-for="u in skeletonUsers"
                              :key="u.id"
@@ -65,34 +66,35 @@
                         </div>
                     </div>
 
+                    <!-- Real users -->
                     <div v-for="user in clockUsers"
                          :key="user.id"
                          class="absolute inset-0 z-20 pointer-events-none"
                          :style="{ transform: `rotate(${getUserRotation(user)}deg)` }">
+                        <!-- hand -->
                         <div class="absolute left-1/2 top-1/2 origin-left"
                              :style="{
                 width: `${getHandLen(user)}px`,
                 height: `${handThickness}px`,
                 transform: 'translateY(-50%)',
-                backgroundColor: safeColor(user.color),
-                boxShadow: `0 0 12px ${safeColor(user.color)}66`,
-                borderRadius: '999px',
-                opacity: user.status === 'offline' ? '0.25' : '0.85',
+                backgroundColor: statusColor(user.status, user.color),
+                boxShadow: `0 0 12px ${statusColor(user.status, user.color)}66`,
+                opacity: user.status === 'offline' ? '0.25' : (user.status === 'afk' ? '0.65' : '0.85'),
               }"></div>
 
+                        <!-- avatar -->
                         <div class="absolute left-1/2 top-1/2"
                              :style="{ transform: `translate(-50%, -50%) translateX(${getHandLen(user)}px)` }">
                             <div :style="{ transform: `rotate(${-getUserRotation(user)}deg)` }">
                                 <div data-avatar-btn="1"
-                                     @click.stop="toggleTooltip(user.id)"
                                      class="relative z-30 cursor-pointer select-none pointer-events-auto group"
-                                     :style="{ width: `${getAvatarSize(user)}px`, height: `${getAvatarSize(user)}px` }">
+                                     :style="{ width: `${getAvatarSize(user)}px`, height: `${getAvatarSize(user)}px` }"
+                                     @click.stop="toggleTooltip(user, $event)">
                                     <div class="w-full h-full rounded-full flex items-center justify-center border-4 transition-transform active:scale-95 hover:scale-110 overflow-hidden"
                                          :style="{
-                      borderColor: safeColor(user.color),
-                      background: `linear-gradient(135deg, ${safeColor(user.color)}22, ${safeColor(user.color)}44)`,
-                      boxShadow: `0 0 20px ${safeColor(user.color)}88`,
-                      opacity: user.status === 'offline' ? '0.35' : '1',
+                      borderColor: statusColor(user.status, user.color),
+                      background: `linear-gradient(135deg, ${statusColor(user.status, user.color)}22, ${statusColor(user.status, user.color)}44)`,
+                      boxShadow: `0 0 20px ${statusColor(user.status, user.color)}88`,
                     }">
                                         <img v-if="user.avatar && (String(user.avatar).startsWith('http') || String(user.avatar).startsWith('blob:'))"
                                              :src="user.avatar"
@@ -106,18 +108,13 @@
                                     <div class="absolute -bottom-1 -right-1 rounded-full border-2 border-black"
                                          :class="getStatusColor(user.status)"
                                          :style="{ width: `${statusDot}px`, height: `${statusDot}px` }"></div>
-
-                                    <div class="absolute -bottom-9 left-1/2 -translate-x-1/2 bg-black/90 px-3 py-1 rounded-lg border whitespace-nowrap text-xs font-bold pointer-events-none opacity-0 transition-opacity"
-                                         :class="activeTooltipUserId === user.id ? 'opacity-100' : 'group-hover:opacity-100'"
-                                         :style="{ borderColor: safeColor(user.color), color: safeColor(user.color) }">
-                                        {{ user.name }}
-                                    </div>
                                 </div>
                             </div>
                         </div>
                     </div>
 
-                    <div class="absolute inset-0 rounded-full pointer-events-none z-0" style="box-shadow: inset 0 0 80px rgba(34,197,94,0.12);"></div>
+                    <div class="absolute inset-0 rounded-full pointer-events-none z-0"
+                         style="box-shadow: inset 0 0 80px rgba(34,197,94,0.12);"></div>
                 </div>
             </div>
         </section>
@@ -174,11 +171,29 @@
                 </button>
             </div>
         </section>
+
+        <!-- ✅ Tooltip (Teleport -> body so it never gets clipped by the clock) -->
+        <Teleport to="body">
+            <!-- click outside closes -->
+            <div v-if="tooltip.open" class="gio-tooltip-backdrop" @click="closeTooltip()"></div>
+
+            <div v-if="tooltip.open"
+                 data-tooltip="1"
+                 class="gio-tooltip"
+                 :style="{ left: tooltip.x + 'px', top: tooltip.y + 'px' }">
+                <div class="gio-tooltip__name">{{ tooltip.name }}</div>
+                <div class="gio-tooltip__row">
+                    <span class="gio-tooltip__pill" :data-status="tooltip.status">
+                        {{ statusLabel(tooltip.status) }}
+                    </span>
+                </div>
+            </div>
+        </Teleport>
     </div>
 </template>
 
 <script setup>
-    import { computed, ref, onMounted, onBeforeUnmount, watch } from "vue";
+    import { computed, ref, onMounted, onBeforeUnmount, watch, nextTick } from "vue";
     import { useHouseStore } from "../stores/house";
     import { useRouter } from "vue-router";
     import { usePresenceStore } from "../stores/presence";
@@ -189,6 +204,16 @@
     const presence = usePresenceStore();
 
     const activeTooltipUserId = ref(null);
+
+    // ✅ tooltip state (fixed, teleported)
+    const tooltip = ref({
+        open: false,
+        x: 0,
+        y: 0,
+        name: "",
+        status: "offline",
+        color: "#22c55e",
+    });
 
     const isPresenceLoading = computed(() => presence.status === "connecting" || warmup.value);
     const isPresenceFailed = computed(() => presence.status === "failed");
@@ -209,32 +234,116 @@
     });
     const isPublicHouse = computed(() => !!currentHouse.value?.is_public);
 
+    // ✅ build clock users
     const clockUsers = computed(() => {
         const list = Object.values(presence.users || {});
+
         return list
-            .map((u) => ({
-                id: u.user_id ?? u.id,
-                name: u.nickname ?? "User",
-                avatar: u.avatar_url ?? null,
-                color: u.color ?? "#22c55e",
-                status: "online",
-                roomKey: u.room_name ?? "living",
-            }))
+            .map((u) => {
+                const id = u.user_id ?? u.id;
+                const baseRoom = u.room_name ?? u.last_room ?? "living";
+                const st = u.user_status ?? "online"; // online | afk | offline
+                const ts = Number(u.ts || 0);
+
+                // ✅ AFK is shown as a "station", not a real room
+                // ✅ OFFLINE stays on the clock at the same bottom position as AFK (per request)
+                const roomKeyForClock = (st === "afk" || st === "offline") ? "afk" : baseRoom;
+
+                return {
+                    id,
+                    name: u.nickname ?? "User",
+                    avatar: u.avatar_url ?? null,
+                    color: u.color ?? "#22c55e",
+                    status: st,
+                    roomKey: roomKeyForClock,
+                    ts,
+                };
+            })
             .filter((u) => !!u.id)
             .sort((a, b) => String(a.id).localeCompare(String(b.id)));
     });
 
-    function toggleTooltip(userId) {
-        activeTooltipUserId.value = activeTooltipUserId.value === userId ? null : userId;
-    }
-    function closeTooltip() {
-        activeTooltipUserId.value = null;
-    }
-    function onDocPointerDown(e) {
-        const insideAvatar = e.target?.closest?.('[data-avatar-btn="1"]');
-        if (!insideAvatar) closeTooltip();
+    function safeColor(c) {
+        return typeof c === "string" && c.startsWith("#") ? c : "#22c55e";
     }
 
+    function statusColor(status, base) {
+        if (status === "afk") return "#facc15"; // yellow-400
+        if (status === "offline") return "#94a3b8"; // slate-400
+        return safeColor(base); // online -> user color
+    }
+
+    function statusLabel(s) {
+        return (
+            {
+                online: "Online",
+                afk: "AFK",
+                offline: "Offline",
+            }[s] || "Offline"
+        );
+    }
+
+    // ✅ tooltip open/close (teleported, fixed positioning)
+    function clamp(n, min, max) {
+        return Math.max(min, Math.min(max, n));
+    }
+
+    function openTooltipForUser(user, anchorEl) {
+        if (!anchorEl) return;
+
+        const r = anchorEl.getBoundingClientRect();
+
+        const pad = 12;
+        const tipW = 210; // approximate width for clamping
+        const tipH = 70;  // approximate height for clamping
+
+        // center above by default
+        let x = r.left + r.width / 2;
+        let y = r.top - 12;
+
+        // if would go above viewport, place below
+        if (y < pad + tipH) y = r.bottom + 12;
+
+        x = clamp(x, pad + tipW / 2, window.innerWidth - pad - tipW / 2);
+        y = clamp(y, pad + tipH, window.innerHeight - pad);
+
+        tooltip.value = {
+            open: true,
+            x,
+            y,
+            name: user.name ?? "User",
+            status: user.status ?? "offline",
+            color: statusColor(user.status, user.color),
+        };
+    }
+
+    function toggleTooltip(user, e) {
+        const el = e?.currentTarget;
+        if (!el) return;
+
+        if (activeTooltipUserId.value === user.id && tooltip.value.open) {
+            closeTooltip();
+            return;
+        }
+
+        activeTooltipUserId.value = user.id;
+
+        // wait one tick in case layout shifts (tiny safety)
+        nextTick(() => openTooltipForUser(user, el));
+    }
+
+    function closeTooltip() {
+        activeTooltipUserId.value = null;
+        tooltip.value.open = false;
+    }
+
+    function onDocPointerDown(e) {
+        const insideAvatar = e.target?.closest?.('[data-avatar-btn="1"]');
+        const insideTooltip = e.target?.closest?.('[data-tooltip="1"]');
+        if (!insideAvatar && !insideTooltip) closeTooltip();
+    }
+
+    // ✅ responsive sizing
     const clockWrapEl = ref(null);
     const clockSize = ref(0);
     let ro = null;
@@ -267,6 +376,7 @@
         ro = null;
     });
 
+    // sizing
     const radius = computed(() => Math.max(110, Math.min(170, Math.floor(clockSize.value * 0.40))));
     const baseHandLen = computed(() => Math.max(100, Math.min(160, Math.floor(clockSize.value * 0.38))));
     const handThickness = computed(() => Math.max(3, Math.min(5, Math.floor(clockSize.value * 0.012))));
@@ -281,21 +391,17 @@
         { id: "study", name: "לימוד", icon: "📚" },
         { id: "bathroom", name: "שירותים", icon: "🚿" },
         { id: "cinema", name: "קולנוע", icon: "🎬" },
-        { id: "afk", name: "לא פה", icon: "😴" },
+        { id: "afk", name: "afk", icon: "😴" },
     ]);
 
     const ROOM_ANGLE = {
         living: 0,
         gaming: 60,
         cinema: 120,
-        bathroom: 180,
-        study: 240,
-        afk: 300,
+        afk: 180, // ✅ 6 o’clock (bottom)
+        bathroom: 240,
+        study: 300,
     };
-
-    function safeColor(c) {
-        return typeof c === "string" && c.startsWith("#") ? c : "#22c55e";
-    }
 
     function getHandLen(user) {
         const sameRoom = clockUsers.value
@@ -357,8 +463,8 @@
             {
                 online: "bg-green-400",
                 afk: "bg-yellow-400",
-                offline: "bg-gray-600",
-            }[status] || "bg-gray-600"
+                offline: "bg-slate-400",
+            }[status] || "bg-slate-400"
         );
     }
 
@@ -384,4 +490,68 @@
     .active\:scale-98:active {
         transform: scale(0.98);
     }
+
+    /* Tooltip */
+    .gio-tooltip-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 999998;
+        background: transparent;
+    }
+
+    .gio-tooltip {
+        position: fixed;
+        z-index: 999999;
+        transform: translate(-50%, -100%);
+        min-width: 180px;
+        max-width: 240px;
+        padding: 10px 12px;
+        border-radius: 14px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        background: rgba(8, 10, 12, 0.92);
+        backdrop-filter: blur(6px);
+        box-shadow: 0 12px 30px rgba(0, 0, 0, 0.55);
+    }
+
+    .gio-tooltip__name {
+        font-weight: 900;
+        color: rgba(255, 255, 255, 0.92);
+        font-size: 13px;
+        line-height: 1.1;
+        margin-bottom: 6px;
+    }
+
+    .gio-tooltip__row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .gio-tooltip__pill {
+        font-size: 11px;
+        font-weight: 900;
+        padding: 3px 8px;
+        border-radius: 999px;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        background: rgba(255, 255, 255, 0.06);
+        color: rgba(255, 255, 255, 0.80);
+    }
+
+        .gio-tooltip__pill[data-status="online"] {
+            border-color: rgba(34, 197, 94, 0.35);
+            background: rgba(34, 197, 94, 0.12);
+            color: rgba(210, 255, 225, 0.92);
+        }
+
+        .gio-tooltip__pill[data-status="afk"] {
+            border-color: rgba(250, 204, 21, 0.35);
+            background: rgba(250, 204, 21, 0.12);
+            color: rgba(255, 245, 200, 0.92);
+        }
+
+        .gio-tooltip__pill[data-status="offline"] {
+            border-color: rgba(148, 163, 184, 0.30);
+            background: rgba(148, 163, 184, 0.10);
+            color: rgba(255, 255, 255, 0.70);
+        }
 </style>

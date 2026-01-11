@@ -12,12 +12,17 @@ export const usePresenceStore = defineStore("presence", {
         // anti-race + retry
         connectSeq: 0,
         retryTimer: null,
+
+        // ✅ connection status (socket)
         status: "idle", // "idle" | "connecting" | "ready" | "failed"
+
+        // ✅ user status (what the user actually is)
+        myUserStatus: "online", // "online" | "afk" | "offline"
     }),
 
     getters: {
         usersInRoom: (state) => (roomName) =>
-            Object.values(state.users).filter((u) => u.room_name === roomName),
+            Object.values(state.users).filter((u) => (u.room_name ?? "living") === roomName),
 
         usersByRoom: (state) => {
             const grouped = {};
@@ -61,11 +66,6 @@ export const usePresenceStore = defineStore("presence", {
             this.ready = false;
         },
 
-        /**
-         * Connect presence to a specific house channel.
-         * Returns true/false. Never throws.
-         * Anti-race: only the latest connect call "wins".
-         */
         async connect(houseId) {
             const userId = session.value?.user?.id;
             const token = session.value?.access_token;
@@ -81,7 +81,7 @@ export const usePresenceStore = defineStore("presence", {
             this.connectSeq += 1;
             const seq = this.connectSeq;
 
-            // already connected to this house
+            // already connected
             if (this.channel && this.channelHouseId === houseId) {
                 this.status = "ready";
                 this.ready = true;
@@ -91,7 +91,6 @@ export const usePresenceStore = defineStore("presence", {
             this.status = "connecting";
             this.ready = false;
 
-            // clean disconnect
             await this._hardDisconnect();
             if (seq !== this.connectSeq) return false;
 
@@ -104,14 +103,28 @@ export const usePresenceStore = defineStore("presence", {
 
             const channelName = `presence:house:${houseId}`;
 
-            const buildPayload = () => ({
-                user_id: userId,
-                house_id: houseId,
-                nickname: profile.value?.nickname ?? "User",
-                avatar_url: profile.value?.avatar_url ?? null,
-                room_name: "living",
-                ts: Date.now(),
-            });
+            const buildPayload = (overrides = {}) => {
+                const me = this.users?.[userId];
+
+                // ✅ last real room (never "afk" as a room)
+                const lastRoom = overrides.last_room ?? me?.last_room ?? me?.room_name ?? "living";
+                const roomName = overrides.room_name ?? lastRoom;
+
+                return {
+                    user_id: userId,
+                    house_id: houseId,
+                    nickname: profile.value?.nickname ?? "User",
+                    avatar_url: profile.value?.avatar_url ?? null,
+
+                    room_name: roomName,
+                    last_room: lastRoom,
+
+                    // ✅ real user status
+                    user_status: overrides.user_status ?? this.myUserStatus ?? "online",
+
+                    ts: Date.now(),
+                };
+            };
 
             const attemptOnce = async () => {
                 const ch = supabase.channel(channelName, {
@@ -130,7 +143,10 @@ export const usePresenceStore = defineStore("presence", {
                         this.users = next;
                         this.ready = true;
                         this.status = "ready";
-                        // console.log("[presence] sync users", Object.keys(next).length);
+
+                        // ✅ keep myUserStatus in sync with server echo
+                        const me = next?.[userId];
+                        if (me?.user_status) this.myUserStatus = me.user_status;
                     } catch (e) {
                         console.warn("[presence] sync handler failed", e);
                     }
@@ -153,9 +169,9 @@ export const usePresenceStore = defineStore("presence", {
                             clearTimeout(timer);
 
                             try {
-                                await ch.track(buildPayload());
+                                // ✅ on connect: online + living as last_room (safe default)
+                                await ch.track(buildPayload({ user_status: "online", room_name: "living", last_room: "living" }));
                             } catch (e) {
-                                // track can fail but channel subscribed – we still consider ok
                                 console.warn("[presence.connect] track failed", e);
                             }
 
@@ -166,12 +182,11 @@ export const usePresenceStore = defineStore("presence", {
                         if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
                             clearTimeout(timer);
                             finish(false);
-                            return;
                         }
                     });
                 });
 
-                // if another connect started – cleanup
+                // anti-race cleanup
                 if (seq !== this.connectSeq) {
                     try {
                         await ch.unsubscribe();
@@ -196,16 +211,17 @@ export const usePresenceStore = defineStore("presence", {
                 this.channel = ch;
                 this.channelHouseId = houseId;
 
-                // optimistic self (so UI never shows 0)
-                const payload = buildPayload();
+                // optimistic self
+                const payload = buildPayload({ user_status: "online", room_name: "living", last_room: "living" });
                 this.users = { ...(this.users || {}), [userId]: payload };
+                this.myUserStatus = payload.user_status;
 
                 this.ready = true;
                 this.status = "ready";
                 return { ok: true, ch };
             };
 
-            // retry with backoff
+            // retry
             const delays = [0, 500, 1200, 2500];
             for (let i = 0; i < delays.length; i++) {
                 if (seq !== this.connectSeq) return false;
@@ -232,11 +248,17 @@ export const usePresenceStore = defineStore("presence", {
             const userId = session.value?.user?.id;
             if (!userId) return false;
 
-            console.log("[presence.setRoom]", {
-                roomName,
-                houseId: this.channelHouseId,
-                status: this.status,
-            });
+            // ✅ never allow "afk" as a room
+            if (roomName === "afk") roomName = "living";
+
+            const me = this.users?.[userId];
+            const lastRoom = roomName || me?.last_room || me?.room_name || "living";
+
+            // ✅ moving rooms implies active, unless user explicitly offline
+            const nextStatus = this.myUserStatus === "offline" ? "offline" : "online";
+            this.myUserStatus = nextStatus;
+
+            console.log("[presence.setRoom]", { roomName, lastRoom, status: nextStatus });
 
             try {
                 await this.channel.track({
@@ -245,11 +267,52 @@ export const usePresenceStore = defineStore("presence", {
                     nickname: profile.value?.nickname ?? "User",
                     avatar_url: profile.value?.avatar_url ?? null,
                     room_name: roomName,
+                    last_room: lastRoom,
+                    user_status: nextStatus,
                     ts: Date.now(),
                 });
                 return true;
             } catch (e) {
                 console.warn("[presence.setRoom] failed", e);
+                return false;
+            }
+        },
+
+        async setUserStatus(user_status) {
+            if (!this.channel) return false;
+
+            const userId = session.value?.user?.id;
+            if (!userId) return false;
+
+            if (!["online", "afk", "offline"].includes(user_status)) {
+                console.warn("[presence.setUserStatus] invalid status:", user_status);
+                return false;
+            }
+
+            const me = this.users?.[userId];
+            const lastRoom = me?.last_room || me?.room_name || "living";
+
+            this.myUserStatus = user_status;
+
+            console.log("[presence.setUserStatus]", { user_status, lastRoom, houseId: this.channelHouseId });
+
+            try {
+                await this.channel.track({
+                    user_id: userId,
+                    house_id: this.channelHouseId,
+                    nickname: profile.value?.nickname ?? "User",
+                    avatar_url: profile.value?.avatar_url ?? null,
+
+                    // ✅ keep room real; status carries AFK
+                    room_name: lastRoom,
+                    last_room: lastRoom,
+
+                    user_status,
+                    ts: Date.now(),
+                });
+                return true;
+            } catch (e) {
+                console.warn("[presence.setUserStatus] failed", e);
                 return false;
             }
         },

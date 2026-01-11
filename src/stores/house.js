@@ -39,7 +39,14 @@ export const useHouseStore = defineStore('house', {
                 background: 'cinema',
                 users: [],
                 description: 'צפייה משותפת בסרטים'
-            }
+            },
+            afk: {
+                name: 'שינה',
+                background: 'afk',
+                users: [],
+                description: 'מצב AFK / לא זמין'
+            },
+
         },
     }),
 

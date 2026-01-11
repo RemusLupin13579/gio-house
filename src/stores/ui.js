@@ -1,19 +1,16 @@
-import { defineStore } from 'pinia'
+import { defineStore } from "pinia";
 
-export const useUIStore = defineStore('ui', {
+export const useUIStore = defineStore("ui", {
     state: () => ({
-        activeView: 'home',
-        activeRoomId: null,
+        toasts: [],
     }),
-
     actions: {
-        openRoom(roomId) {
-            this.activeRoomId = roomId
-            this.activeView = 'room'
-        },
-        goHome() {
-            this.activeView = 'home'
-            this.activeRoomId = null
+        toast(text, ms = 2400) {
+            const id = `${Date.now()}_${Math.random().toString(16).slice(2)}`;
+            this.toasts.push({ id, text });
+            setTimeout(() => {
+                this.toasts = this.toasts.filter(t => t.id !== id);
+            }, ms);
         },
     },
-})
+});

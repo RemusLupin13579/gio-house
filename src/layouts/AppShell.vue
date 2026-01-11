@@ -117,20 +117,31 @@
                     <div class="leading-tight">
                         <div class="font-bold">{{ nickname }}</div>
 
+                        <!-- ✅ CLICKABLE STATUS CHIP (desktop) -->
                         <div class="gio-topbar__right">
-                            <div class="h-5 gio-presence-chip" :data-state="presence.status">
+                            <div class="h-5 gio-presence-chip cursor-pointer select-none"
+                                 :data-state="presence.status"
+                                 :data-user="myUserStatus"
+                                 @click="presence.status === 'ready' ? cycleMyStatus() : null"
+                                 title="Change status">
                                 <span class="gio-dot" />
-                                <span v-if="presence.status === 'ready'">Online</span>
-                                <span v-else-if="presence.status === 'connecting'" class="gio-sync">
+
+                                <span v-if="presence.status === 'connecting'" class="gio-sync">
                                     Syncing
                                     <span class="gio-dots"><i></i><i></i><i></i></span>
                                 </span>
+
                                 <span v-else-if="presence.status === 'failed'">Offline</span>
+
+                                <span v-else-if="presence.status === 'ready'">
+                                    {{ myStatusLabel }}
+                                </span>
+
                                 <span v-else>Idle</span>
 
                                 <button v-if="presence.status === 'failed'"
                                         class="gio-retry-btn"
-                                        @click="retryPresence"
+                                        @click.stop="retryPresence"
                                         title="Retry">
                                     Retry
                                 </button>
@@ -220,16 +231,32 @@
                         </div>
                     </div>
 
+                    <!-- ✅ mobile bottom profile (NOW WITH CLICKABLE CHIP) -->
                     <div class="h-14 px-3 border-t border-white/10 flex items-center justify-between">
                         <div class="flex items-center gap-2">
                             <div class="w-9 h-9 rounded-xl bg-white/5 border border-white/10 overflow-hidden flex items-center justify-center">
                                 <img v-if="avatarUrl" :src="avatarUrl" class="w-full h-full object-cover" alt="" />
                                 <span v-else>🙂</span>
                             </div>
+
                             <div class="leading-tight">
                                 <div class="font-bold">{{ nickname }}</div>
-                                <div class="text-xs text-white/50">
-                                    {{ presence.status === 'ready' ? 'Online' : presence.status }}
+
+                                <div class="mt-1">
+                                    <div class="h-5 gio-presence-chip cursor-pointer select-none inline-flex"
+                                         :data-state="presence.status"
+                                         :data-user="myUserStatus"
+                                         @click="presence.status === 'ready' ? cycleMyStatus() : null"
+                                         title="Change status">
+                                        <span class="gio-dot" />
+                                        <span v-if="presence.status === 'connecting'" class="gio-sync">
+                                            Syncing
+                                            <span class="gio-dots"><i></i><i></i><i></i></span>
+                                        </span>
+                                        <span v-else-if="presence.status === 'failed'">Offline</span>
+                                        <span v-else-if="presence.status === 'ready'">{{ myStatusLabel }}</span>
+                                        <span v-else>Idle</span>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -239,6 +266,15 @@
                         </button>
                     </div>
                 </div>
+            </div>
+        </div>
+
+        <!-- ✅ Toasts -->
+        <div class="fixed bottom-4 left-1/2 -translate-x-1/2 z-[10050] flex flex-col gap-2 pointer-events-none md:hidden">
+            <div v-for="t in ui.toasts"
+                 :key="t.id"
+                 class="px-4 py-2 rounded-2xl border border-white/10 bg-black/80 backdrop-blur text-white/90 text-sm font-bold shadow-xl">
+                {{ t.text }}
             </div>
         </div>
 
@@ -252,8 +288,11 @@
     import { RouterView, useRoute, useRouter } from "vue-router";
     import { useHouseStore } from "../stores/house";
     import { usePresenceStore } from "../stores/presence";
-    import { profile } from "../stores/auth";
+    import { session, profile } from "../stores/auth";
     import { useRoomsStore } from "../stores/rooms";
+    import { useUIStore } from "../stores/ui";
+
+    const ui = useUIStore();
 
     const roomsStore = useRoomsStore();
     const router = useRouter();
@@ -311,7 +350,6 @@
         overlayOpacity.value = 0;
         animateDrawer(0, 1, 160);
 
-        // ✅ Push state so "Back" triggers popstate instead of navigating
         if (!drawerHistoryPushed.value) {
             history.pushState({ gioDrawer: true }, "");
             drawerHistoryPushed.value = true;
@@ -328,7 +366,6 @@
             mobileNavOpen.value = false;
         }, 155);
 
-        // ✅ If closed manually, clean up the history state
         if (drawerHistoryPushed.value) {
             suppressNextPop = true;
             history.back();
@@ -336,12 +373,11 @@
         }
     }
 
-    function onPopState(event) {
+    function onPopState() {
         if (suppressNextPop) {
             suppressNextPop = false;
             return;
         }
-        // If drawer is open and user pressed "Back" (popstate triggered)
         if (mobileNavOpen.value) {
             const w = drawerWidth();
             animateDrawer(-w, 0, 140);
@@ -352,7 +388,6 @@
         }
     }
 
-    /* ✅ Freeze background when drawer open */
     watch(mobileNavOpen, (open) => {
         if (open) {
             document.documentElement.style.overflow = "hidden";
@@ -443,7 +478,9 @@
             }
         } else {
             animateDrawer(-w, 0, 110);
-            window.setTimeout(() => { mobileNavOpen.value = false; }, 130);
+            window.setTimeout(() => {
+                mobileNavOpen.value = false;
+            }, 130);
         }
     }
 
@@ -493,10 +530,109 @@
     );
 
     /* =========================
+       ✅ STATUS (Online / AFK / Offline)
+       ========================= */
+    const myId = computed(() => session.value?.user?.id ?? null);
+
+    const myUserStatus = computed(() => {
+        const id = myId.value;
+        if (!id) return "offline";
+        const fromServer = presence.users?.[id]?.user_status;
+        return fromServer ?? presence.myUserStatus ?? "online";
+    });
+
+    const myStatusLabel = computed(() => {
+        return (
+            {
+                online: "Online",
+                afk: "AFK",
+                offline: "Offline",
+            }[myUserStatus.value] || "Online"
+        );
+    });
+
+    async function cycleMyStatus() {
+        if (presence.status !== "ready") return;
+
+        const cur = myUserStatus.value;
+        const next = cur === "online" ? "afk" : cur === "afk" ? "offline" : "online";
+
+        await presence.setUserStatus(next);
+
+        if (next === "afk") ui?.toast?.("💤 AFK");
+        else if (next === "offline") ui?.toast?.("🔕 Offline");
+        else ui?.toast?.("🟢 Online");
+
+        scheduleAfk();
+    }
+
+    /* =========================
+       ✅ AFK automation (status only — NOT a room)
+       ========================= */
+    // ✅:דיבוג 5000
+    const AFK_MS = 10 * 60 * 1000; // 10 דקות  
+
+    let afkTimer = null;
+    let wakeDebounce = null;
+
+    function clearAfkTimer() {
+        if (afkTimer) clearTimeout(afkTimer);
+        afkTimer = null;
+    }
+
+    function scheduleAfk() {
+        clearAfkTimer();
+
+        // Offline ידני = לא נוגעים
+        if (myUserStatus.value === "offline") return;
+
+        afkTimer = setTimeout(async () => {
+            if (myUserStatus.value === "offline") return;
+            await presence.setUserStatus("afk");
+            ui?.toast?.("💤 עברת ל-AFK");
+        }, AFK_MS);
+    }
+
+    function onUserActivity() {
+        if (myUserStatus.value === "offline") return;
+
+        scheduleAfk();
+
+        if (myUserStatus.value === "afk") {
+            if (wakeDebounce) clearTimeout(wakeDebounce);
+            wakeDebounce = setTimeout(async () => {
+                if (myUserStatus.value !== "offline") {
+                    await presence.setUserStatus("online");
+                    ui?.toast?.("👋 חזרת");
+                }
+            }, 600);
+        }
+    }
+
+    function attachAfkListeners() {
+        const opts = { passive: true };
+        window.addEventListener("pointerdown", onUserActivity, opts);
+        window.addEventListener("pointermove", onUserActivity, opts);
+        window.addEventListener("keydown", onUserActivity, opts);
+        window.addEventListener("scroll", onUserActivity, opts);
+        window.addEventListener("touchstart", onUserActivity, opts);
+    }
+
+    function detachAfkListeners() {
+        window.removeEventListener("pointerdown", onUserActivity);
+        window.removeEventListener("pointermove", onUserActivity);
+        window.removeEventListener("keydown", onUserActivity);
+        window.removeEventListener("scroll", onUserActivity);
+        window.removeEventListener("touchstart", onUserActivity);
+    }
+
+    /* =========================
        ✅ Navigation / header / rooms
        ========================= */
     const isHome = computed(() => route.name === "home");
-    function goHome() { router.push({ name: "home" }); }
+    function goHome() {
+        router.push({ name: "home" });
+    }
 
     const currentHouse = computed(() => {
         const list = house.myHouses ?? [];
@@ -504,18 +640,25 @@
     });
 
     const isPublicHouse = computed(() => !!currentHouse.value?.is_public);
-    const headerTitle = computed(() => currentHouse.value?.is_public ? "GIO HOUSE" : (currentHouse.value?.name || "My House"));
+    const headerTitle = computed(() =>
+        currentHouse.value?.is_public ? "GIO HOUSE" : currentHouse.value?.name || "My House"
+    );
+
     const nickname = computed(() => profile.value?.nickname ?? "User");
     const avatarUrl = computed(() => profile.value?.avatar_url ?? null);
+
     const roomKeys = computed(() => Object.keys(house.rooms || {}));
 
     function isActiveRoom(roomKey) {
         return route.name === "room" ? String(route.params.id) === roomKey : house.currentRoom === roomKey;
     }
 
-    function roomName(roomKey) { return house.rooms?.[roomKey]?.name ?? roomKey; }
+    function roomName(roomKey) {
+        return house.rooms?.[roomKey]?.name ?? roomKey;
+    }
+
     function roomIcon(roomKey) {
-        const icons = { living: "🛋️", gaming: "🎮", study: "📚", bathroom: "🚿", cinema: "🎬", afk: "💤" };
+        const icons = { living: "🛋️", gaming: "🎮", study: "📚", bathroom: "🚿", cinema: "🎬" };
         return icons[roomKey] || "🚪";
     }
 
@@ -528,6 +671,9 @@
     const retryPresence = () => house.currentHouseId && presence.connect(house.currentHouseId);
 
     onMounted(() => {
+        attachAfkListeners();
+        scheduleAfk();
+
         window.addEventListener("popstate", onPopState);
         window.addEventListener("touchstart", onTouchStartGlobal, { capture: true, passive: true });
         window.addEventListener("touchmove", onTouchMoveGlobal, { capture: true, passive: false });
@@ -535,6 +681,9 @@
     });
 
     onBeforeUnmount(() => {
+        detachAfkListeners();
+        clearAfkTimer();
+
         window.removeEventListener("popstate", onPopState);
         window.removeEventListener("touchstart", onTouchStartGlobal, { capture: true });
         window.removeEventListener("touchmove", onTouchMoveGlobal, { capture: true });
@@ -543,7 +692,6 @@
 </script>
 
 <style>
-    /* Styles are kept same as provided */
     :root {
         --gio-bg: #070a0d;
         --gio-panel: #0b0f12;
@@ -552,6 +700,10 @@
         --gio-green: rgb(34, 197, 94);
         --gio-text-dim: rgba(255, 255, 255, 0.55);
         --gio-text-dimmer: rgba(255, 255, 255, 0.38);
+        /* ✅ status colors */
+        --gio-online: rgb(34, 197, 94); /* green */
+        --gio-afk: rgb(250, 204, 21); /* yellow */
+        --gio-offline: rgb(148, 163, 184); /* slate */
     }
 
     .gio-topbar {
@@ -587,31 +739,65 @@
         border-radius: 999px;
         border: 1px solid var(--gio-border);
         font-size: 12px;
-        color: rgba(255, 255, 255, 0.75);
+        color: rgba(255, 255, 255, 0.80);
+        background: rgba(255,255,255,0.02);
+        transition: border-color .18s ease, background .18s ease, transform .10s ease, color .18s ease;
     }
+
+        .gio-presence-chip:active {
+            transform: scale(0.98);
+        }
 
     .gio-dot {
         width: 10px;
         height: 10px;
         border-radius: 999px;
         background: rgba(255, 255, 255, 0.25);
+        transition: background .18s ease, box-shadow .18s ease;
     }
 
-    .gio-presence-chip[data-state="ready"] .gio-dot {
-        background: rgb(34, 197, 94);
-        box-shadow: 0 0 14px rgba(34, 197, 94, 0.35);
+    /* connection ready -> we color by data-user */
+    .gio-presence-chip[data-state="ready"][data-user="online"] {
+        border-color: rgba(34,197,94,0.45);
+        background: rgba(34,197,94,0.10);
+        color: rgba(210,255,225,0.92);
     }
 
-    @keyframes gioPulse {
-        0%, 100% {
-            transform: scale(1);
-            opacity: 0.75;
+        .gio-presence-chip[data-state="ready"][data-user="online"] .gio-dot {
+            background: var(--gio-online);
+            box-shadow: 0 0 14px rgba(34, 197, 94, 0.35);
         }
 
-        50% {
-            transform: scale(1.25);
-            opacity: 1;
+    .gio-presence-chip[data-state="ready"][data-user="afk"] {
+        border-color: rgba(250,204,21,0.45);
+        background: rgba(250,204,21,0.10);
+        color: rgba(255,245,200,0.92);
+    }
+
+        .gio-presence-chip[data-state="ready"][data-user="afk"] .gio-dot {
+            background: var(--gio-afk);
+            box-shadow: 0 0 14px rgba(250, 204, 21, 0.32);
         }
+
+    .gio-presence-chip[data-state="ready"][data-user="offline"] {
+        border-color: rgba(148,163,184,0.35);
+        background: rgba(148,163,184,0.08);
+        color: rgba(255,255,255,0.68);
+    }
+
+        .gio-presence-chip[data-state="ready"][data-user="offline"] .gio-dot {
+            background: var(--gio-offline);
+            box-shadow: 0 0 12px rgba(148, 163, 184, 0.22);
+        }
+
+    /* connecting / failed */
+    .gio-presence-chip[data-state="connecting"] .gio-dot {
+        background: rgba(255,255,255,0.18);
+    }
+
+    .gio-presence-chip[data-state="failed"] .gio-dot {
+        background: rgba(239, 68, 68, 0.8);
+        box-shadow: 0 0 14px rgba(239, 68, 68, 0.25);
     }
 
     .gio-skel-count {
