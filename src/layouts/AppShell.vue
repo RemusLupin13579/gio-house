@@ -68,24 +68,25 @@
                 <div class="text-xs text-white/40 mb-2">חדרים</div>
 
                 <div class="space-y-1">
-                    <button v-for="roomKey in roomKeys"
-                            :key="roomKey"
+                    <button v-for="r in activeRooms"
+                            :key="r.id"
                             class="w-full px-3 py-2 rounded-xl flex items-center justify-between hover:bg-white/5 transition"
-                            :class="isActiveRoom(roomKey) ? 'bg-white/5 border border-green-500/30' : 'border border-transparent'"
-                            @click="enterRoom(roomKey)">
+                            :class="isActiveRoom(r.key) ? 'bg-white/5 border border-green-500/30' : 'border border-transparent'"
+                            @click="enterRoom(r.key)">
                         <div class="flex items-center gap-2">
-                            <span class="text-lg">{{ roomIcon(roomKey) }}</span>
-                            <span class="font-semibold">{{ roomName(roomKey) }}</span>
+                            <span class="text-lg">{{ r.icon || "🚪" }}</span>
+                            <span class="font-semibold">{{ r.name || r.key }}</span>
                         </div>
 
                         <span class="flex items-center gap-2 text-xs text-green-300">
-                            <span v-if="presence.status==='connecting'" class="gio-skel-count"></span>
-                            <span v-else>{{ presence.usersInRoom(roomKey).length }}</span>
+                            <span v-if="presence.status === 'connecting'" class="gio-skel-count"></span>
+                            <span v-else>{{ presence.usersInRoom(r.key).length }}</span>
                             <span class="h-2 w-2 rounded-full bg-white/10" aria-hidden="true"></span>
                         </span>
                     </button>
                 </div>
             </div>
+
 
             <div class="flex-1"></div>
 
@@ -201,22 +202,31 @@
                             <div class="text-xs text-white/40 mb-2">חדרים</div>
 
                             <div class="space-y-1">
-                                <button v-for="roomKey in roomKeys"
-                                        :key="roomKey"
+                                <button v-for="r in activeRooms"
+                                        :key="r.id"
                                         class="w-full px-3 py-2 rounded-xl flex items-center justify-between hover:bg-white/5 transition"
-                                        :class="isActiveRoom(roomKey) ? 'bg-white/5 border border-green-500/30' : 'border border-transparent'"
-                                        @click="enterRoom(roomKey, { closeDrawer: true })">
+                                        :class="isActiveRoom(r.key) ? 'bg-white/5 border border-green-500/30' : 'border border-transparent'"
+                                        @click="enterRoom(r.key, { closeDrawer: true })">
                                     <div class="flex items-center gap-2">
-                                        <span class="text-lg">{{ roomIcon(roomKey) }}</span>
-                                        <span class="font-semibold">{{ roomName(roomKey) }}</span>
+                                        <span class="text-lg">{{ r.icon || "🚪" }}</span>
+                                        <span class="font-semibold">{{ r.name || r.key }}</span>
                                     </div>
 
                                     <span class="flex items-center gap-2 text-xs text-green-300">
                                         <span v-if="presence.status==='connecting'" class="gio-skel-count"></span>
-                                        <span v-else>{{ presence.usersInRoom(roomKey).length }}</span>
+                                        <span v-else>{{ presence.usersInRoom(r.key).length }}</span>
                                         <span class="h-2 w-2 rounded-full bg-white/10" aria-hidden="true"></span>
                                     </span>
+                                    <div v-if="roomsStore.loading" class="text-xs text-white/50 px-2 py-3">
+                                        טוען חדרים...
+                                    </div>
+
+                                    <div v-else-if="activeRooms.length === 0" class="text-xs text-white/50 px-2 py-3">
+                                        אין חדרים פעילים בבית הזה
+                                    </div>
+
                                 </button>
+
                             </div>
                         </div>
                         <div class="h-14 px-3 border-t border-white/10 flex items-center justify-between">
@@ -685,20 +695,20 @@
     const nickname = computed(() => profile.value?.nickname ?? "User");
     const avatarUrl = computed(() => profile.value?.avatar_url ?? null);
 
-    const roomKeys = computed(() => Object.keys(house.rooms || {}));
-
     function isActiveRoom(roomKey) {
         return route.name === "room" ? String(route.params.id) === roomKey : house.currentRoom === roomKey;
     }
 
+    const activeRooms = computed(() => roomsStore.activeRooms ?? []);
+
     function roomName(roomKey) {
-        return house.rooms?.[roomKey]?.name ?? roomKey;
+        return roomsStore.byKey?.[roomKey]?.name ?? roomKey;
     }
 
     function roomIcon(roomKey) {
-        const icons = { living: "🛋️", gaming: "🎮", study: "📚", bathroom: "🚿", cinema: "🎬" };
-        return icons[roomKey] || "🚪";
+        return roomsStore.byKey?.[roomKey]?.icon ?? "🚪";
     }
+
 
     async function enterRoom(roomKey, options = {}) {
         house.enterRoom?.(roomKey);

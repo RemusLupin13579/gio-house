@@ -35,6 +35,9 @@
 
     import { useHouseStore } from "../stores/house";
     import { usePresenceStore } from "../stores/presence";
+    import { useRoomsStore } from "../stores/rooms";
+
+    const roomsStore = useRoomsStore();
 
     const presence = usePresenceStore();
     const router = useRouter();
