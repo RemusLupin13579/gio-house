@@ -2,10 +2,10 @@
     <div class="h-full min-h-0 bg-black text-white overflow-x-hidden overflow-y-auto">
         <!-- Header -->
         <header class="pt-6 sm:pt-8 px-4 text-center">
-            <h1 class="text-2xl sm:text-4xl font-extrabold text-green-400 mb-1 sm:mb-2 leading-tight">
+            <h1 class="text-2xl sm:text-4xl font-extrabold text-green-400 mb-1 sm:mb-2 leading-tight mx-auto">
                 🏠 {{ isPublicHouse ? "GIO HOUSE" : (currentHouse?.name || "My House") }}
             </h1>
-            <p class="text-sm sm:text-base text-green-600">
+            <p class="text-sm sm:text-base text-green-600 mx-auto">
                 {{ isPublicHouse ? "איפה כולם עכשיו?" : "מי בבית עכשיו?" }}
             </p>
         </header>

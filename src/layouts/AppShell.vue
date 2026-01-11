@@ -15,51 +15,11 @@
             
         </div>
 
-        <aside class="hidden md:flex w-16 bg-[#0b0f12] border-r border-white/5 flex-col items-center py-3 gap-3">
-            <div class="flex flex-col items-center gap-3 w-full">
-                <div v-for="houseItem in houseRail"
-                     :key="houseItem.id"
-                     class="relative flex items-center justify-center w-full">
-                    <button class="w-11 h-11 rounded-2xl flex items-center justify-center border border-white/10 transition"
-                            :class="houseItem.id === house.currentHouseId
-                                ? 'bg-green-500/20 border-green-500/60 ring-2 ring-green-500/40'
-                                : 'bg-white/5 hover:border-green-500/50'"
-                            @click="switchHouse(houseItem.id)"
-                            @contextmenu.prevent="openHouseActions(houseItem.id)"
-                            :title="houseItem.name || 'House'">
-                        <span v-if="houseItem.is_public">🌍</span>
-                        <span v-else>{{ houseInitial(houseItem) }}</span>
-                    </button>
-
-                    <button class="absolute -right-1 -top-1 w-5 h-5 rounded-full bg-black/80 border border-white/10 text-[10px] leading-none hover:border-green-500/50 transition"
-                            title="House actions"
-                            data-house-actions-btn="true"
-                            @click.stop="toggleHouseActions(houseItem.id)">
-                        ⋯
-                    </button>
-
-                    <div v-if="houseActionsOpenId === houseItem.id"
-                         data-house-actions="true"
-                         class="absolute left-14 top-1 z-50 w-40 bg-[#0b0f12] border border-white/10 rounded-xl shadow-xl overflow-hidden">
-                        <button class="w-full px-3 py-2 text-right hover:bg-white/5"
-                                @click="openInviteForHouse(houseItem.id)">
-                            הזמן חברים
-                        </button>
-                        <button class="w-full px-3 py-2 text-right hover:bg-white/5"
-                                @click="openSettingsForHouse(houseItem.id)">
-                            הגדרות
-                        </button>
-                    </div>
-                </div>
-            </div>
-
-            <div class="flex-1"></div>
-
-            <button class="w-11 h-11 rounded-2xl flex items-center justify-center border border-white/10 bg-white/5 hover:border-green-500/50 transition"
-                    @click="openHouseModal = true"
-                    title="Add or Join house">
-                ➕
-            </button>
+        <aside class="hidden md:flex w-16 bg-[#0b0f12] border-r border-white/5 items-center">
+            <HousesSidebar :houses="houseRail"
+                           :current-house-id="house.currentHouseId"
+                           @select-house="switchHouse"
+                           @open-add="openHouseModal = true" />
         </aside>
 
         <section class="hidden md:flex w-72 bg-[#0c1116] border-r border-white/5 flex-col">
@@ -118,9 +78,10 @@
                             <span class="font-semibold">{{ roomName(roomKey) }}</span>
                         </div>
 
-                        <span class="text-xs text-green-300">
+                        <span class="flex items-center gap-2 text-xs text-green-300">
                             <span v-if="presence.status==='connecting'" class="gio-skel-count"></span>
                             <span v-else>{{ presence.usersInRoom(roomKey).length }}</span>
+                            <span class="h-2 w-2 rounded-full bg-white/10" aria-hidden="true"></span>
                         </span>
                     </button>
                 </div>
@@ -188,50 +149,55 @@
                  :style="{ opacity: overlayOpacity }"
                  @click="closeMobileNav()"></div>
 
-            <div class="absolute left-0 top-0 h-full w-[86vw] max-w-[360px]
-               bg-[#0b0f12]/95 border-r border-white/10 shadow-2xl
-               will-change-transform"
+            <div class="absolute left-0 top-0 h-full w-full bg-[#0b0f12]/95 shadow-2xl will-change-transform"
                  :style="{ transform: `translateX(${drawerTranslateX}px)` }"
                  @touchstart.passive="onDrawerTouchStart"
                  @touchmove.passive="onDrawerTouchMove"
                  @touchend="onDrawerTouchEnd">
-                <div class="h-full flex flex-col">
-                    <div class="h-14 px-4 flex items-center justify-between border-b border-white/10">
-                        <div class="font-bold text-green-300 truncate">{{ headerTitle }}</div>
-                        <button class="w-9 h-9 rounded-xl bg-white/5 border border-white/10 hover:border-green-500/50 transition active:scale-[0.98]"
-                                @click="closeMobileNav()"
-                                title="Close">
-                            ✕
-                        </button>
+                <div class="flex h-full">
+                    <div class="w-16 bg-[#0b0f12] border-r border-white/10">
+                        <HousesSidebar :houses="houseRail"
+                                       :current-house-id="house.currentHouseId"
+                                       @select-house="switchHouse"
+                                       @open-add="openHouseModal = true" />
                     </div>
 
-                    <div class="flex-1 overflow-auto">
-                        <div class="p-3 border-b border-white/10">
-                            <div class="text-xs text-white/40 mb-2">פעולות</div>
-                            <div class="flex gap-2">
-                                <button class="flex-1 h-11 rounded-2xl flex items-center justify-center border border-white/10 hover:border-green-500/50 transition"
-                                        :class="isHome ? 'bg-green-500/20 border-green-500/60' : 'bg-white/5'"
-                                        @click="goHome(); closeMobileNav()"
-                                        title="Home">
-                                    🏠
-                                </button>
+                    <div class="flex-1 bg-[#0c1116] flex flex-col">
+                        <div class="h-16 px-4 flex items-center justify-between border-b border-white/10">
+                            <div class="flex items-center gap-2">
+                                <div class="font-bold text-green-300 truncate">{{ headerTitle }}</div>
 
-                                <button class="flex-1 h-11 rounded-2xl flex items-center justify-center border border-white/10 bg-white/5 hover:border-green-500/50 transition"
-                                        @click="openHouseModal = true; closeMobileNav()"
-                                        title="Houses">
-                                    ➕
-                                </button>
+                                <div class="relative inline-block shrink-0" data-house-menu="1">
+                                    <button class="w-9 h-9 rounded-xl bg-white/5 border border-white/10 hover:border-green-500/50 transition"
+                                            @click.stop="houseMenuOpen = !houseMenuOpen"
+                                            title="House menu">
+                                        ⋯
+                                    </button>
 
-                                <button class="flex-1 h-11 rounded-2xl flex items-center justify-center border border-white/10 bg-white/5 hover:border-green-500/50 transition"
-                                        :class="isMembers ? 'bg-green-500/20 border-green-500/60' : ''"
-                                        title="Members"
-                                        @click="goMembers(); closeMobileNav({ skipHistoryBack: true })">
-                                    👥
-                                </button>
+                                    <div v-if="houseMenuOpen"
+                                         class="absolute right-0 mt-2 w-48 bg-[#0b0f12] border border-white/10 rounded-xl shadow-xl overflow-hidden z-50">
+                                        <button class="w-full px-3 py-2 text-right hover:bg-white/5" @click="openInviteModal = true; houseMenuOpen=false">
+                                            הזמן חברים
+                                        </button>
+                                        <button class="w-full px-3 py-2 text-right hover:bg-white/5" @click="openHouseModal = true; houseMenuOpen=false">
+                                            עריכת בית
+                                        </button>
+                                        <button class="w-full px-3 py-2 text-right hover:bg-white/5" @click="openHouseModal = true; houseMenuOpen=false">
+                                            הגדרות
+                                        </button>
+                                    </div>
+                                </div>
                             </div>
+
+                            <button class="w-9 h-9 rounded-xl bg-white/5 border border-white/10 hover:border-green-500/50 transition active:scale-[0.98]"
+                                    @click="closeMobileNav()"
+                                    title="Close">
+                                ✕
+                            </button>
                         </div>
 
-                        <div class="p-3">
+
+                        <div class="flex-1 overflow-auto p-3">
                             <div class="text-xs text-white/40 mb-2">חדרים</div>
 
                             <div class="space-y-1">
@@ -239,54 +205,54 @@
                                         :key="roomKey"
                                         class="w-full px-3 py-2 rounded-xl flex items-center justify-between hover:bg-white/5 transition"
                                         :class="isActiveRoom(roomKey) ? 'bg-white/5 border border-green-500/30' : 'border border-transparent'"
-                                        @click="enterRoom(roomKey); closeMobileNav()">
+                                        @click="enterRoom(roomKey, { closeDrawer: true })">
                                     <div class="flex items-center gap-2">
                                         <span class="text-lg">{{ roomIcon(roomKey) }}</span>
                                         <span class="font-semibold">{{ roomName(roomKey) }}</span>
                                     </div>
 
-                                    <span class="text-xs text-green-300">
+                                    <span class="flex items-center gap-2 text-xs text-green-300">
                                         <span v-if="presence.status==='connecting'" class="gio-skel-count"></span>
                                         <span v-else>{{ presence.usersInRoom(roomKey).length }}</span>
+                                        <span class="h-2 w-2 rounded-full bg-white/10" aria-hidden="true"></span>
                                     </span>
                                 </button>
                             </div>
                         </div>
-                    </div>
+                        <div class="h-14 px-3 border-t border-white/10 flex items-center justify-between">
+                            <div class="flex items-center gap-2">
+                                <div class="w-9 h-9 rounded-xl bg-white/5 border border-white/10 overflow-hidden flex items-center justify-center">
+                                    <img v-if="avatarUrl" :src="avatarUrl" class="w-full h-full object-cover" alt="" />
+                                    <span v-else>🙂</span>
+                                </div>
 
-                    <!-- ✅ mobile bottom profile (NOW WITH CLICKABLE CHIP) -->
-                    <div class="h-14 px-3 border-t border-white/10 flex items-center justify-between">
-                        <div class="flex items-center gap-2">
-                            <div class="w-9 h-9 rounded-xl bg-white/5 border border-white/10 overflow-hidden flex items-center justify-center">
-                                <img v-if="avatarUrl" :src="avatarUrl" class="w-full h-full object-cover" alt="" />
-                                <span v-else>🙂</span>
-                            </div>
+                                <div class="leading-tight">
+                                    <div class="font-bold">{{ nickname }}</div>
 
-                            <div class="leading-tight">
-                                <div class="font-bold">{{ nickname }}</div>
-
-                                <div class="mt-1">
-                                    <div class="h-5 gio-presence-chip cursor-pointer select-none inline-flex"
-                                         :data-state="presence.status"
-                                         :data-user="myUserStatus"
-                                         @click="presence.status === 'ready' ? cycleMyStatus() : null"
-                                         title="Change status">
-                                        <span class="gio-dot" />
-                                        <span v-if="presence.status === 'connecting'" class="gio-sync">
-                                            Syncing
-                                            <span class="gio-dots"><i></i><i></i><i></i></span>
-                                        </span>
-                                        <span v-else-if="presence.status === 'failed'">Offline</span>
-                                        <span v-else-if="presence.status === 'ready'">{{ myStatusLabel }}</span>
-                                        <span v-else>Idle</span>
+                                    <div class="mt-1">
+                                        <div class="h-5 gio-presence-chip cursor-pointer select-none inline-flex"
+                                             :data-state="presence.status"
+                                             :data-user="myUserStatus"
+                                             @click="presence.status === 'ready' ? cycleMyStatus() : null"
+                                             title="Change status">
+                                            <span class="gio-dot" />
+                                            <span v-if="presence.status === 'connecting'" class="gio-sync">
+                                                Syncing
+                                                <span class="gio-dots"><i></i><i></i><i></i></span>
+                                            </span>
+                                            <span v-else-if="presence.status === 'failed'">Offline</span>
+                                            <span v-else-if="presence.status === 'ready'">{{ myStatusLabel }}</span>
+                                            <span v-else>Idle</span>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
-                        </div>
 
-                        <button class="w-9 h-9 rounded-xl bg-white/5 border border-white/10 hover:border-green-500/50 transition" title="Settings">
-                            ⚙️
-                        </button>
+
+                            <button class="w-9 h-9 rounded-xl bg-white/5 border border-white/10 hover:border-green-500/50 transition" title="Settings">
+                                ⚙️
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -310,6 +276,7 @@
 </template>
 
 <script setup>
+    import HousesSidebar from "../components/HousesSidebar.vue";
     import HouseInviteModal from "../components/HouseInviteModal.vue";
     import HouseSwitcherModal from "../components/HouseSwitcherModal.vue";
     import { computed, ref, watch, onMounted, onBeforeUnmount, nextTick } from "vue";
@@ -332,7 +299,6 @@
 
     const openHouseModal = ref(false);
     const houseMenuOpen = ref(false);
-    const houseActionsOpenId = ref(null);
     const showMobileTopBar = computed(() => route.name !== "room");
 
     /* =========================
@@ -372,6 +338,7 @@
     async function openMobileNav() {
         if (mobileNavOpen.value) return;
 
+        houseMenuOpen.value = false;
         mobileNavOpen.value = true;
         await nextTick();
 
@@ -388,7 +355,7 @@
 
     function closeMobileNav(options = {}) {
         if (!mobileNavOpen.value) return;
-
+        houseMenuOpen.value = false;
         const w = drawerWidth();
         animateDrawer(-w, 0, 140);
 
@@ -456,12 +423,26 @@
         const t = e.touches?.[0];
         if (!t) return;
         if (shouldIgnoreTarget(e.target)) return;
-        if (t.clientX < SYS_EDGE_PX) return;
+        if (t.clientX > SYS_EDGE_PX) return;
 
         swipeActive.value = true;
         swipeLockedHorizontal.value = false;
         startX.value = t.clientX;
         startY.value = t.clientY;
+    }
+
+    let dragFrame = 0;
+    let dragTranslate = 0;
+
+    function scheduleDragUpdate(nextTranslate) {
+        dragTranslate = nextTranslate;
+        if (dragFrame) return;
+        dragFrame = requestAnimationFrame(() => {
+            const w = drawerWidth();
+            drawerTranslateX.value = dragTranslate;
+            overlayOpacity.value = 1 - Math.abs(dragTranslate) / w;
+            dragFrame = 0;
+        });
     }
 
     function onTouchMoveGlobal(e) {
@@ -487,14 +468,14 @@
         const w = drawerWidth();
         const openPx = Math.max(0, dx) * SWIPE_GAIN;
         const translate = Math.max(-w, Math.min(0, -w + openPx));
-        drawerTranslateX.value = translate;
-        overlayOpacity.value = 1 - Math.abs(translate) / w;
+        scheduleDragUpdate(translate);
     }
 
     function onTouchEndGlobal() {
         if (!swipeActive.value) return;
         const w = drawerWidth();
-        const openness = 1 - Math.abs(drawerTranslateX.value) / w;
+        const currentTranslate = dragFrame ? dragTranslate : drawerTranslateX.value;
+        const openness = 1 - Math.abs(currentTranslate) / w;
         const shouldOpen = swipeLockedHorizontal.value && openness >= OPEN_COMMIT_RATIO;
 
         swipeActive.value = false;
@@ -532,14 +513,14 @@
         const dx = e.touches[0].clientX - touchStartX.value;
         const w = drawerWidth();
         const next = Math.max(-w, Math.min(0, touchStartTranslate.value + dx));
-        drawerTranslateX.value = next;
-        overlayOpacity.value = 1 - Math.abs(next) / w;
+        scheduleDragUpdate(next);
     }
 
     function onDrawerTouchEnd() {
         if (!touchDragging.value) return;
         touchDragging.value = false;
-        if (Math.abs(drawerTranslateX.value) / drawerWidth() > 0.12) closeMobileNav();
+        const currentTranslate = dragFrame ? dragTranslate : drawerTranslateX.value;
+        if (Math.abs(currentTranslate) / drawerWidth() > 0.12) closeMobileNav();
         else animateDrawer(0, 1, 120);
     }
 
@@ -548,10 +529,7 @@
             const insideHeaderMenu = e.target?.closest?.("[data-house-menu]");
             if (!insideHeaderMenu) houseMenuOpen.value = false;
         }
-        if (!houseActionsOpenId.value) return;
-        const insideMenu = e.target?.closest?.("[data-house-actions]");
-        const insideButton = e.target?.closest?.("[data-house-actions-btn]");
-        if (!insideMenu && !insideButton) houseActionsOpenId.value = null;
+       
     }
 
     /* =========================
@@ -670,14 +648,6 @@
     /* =========================
        ✅ Navigation / header / rooms
        ========================= */
-    const isHome = computed(() => route.name === "home");
-    const isMembers = computed(() => route.name === "members");
-    function goHome() {
-        router.push({ name: "home" });
-    }
-    function goMembers() {
-        router.push({ name: "members" });
-    }
 
     const currentHouse = computed(() => {
         const list = house.myHouses ?? [];
@@ -689,15 +659,7 @@
         currentHouse.value?.is_public ? "GIO HOUSE" : currentHouse.value?.name || "My House"
     );
 
-    const houseRail = computed(() => {
-        const list = house.myHouses ?? [];
-        const sorted = [...list].sort((a, b) => {
-            if (a.is_public && !b.is_public) return -1;
-            if (!a.is_public && b.is_public) return 1;
-            return (a.name || "").localeCompare(b.name || "");
-        });
-        return sorted;
-    });
+    const houseRail = computed(() => house.myHouses ?? []);
 
     const nickname = computed(() => profile.value?.nickname ?? "User");
     const avatarUrl = computed(() => profile.value?.avatar_url ?? null);
@@ -717,46 +679,21 @@
         return icons[roomKey] || "🚪";
     }
 
-    async function enterRoom(roomKey) {
+    async function enterRoom(roomKey, options = {}) {
         await presence.setRoom(roomKey);
         house.enterRoom?.(roomKey);
         router.push({ name: "room", params: { id: roomKey } });
+        if (options.closeDrawer && mobileNavOpen.value) closeMobileNav();
     }
 
-    function houseInitial(houseItem) {
-        const name = houseItem?.name?.trim();
-        return name ? name[0].toUpperCase() : "🏠";
-    }
+    
 
     function switchHouse(houseId) {
         if (!houseId) return;
         house.setCurrentHouse(houseId);
-        houseActionsOpenId.value = null;
         if (route.name !== "home" && route.name !== "members") {
             router.push({ name: "home" });
         }
-    }
-
-    function openHouseActions(houseId) {
-        houseActionsOpenId.value = houseActionsOpenId.value === houseId ? null : houseId;
-    }
-
-    function toggleHouseActions(houseId) {
-        openHouseActions(houseId);
-    }
-
-    function openInviteForHouse(houseId) {
-        if (!houseId) return;
-        house.setCurrentHouse(houseId);
-        openInviteModal.value = true;
-        houseActionsOpenId.value = null;
-    }
-
-    function openSettingsForHouse(houseId) {
-        if (!houseId) return;
-        house.setCurrentHouse(houseId);
-        openHouseModal.value = true;
-        houseActionsOpenId.value = null;
     }
 
     const retryPresence = () => house.currentHouseId && presence.connect(house.currentHouseId);
