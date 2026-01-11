@@ -69,7 +69,7 @@
 
                         <div v-if="houseMenuOpen"
                              class="absolute right-0 mt-2 w-48 bg-[#0b0f12] border border-white/10 rounded-xl shadow-xl overflow-hidden z-50">
-                            <button class="w-full px-3 py-2 text-right hover:bg-white/5" @click="openHouseModal = true; houseMenuOpen=false">
+                            <button class="w-full px-3 py-2 text-right hover:bg-white/5" @click="openInviteModal = true; houseMenuOpen=false">
                                 הזמן חברים
                             </button>
                             <button class="w-full px-3 py-2 text-right hover:bg-white/5" @click="openHouseModal = true; houseMenuOpen=false">
@@ -279,10 +279,15 @@
         </div>
 
         <HouseSwitcherModal v-if="openHouseModal" @close="openHouseModal=false" />
+        <HouseInviteModal v-if="openInviteModal && currentHouse"
+                          :house="currentHouse"
+                          @close="openInviteModal=false" />
+
     </div>
 </template>
 
 <script setup>
+    import HouseInviteModal from "../components/HouseInviteModal.vue";
     import HouseSwitcherModal from "../components/HouseSwitcherModal.vue";
     import { computed, ref, watch, onMounted, onBeforeUnmount, nextTick } from "vue";
     import { RouterView, useRoute, useRouter } from "vue-router";
@@ -293,6 +298,7 @@
     import { useUIStore } from "../stores/ui";
 
     const ui = useUIStore();
+    const openInviteModal = ref(false);
 
     const roomsStore = useRoomsStore();
     const router = useRouter();

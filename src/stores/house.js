@@ -154,6 +154,23 @@ export const useHouseStore = defineStore('house', {
             if (error) throw error;
             return data; // house_id
         },
+
+        async regenerateJoinCode(houseId) {
+            const { data, error } = await supabase.rpc("regenerate_house_join_code", {
+                p_house_id: houseId,
+                p_len: 6,
+            });
+
+            if (error) throw error;
+
+            // נרענן את הרשימה כדי שה-join_code יתעדכן ב-UI
+            await this.loadMyHouses();
+
+            // נחזיר את הקוד החדש (ה-RPC מחזיר text)
+            return data;
+        },
+
+
     },
 
 })
