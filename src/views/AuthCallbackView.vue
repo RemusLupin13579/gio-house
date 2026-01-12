@@ -19,7 +19,7 @@
     import { computed, ref, onMounted } from "vue";
     import { useRouter } from "vue-router";
     import { supabase } from "../services/supabase";
-    import { initAuth } from "../stores/auth";
+    import { session, authReady } from "../stores/auth"; // ✅ חשוב
 
     const router = useRouter();
     const errorMsg = ref("");
@@ -28,6 +28,10 @@
         if (typeof window === "undefined") return "no-window";
         return window.location.href;
     });
+
+    function sleep(ms) {
+        return new Promise((r) => setTimeout(r, ms));
+    }
 
     onMounted(async () => {
         try {
@@ -39,12 +43,13 @@
                 if (error) throw error;
             }
 
-            // ✅ אל תקרא initAuth כאן.
-            // המתן שה-store יתעדכן דרך onAuthStateChange שב-bootstrap.
+            // ✅ אל תעשה initAuth() כאן.
+            // נחכה שה-bootstrap/onAuthStateChange יעדכנו session.
             const start = Date.now();
-            while (!session.value && Date.now() - start < 4000) {
-                await new Promise(r => setTimeout(r, 50));
-            }
+            while (!authReady.value && Date.now() - start < 6000) await sleep(50);
+
+            const start2 = Date.now();
+            while (!session.value && Date.now() - start2 < 4000) await sleep(50);
 
             window.history.replaceState({}, "", "/auth/callback");
             await router.replace({ name: session.value ? "home" : "login" });
@@ -52,11 +57,11 @@
             console.error("[AuthCallback] failed:", e);
             errorMsg.value =
                 e?.name === "AuthPKCECodeVerifierMissingError"
-                    ? "PKCE verifier חסר (כנראה PWA/דפדפן אחר). נסה להתחבר שוב מאותו מקום."
+                    ? "PKCE verifier חסר (נפתח במקום אחד וחזר במקום אחר / storage נמחק). תנסה להתחבר שוב מאותו מקום."
                     : (e?.message || "Auth callback failed");
 
             await router.replace({ name: "login", query: { returnUrl: "/" } });
         }
     });
-
 </script>
+

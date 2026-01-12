@@ -36,6 +36,10 @@ const router = createRouter({
  * בלי זה – במובייל יש לוגין לופ.
  */
 router.beforeEach(async (to) => {
+    // ✅ אם כבר יש סשן, אין סיבה להישאר ב-login/callback
+    if ((to.name === "login" || to.name === "auth-callback") && session.value) {
+        return { name: "home" };
+    }
     const isPublic = Boolean(to.meta.public);
 
     // ✅ מסלולים public (login/callback) צריכים להיטען מיד – בלי לחכות
