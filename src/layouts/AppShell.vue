@@ -364,9 +364,9 @@
                                 </div>
                             </div>
                         </div>
-                        <button class="w-full px-4 py-3 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 transition text-white font-bold"
+                        <button class="w-9 h-9 rounded-xl bg-white/5 border border-white/10 hover:border-green-500/50 transition"
                                 @click="signOut">
-                            התנתקות
+                            ➜]
                         </button>
                         <button class="w-9 h-9 rounded-xl bg-white/5 border border-white/10 hover:border-green-500/50 transition" title="Settings">
                             ⚙️
