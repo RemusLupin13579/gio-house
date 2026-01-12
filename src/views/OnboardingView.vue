@@ -103,7 +103,6 @@
 
         saving.value = true;
 
-        // אם המשתמש בחר תמונה — נעלה ונשמור URL
         let avatarUrl = null;
         if (file.value) {
             avatarUrl = await uploadAvatarHead();
@@ -114,12 +113,16 @@
         }
 
         const payload = {
+            id: userId,          // ✅ קריטי: כדי ליצור שורה אם לא קיימת
             nickname: value,
             onboarded: true,
+            ...(avatarUrl ? { avatar_url: avatarUrl } : {}),
+            updated_at: new Date().toISOString(), // לא חובה, אבל נחמד
         };
-        if (avatarUrl) payload.avatar_url = avatarUrl;
 
-        const { error } = await supabase.from("profiles").update(payload).eq("id", userId);
+        const { error } = await supabase
+            .from("profiles")
+            .upsert(payload, { onConflict: "id" }); // ✅ create-or-update
 
         saving.value = false;
 
@@ -132,31 +135,51 @@
         await fetchMyProfile();
         router.replace({ name: "home" });
     }
+
 </script>
 
 <template>
-    <div class="min-h-screen flex items-center justify-center p-6">
-        <div class="w-full max-w-sm border rounded p-5 space-y-4">
-            <div class="text-xl font-bold">Create your profile</div>
+    <div class="min-h-[100dvh] bg-black text-white flex items-center justify-center p-4">
+        <div class="w-full max-w-sm rounded-3xl border border-white/10 bg-white/5 backdrop-blur-xl shadow-2xl p-6">
+            <div class="text-2xl font-extrabold text-green-200">Create your profile</div>
+            <div class="text-sm text-white/55 mt-1">רק רגע ומכניסים אותך לבית 🏠</div>
 
-            <div class="space-y-2">
-                <div class="text-sm opacity-70">Nickname</div>
-                <input v-model="nickname" class="border p-2 w-full rounded" placeholder="Nickname" />
+            <div class="mt-6 space-y-2">
+                <div class="text-xs text-white/60">Nickname</div>
+                <input v-model="nickname"
+                       class="w-full rounded-xl bg-black/40 border border-white/10 px-4 py-3
+                 text-white placeholder-white/35 outline-none
+                 focus:border-green-500/40 focus:ring-2 focus:ring-green-500/10 transition"
+                       placeholder="Nickname" />
             </div>
 
-            <div class="space-y-2">
-                <div class="text-sm opacity-70">Avatar (for now: your photo)</div>
-                <input type="file" accept="image/*" @change="onPickFile" />
-                <div class="text-xs opacity-60">
+            <div class="mt-5 space-y-2">
+                <div class="text-xs text-white/60">Avatar (for now: your photo)</div>
+                <input type="file"
+                       accept="image/*"
+                       @change="onPickFile"
+                       class="block w-full text-xs text-white/70
+                 file:mr-3 file:rounded-xl file:border-0
+                 file:bg-white/10 file:px-4 file:py-2
+                 file:text-white hover:file:bg-white/15 transition" />
+                <div class="text-[11px] text-white/45 leading-relaxed">
                     עוד מעט נחליף את זה ל-Cartoon AI שמייצר אווטאר. כרגע זה רק כדי שהאפליקציה “תתלבש” על המשתמש.
                 </div>
             </div>
 
-            <button class="border px-4 py-2 rounded w-full" :disabled="!canContinue" @click="saveAndContinue">
+            <button class="mt-6 w-full rounded-xl font-extrabold py-3
+               bg-green-500 text-black hover:bg-green-400
+               disabled:opacity-30 disabled:cursor-not-allowed
+               transition active:scale-[0.99]"
+                    :disabled="!canContinue"
+                    @click="saveAndContinue">
                 {{ uploading ? "Uploading..." : saving ? "Saving..." : "Continue" }}
             </button>
 
-            <div v-if="status" class="text-sm opacity-80">{{ status }}</div>
+            <div v-if="status" class="mt-4 text-sm text-red-300">
+                {{ status }}
+            </div>
         </div>
     </div>
 </template>
+
