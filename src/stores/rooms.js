@@ -74,11 +74,19 @@ export const useRoomsStore = defineStore("rooms", {
         },
 
         async loadForHouse(houseId, opts = {}) {
-            if (!houseId) return;
+            // ✅ אם אין בית נבחר — לא שולחים query, ומנקים state כדי לא להציג “שאריות”
+            if (!houseId) {
+                this.rooms = [];
+                this.byKey = {};
+                this.loadedForHouseId = null;
+                this.error = null;
+                return;
+            }
+
             if (this.loading) return;
 
             const force = !!opts.force;
-            if (!force && this.loadedForHouseId === houseId && this.rooms.length) return;
+            if (!force && this.loadedForHouseId === houseId) return;
 
             this.loading = true;
             this.error = null;
@@ -93,17 +101,21 @@ export const useRoomsStore = defineStore("rooms", {
                 if (error) throw error;
 
                 this.rooms = data ?? [];
-                this.byKey = Object.fromEntries((this.rooms ?? []).map((r) => [r.key, r]));
+                this.byKey = Object.fromEntries(this.rooms.map((r) => [r.key, r]));
                 this.loadedForHouseId = houseId;
 
                 console.log("[roomsStore] loaded:", houseId, this.rooms.length);
             } catch (e) {
                 this.error = e;
+                this.rooms = [];
+                this.byKey = {};
+                this.loadedForHouseId = houseId; // אופציונלי: כדי לא לירות שוב ושוב. אפשר גם null.
                 console.error("[roomsStore] loadForHouse failed:", e);
             } finally {
                 this.loading = false;
             }
         },
+
 
         reset() {
             this.rooms = [];

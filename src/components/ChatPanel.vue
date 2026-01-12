@@ -81,7 +81,7 @@
                             </span>
                         </div>
 
-                        <div class="mt-1.5 bg-white/5 border border-white/10 rounded-2xl px-3 py-2 text-sm leading-relaxed"
+                        <div class="mt-1.5 bg-white/5 border border-white/10 rounded-2xl px-3 py-2 text-sm leading-relaxed whitespace-pre-wrap break-words"
                              :style="{ borderLeft: `3px solid ${msg.userColor}` }">
                             {{ msg.text }}
                         </div>
@@ -106,26 +106,27 @@
                 <span v-if="roomsError" class="text-red-300"> — שגיאה: {{ roomsError.message || roomsError }}</span>
             </div>
 
-            <form @submit.prevent="sendMessage" class="p-3 sm:p-4 flex gap-2">
-                <input ref="inputEl"
-                       :disabled="!roomReady"
-                       id="chat-message"
-                       name="chat-message"
-                       v-model="newMessage"
-                       type="text"
-                       :placeholder="roomReady ? 'כתוב הודעה...' : 'טוען חדר…'"
-                       class="flex-1 bg-black/40 border border-white/10 rounded-xl px-4 py-3
-                 text-white placeholder-white/35 outline-none
-                 focus:border-green-500/40 focus:ring-2 focus:ring-green-500/10 transition"
-                       @keydown.enter.prevent="sendMessage" />
+            <form @submit.prevent="sendMessage" class="p-3 sm:p-4 flex gap-2 items-end">
+                <textarea ref="inputEl"
+                          v-model="newMessage"
+                          :disabled="!roomReady"
+                          rows="1"
+                          enterkeyhint="send"
+                          @keydown="onComposerKeydown"
+                          @input="autoGrow"
+                          placeholder="write a message𓂃🖊"
+                          class="flex-1 bg-black/40 border border-white/10 rounded-xl px-4 py-3
+                     text-white placeholder-white/35 outline-none resize-none
+                     focus:border-green-500/40 focus:ring-2 focus:ring-green-500/10 transition
+                     leading-relaxed min-h-[46px] max-h-[150px] overflow-y-auto" />
 
                 <button type="submit"
                         :disabled="!roomReady || !newMessage.trim()"
-                        class="px-5 sm:px-6 py-3 rounded-xl font-extrabold
-                 bg-green-500 text-black
-                 hover:bg-green-400 disabled:opacity-30 disabled:cursor-not-allowed
-                 transition active:scale-[0.98]">
-                    שלח
+                        class="shrink-0 w-12 h-12 rounded-xl font-extrabold
+                   bg-green-500 text-black flex items-center justify-center
+                   hover:bg-green-400 disabled:opacity-30 disabled:cursor-not-allowed
+                   transition active:scale-[0.98]">
+                    ➣
                 </button>
             </form>
         </div>
@@ -147,7 +148,6 @@
     const newMessage = ref("");
     const messagesContainer = ref(null);
     const bottomEl = ref(null);
-    const inputEl = ref(null);
 
     const chatLayout = inject("chatLayout", null);
     const chatExpanded = computed(() => chatLayout?.chatExpanded?.value ?? false);
@@ -203,6 +203,55 @@
         // ✅ הכי יציב: scrollIntoView על עוגן
         bottomEl.value?.scrollIntoView?.({ block: "end" });
         isNearBottom.value = true;
+    }
+
+    const inputEl = ref(null);
+
+    // פונקציית עזר לבדיקה אם מדובר במובייל
+    const isMobile = () => /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+
+    function onComposerKeydown(e) {
+        if (e.isComposing) return;
+        if (e.key !== "Enter") return;
+
+        if (!isMobile()) {
+            if (e.shiftKey) return; // Shift+Enter יורד שורה
+
+            e.preventDefault();
+            sendMessage(); // קריאה לפונקציה המקומית
+        }
+        // במובייל אנחנו לא עושים preventDefault, אז זה פשוט יורד שורה
+    }
+
+    async function sendMessage() {
+        const text = (newMessage.value || "").trim();
+        if (!text || !roomUuid.value) return;
+
+        try {
+            await messagesStore.send(roomUuid.value, text);
+            newMessage.value = ""; // ניקוי הטקסט
+
+            // איפוס גובה ה-Input חזרה לסינגל ליין
+            await nextTick();
+            resetInputHeight();
+
+            void scrollToBottom(true);
+        } catch (err) {
+            console.error("Failed to send:", err);
+        }
+    }
+
+    function autoGrow(e) {
+        const el = e.target;
+        el.style.height = "auto";
+        // אנחנו מגבילים את הצמיחה לגובה המקסימלי שהגדרנו ב-CSS
+        el.style.height = (el.scrollHeight) + "px";
+    }
+
+    function resetInputHeight() {
+        if (inputEl.value) {
+            inputEl.value.style.height = "auto";
+        }
     }
 
     function onAvatarLoad() {
@@ -314,17 +363,6 @@
         }
     );
 
-    async function sendMessage() {
-        const text = (newMessage.value || "").trim();
-        if (!text) return;
-        if (!roomUuid.value) return;
-
-        await messagesStore.send(roomUuid.value, text);
-        newMessage.value = "";
-
-        // ✅ אחרי שליחה – תמיד force לתחתית
-        await scrollToBottom(true);
-    }
 
     onMounted(() => {
         updateKeyboard();

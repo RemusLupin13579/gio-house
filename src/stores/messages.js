@@ -159,7 +159,6 @@ export const useMessagesStore = defineStore("messages", {
             if (!this.byRoom[roomId]) this.byRoom[roomId] = [];
             const exists = this.byRoom[roomId].some((m) => m.id === normalized.id);
             if (!exists) this.byRoom[roomId].push(normalized);
-
             return normalized;
         },
     },
