@@ -1,6 +1,7 @@
 import { defineStore } from "pinia";
 import { supabase } from "../services/supabase";
 import { session, profile } from "../stores/auth";
+import { useProfilesStore } from "../stores/profiles";
 
 /**
  * יוצר צבע עקבי לפי user_id (כדי שלא תצטרך לשמור DB)
@@ -30,6 +31,9 @@ function formatTime(ts) {
  * גם אם profiles חסר, גם אם text null, גם אם created_at מוזר.
  */
 function normalizeMessage(row) {
+    const profColor = row?.profiles?.color;
+    const userColor = profColor || colorFromUserId(row?.user_id);
+
     const userName =
         row?.profiles?.nickname ||
         row?.nickname ||
@@ -65,21 +69,32 @@ export const useMessagesStore = defineStore("messages", {
         async load(roomId, limit = 100) {
             if (!roomId) return;
 
+            // ✅ טוענים הודעות בלי join (יותר יציב ומהיר)
             const { data, error } = await supabase
                 .from("messages")
-                .select("id, room_id, user_id, text, created_at, profiles(nickname, avatar_url)")
+                .select("id, room_id, user_id, text, created_at")
                 .eq("room_id", roomId)
                 .order("created_at", { ascending: true })
                 .limit(limit);
 
             if (error) throw error;
 
-            this.byRoom[roomId] = (data ?? []).map(normalizeMessage);
+            // ✅ מביאים את כל הפרופילים של המשתמשים שנמצאים בהודעות (batch)
+            const profilesStore = useProfilesStore();
+            const userIds = (data ?? []).map(r => r.user_id);
+            await profilesStore.ensureLoaded(userIds);
+
+            // ✅ מנרמלים עם profiles מה-cache
+            this.byRoom[roomId] = (data ?? []).map(row =>
+                normalizeMessage({ ...row, profiles: profilesStore.byId[row.user_id] })
+            );
         },
 
         subscribe(roomId) {
             if (!roomId) return;
             if (this.subs[roomId]) return;
+
+            const profilesStore = useProfilesStore();
 
             const ch = supabase
                 .channel(`messages:${roomId}`)
@@ -87,22 +102,16 @@ export const useMessagesStore = defineStore("messages", {
                     "postgres_changes",
                     { event: "INSERT", schema: "public", table: "messages", filter: `room_id=eq.${roomId}` },
                     async (payload) => {
-                        // payload.new מגיע בלי profiles -> נביא את הפרופיל בנפרד (או נשים fallback)
                         const raw = payload?.new;
                         if (!raw) return;
 
-                        // נסיון קל להביא nickname כדי שלא יהיה "User" תמיד
-                        let prof = null;
-                        try {
-                            const { data } = await supabase
-                                .from("profiles")
-                                .select("nickname, avatar_url")
-                                .eq("id", raw.user_id)
-                                .maybeSingle();
-                            prof = data ?? null;
-                        } catch (_) { }
+                        // ✅ טוענים פרופיל רק אם חסר (ללא query לכל הודעה אם כבר יש)
+                        await profilesStore.ensureLoaded([raw.user_id]);
 
-                        const normalized = normalizeMessage({ ...raw, profiles: prof });
+                        const normalized = normalizeMessage({
+                            ...raw,
+                            profiles: profilesStore.byId[raw.user_id],
+                        });
 
                         if (!this.byRoom[roomId]) this.byRoom[roomId] = [];
                         const exists = this.byRoom[roomId].some((m) => m.id === normalized.id);
@@ -129,15 +138,23 @@ export const useMessagesStore = defineStore("messages", {
             const clean = String(text ?? "").trim();
             if (!clean) return;
 
+            // ✅ שולחים הודעה (בלי join)
             const { data, error } = await supabase
                 .from("messages")
                 .insert({ room_id: roomId, user_id: userId, text: clean })
-                .select("id, room_id, user_id, text, created_at, profiles(nickname, avatar_url)")
+                .select("id, room_id, user_id, text, created_at")
                 .single();
 
             if (error) throw error;
 
-            const normalized = normalizeMessage(data);
+            // ✅ נוודא שהפרופיל שלי קיים ב-cache לפני normalize
+            const profilesStore = useProfilesStore();
+            await profilesStore.ensureLoaded([userId]);
+
+            const normalized = normalizeMessage({
+                ...data,
+                profiles: profilesStore.byId[userId],
+            });
 
             if (!this.byRoom[roomId]) this.byRoom[roomId] = [];
             const exists = this.byRoom[roomId].some((m) => m.id === normalized.id);

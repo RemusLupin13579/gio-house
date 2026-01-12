@@ -38,7 +38,9 @@
         </div>
 
         <!-- Messages -->
-        <div ref="messagesContainer" class="flex-1 min-h-0 overflow-y-auto px-3 sm:px-4 py-3 space-y-3">
+        <div ref="messagesContainer"
+             class="flex-1 min-h-0 overflow-y-auto px-3 sm:px-4 py-3 space-y-3"
+             @scroll.passive="updateScrollPosition">
             <div v-if="chatLoading" class="text-center text-white/60 py-6">
                 <div class="text-3xl mb-2">⏳</div>
                 טוען את הצ׳אט…
@@ -51,17 +53,24 @@
 
             <template v-else>
                 <div v-for="msg in currentRoomMessages" :key="msg.id" class="flex items-start gap-3">
+                    <!-- Avatar -->
                     <div class="w-9 h-9 sm:w-10 sm:h-10 rounded-full overflow-hidden flex items-center justify-center
                    border border-white/10 flex-shrink-0 shadow-sm"
                          :style="{
               borderColor: msg.userColor,
               background: `linear-gradient(135deg, ${msg.userColor}22, ${msg.userColor}44)`,
             }">
-                        <span class="text-base sm:text-lg font-extrabold">
+                        <img v-if="msg.avatarUrl"
+                             :src="msg.avatarUrl"
+                             alt="avatar"
+                             class="w-full h-full object-cover"
+                             @load="onAvatarLoad" />
+                        <span v-else class="text-base sm:text-lg font-extrabold">
                             {{ msg.userInitial }}
                         </span>
                     </div>
 
+                    <!-- Bubble -->
                     <div class="flex-1 min-w-0">
                         <div class="flex items-baseline gap-2">
                             <span class="font-extrabold text-xs sm:text-sm truncate" :style="{ color: msg.userColor }">
@@ -84,6 +93,9 @@
                     <p class="text-base font-bold text-green-200">אין הודעות בחדר הזה עדיין</p>
                     <p class="text-sm mt-1 text-white/45">תהיה הראשון לשלוח 🚀</p>
                 </div>
+
+                <!-- ✅ העוגן שמבטיח גלילה לתחתית -->
+                <div ref="bottomEl" class="h-1"></div>
             </template>
         </div>
 
@@ -134,13 +146,12 @@
 
     const newMessage = ref("");
     const messagesContainer = ref(null);
+    const bottomEl = ref(null);
     const inputEl = ref(null);
 
-    /* Hook to RoomView layout controller */
     const chatLayout = inject("chatLayout", null);
     const chatExpanded = computed(() => chatLayout?.chatExpanded?.value ?? false);
 
-    /* Safe bottom */
     const safeBottomPad = computed(() => ({
         paddingBottom: "env(safe-area-inset-bottom)",
     }));
@@ -170,8 +181,49 @@
         return currentRoomMeta.value?.name || key || "חדר";
     });
 
+    /* Scroll state */
+    const isNearBottom = ref(true);
+    function updateScrollPosition() {
+        const el = messagesContainer.value;
+        if (!el) return;
+        const threshold = 140;
+        isNearBottom.value = el.scrollHeight - el.scrollTop - el.clientHeight < threshold;
+    }
+
+    function raf2() {
+        return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    }
+
+    async function scrollToBottom(force = false) {
+        await nextTick();
+        await raf2();
+
+        if (!force && !isNearBottom.value) return;
+
+        // ✅ הכי יציב: scrollIntoView על עוגן
+        bottomEl.value?.scrollIntoView?.({ block: "end" });
+        isNearBottom.value = true;
+    }
+
+    function onAvatarLoad() {
+        // אם תמונות משנות גובה אחרי paint – נשמור אותך בתחתית רק אם היית שם
+        void scrollToBottom(false);
+    }
+
+    /* Keyboard (רק בשביל UX של blur) */
+    const keyboardPx = ref(0);
+    function updateKeyboard() {
+        const vv = window.visualViewport;
+        if (!vv) {
+            keyboardPx.value = 0;
+            return;
+        }
+        const px = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop));
+        keyboardPx.value = px;
+    }
+    const keyboardOpen = computed(() => keyboardPx.value > 0);
+
     function onExpandPointerDown() {
-        // אם המקלדת סגורה אבל ה-input עדיין בפוקוס (מצב נפוץ במובייל) -> blur כדי לא "להעיר" מקלדת
         if (!keyboardOpen.value && document.activeElement === inputEl.value) {
             inputEl.value?.blur?.();
         }
@@ -181,16 +233,12 @@
         const wasTyping = document.activeElement === inputEl.value;
         const kbWasOpen = keyboardOpen.value;
 
-        // toggle layout
         chatLayout?.toggle?.();
-
         await nextTick();
 
-        // אם המקלדת הייתה פתוחה והמשתמש היה באמצע הקלדה -> נשמור פוקוס כדי להמשיך להקליד
         if (kbWasOpen && wasTyping) {
             inputEl.value?.focus?.({ preventScroll: true });
         }
-        // אחרת: לא נוגעים בפוקוס בכלל (כדי לא לפתוח מקלדת סתם)
     }
 
     /* UUID */
@@ -209,19 +257,10 @@
         return messagesStore.messagesInRoom(roomUuid.value);
     });
 
-    const keyboardPx = ref(0);
-
-    function updateKeyboard() {
-        const vv = window.visualViewport;
-        if (!vv) { keyboardPx.value = 0; return; }
-        const px = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop));
-        keyboardPx.value = px;
-    }
-    const keyboardOpen = computed(() => keyboardPx.value > 0);
-
     /* Watchers */
     const chatLoading = ref(false);
     const chatError = ref(null);
+
     let activeUuid = null;
     let runToken = 0;
 
@@ -233,7 +272,7 @@
 
     watch(
         [() => house.currentHouseId, () => house.currentRoom, () => roomUuid.value],
-        async ([houseId, roomKey, uuid], [oldHouseId, oldRoomKey, oldUuid]) => {
+        async ([houseId, roomKey, uuid], [_, __, oldUuid]) => {
             if (!houseId) return;
 
             chatError.value = null;
@@ -246,18 +285,17 @@
 
                 if (!roomKey || !uuid) return;
 
-                // אם עברנו חדר/בית - ננתק uuid קודם
                 if (oldUuid && oldUuid !== uuid) {
                     await messagesStore.unsubscribe(oldUuid);
                 }
-
                 if (token !== runToken) return;
 
-                // טען+subscribe ל-uuid הנוכחי
                 await messagesStore.load(uuid);
                 messagesStore.subscribe(uuid);
                 activeUuid = uuid;
-                scrollToBottom();
+
+                // ✅ ברגע שהחדר נטען: ישר לתחתית (force)
+                await scrollToBottom(true);
             } catch (e) {
                 chatError.value = e;
                 console.error("[ChatPanel] room watcher failed:", e);
@@ -268,37 +306,43 @@
         { immediate: true }
     );
 
+    // ✅ הודעה חדשה נכנסת: אם המשתמש היה בתחתית → תמשיך לעקוב
+    watch(
+        () => currentRoomMessages.value.length,
+        async () => {
+            await scrollToBottom(false);
+        }
+    );
+
     async function sendMessage() {
-        const text = newMessage.value.trim();
+        const text = (newMessage.value || "").trim();
         if (!text) return;
         if (!roomUuid.value) return;
 
         await messagesStore.send(roomUuid.value, text);
         newMessage.value = "";
-        scrollToBottom();
-    }
 
-    function scrollToBottom() {
-        nextTick(() => {
-            if (messagesContainer.value) {
-                messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight;
-            }
-        });
+        // ✅ אחרי שליחה – תמיד force לתחתית
+        await scrollToBottom(true);
     }
 
     onMounted(() => {
         updateKeyboard();
         window.visualViewport?.addEventListener("resize", updateKeyboard);
         window.visualViewport?.addEventListener("scroll", updateKeyboard);
+
+        // לפעמים מגיעים למסך וה-DOM כבר קיים
+        void scrollToBottom(true);
     });
 
     onUnmounted(() => {
         window.visualViewport?.removeEventListener("resize", updateKeyboard);
         window.visualViewport?.removeEventListener("scroll", updateKeyboard);
 
-        // clean up subscription on unmount
         if (activeUuid) {
-            try { messagesStore.unsubscribe(activeUuid); } catch (_) { }
+            try {
+                messagesStore.unsubscribe(activeUuid);
+            } catch (_) { }
             activeUuid = null;
         }
     });

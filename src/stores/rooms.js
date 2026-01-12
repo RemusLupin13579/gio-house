@@ -1,6 +1,36 @@
 import { defineStore } from "pinia";
 import { supabase } from "../services/supabase";
 
+function fileExt(name = "") {
+    const i = name.lastIndexOf(".");
+    return i !== -1 ? name.slice(i + 1).toLowerCase() : "png";
+}
+
+export async function uploadRoomSceneBackground({ houseId, roomId, file }) {
+    if (!file) throw new Error("No file provided");
+
+    const ext = fileExt(file.name);
+    const path = `${houseId}/${roomId}/${Date.now()}.${ext}`;
+
+    const { error: upErr } = await supabase.storage
+        .from("room-scenes")
+        .upload(path, file, {
+            cacheControl: "3600",
+            upsert: true,
+            contentType: file.type || undefined,
+        });
+
+    if (upErr) throw upErr;
+
+    const { data } = supabase.storage.from("room-scenes").getPublicUrl(path);
+    const publicUrl = data?.publicUrl;
+    if (!publicUrl) throw new Error("Failed to get public URL");
+
+    return { publicUrl, path };
+}
+
+const ROOM_SELECT = "id, house_id, key, name, icon, type, sort_order, is_archived, scene_background_url, created_at";
+
 export const useRoomsStore = defineStore("rooms", {
     state: () => ({
         rooms: [],
@@ -29,6 +59,20 @@ export const useRoomsStore = defineStore("rooms", {
     },
 
     actions: {
+        async setRoomSceneBackground(roomId, file) {
+            const room = (this.rooms || []).find(r => r.id === roomId);
+            if (!room) throw new Error("Room not found");
+
+            const { publicUrl } = await uploadRoomSceneBackground({
+                houseId: room.house_id,
+                roomId,
+                file
+            });
+
+            await this.updateRoom(roomId, { scene_background_url: publicUrl });
+            return publicUrl;
+        },
+
         async loadForHouse(houseId, opts = {}) {
             if (!houseId) return;
             if (this.loading) return;
@@ -42,7 +86,7 @@ export const useRoomsStore = defineStore("rooms", {
             try {
                 const { data, error } = await supabase
                     .from("rooms")
-                    .select("id, house_id, key, name, icon, type, sort_order, is_archived, created_at")
+                    .select(ROOM_SELECT)
                     .eq("house_id", houseId)
                     .order("sort_order", { ascending: true });
 
@@ -74,7 +118,6 @@ export const useRoomsStore = defineStore("rooms", {
             if (!houseId) throw new Error("createRoom: missing houseId");
             const cleanKey = String(key || "").trim().toLowerCase();
 
-            // choose next sort_order at end (active only)
             const active = (this.rooms ?? []).filter((r) => r.house_id === houseId && r.is_archived === false);
             const maxSort = active.reduce((m, r) => Math.max(m, Number(r.sort_order ?? 0)), -1);
             const sort_order = maxSort + 1;
@@ -91,38 +134,42 @@ export const useRoomsStore = defineStore("rooms", {
             const { data, error } = await supabase
                 .from("rooms")
                 .insert(payload)
-                .select("id, house_id, key, name, icon, type, sort_order, is_archived, created_at")
+                .select(ROOM_SELECT)
                 .single();
 
             if (error) throw error;
 
-            // Option A: reload to be 100% consistent
             await this.loadForHouse(houseId, { force: true });
             return data;
         },
 
         async updateRoom(roomId, patch) {
             if (!roomId) throw new Error("updateRoom: missing roomId");
+
             const safePatch = { ...patch };
             if ("key" in safePatch) delete safePatch.key;
 
-            const { error } = await supabase.from("rooms").update(safePatch).eq("id", roomId);
+            // מחזירים את הרשומה המעודכנת מהשרת כדי למנוע "שמרתי אבל לא רואים"
+            const { data, error } = await supabase
+                .from("rooms")
+                .update(safePatch)
+                .eq("id", roomId)
+                .select(ROOM_SELECT)
+                .single();
+
             if (error) throw error;
 
-            // optimistic local update
+            // local update לפי מה שחזר
             const idx = (this.rooms ?? []).findIndex((r) => r.id === roomId);
             if (idx >= 0) {
-                this.rooms[idx] = { ...this.rooms[idx], ...safePatch };
-                this.byKey = Object.fromEntries((this.rooms ?? []).map((r) => [r.key, r]));
+                this.rooms[idx] = data;
+            } else {
+                this.rooms = [...(this.rooms ?? []), data];
             }
 
-            // refresh in background (no await)
-            const houseId = this.loadedForHouseId;
-            if (houseId) void this.loadForHouse(houseId, { force: true });
-
+            this.byKey = Object.fromEntries((this.rooms ?? []).map((r) => [r.key, r]));
             return true;
         },
-
 
         async archiveRoom(roomId) {
             const r = (this.rooms ?? []).find((x) => x.id === roomId);
@@ -152,6 +199,5 @@ export const useRoomsStore = defineStore("rooms", {
             await this.loadForHouse(houseId, { force: true });
             return true;
         },
-
     },
 });

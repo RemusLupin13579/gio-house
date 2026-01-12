@@ -77,8 +77,6 @@
                                                @keydown.enter.prevent="commitRename(r)"
                                                @keydown.esc.prevent="cancelRename"
                                                @blur="renamingSaving ? null : cancelRename()" />
-
-
                                     </div>
 
                                     <div v-else class="min-w-0">
@@ -136,71 +134,119 @@
                                 @click="startCreate">
                             + הוסף חדר
                         </button>
-
-
                     </div>
                 </div>
 
-                <!-- Right side: lightweight settings -->
+                <!-- Right side -->
                 <div class="min-h-0 flex flex-col">
                     <div class="p-4 border-b border-white/10">
-                        <div class="text-xs text-white/45 mb-2">Room settings</div>
+                        <div class="flex items-center justify-between gap-2 mb-3">
+                            <div class="text-xs text-white/45">Room settings</div>
+
+                            <!-- Tabs (Discord-ish) -->
+                            <div class="flex items-center gap-2">
+                                <button class="px-3 py-1.5 rounded-xl border text-xs font-bold transition"
+                                        :class="activeTab==='general' ? 'bg-white/5 border-green-500/30' : 'bg-black/20 border-white/10 hover:border-white/20'"
+                                        @click="activeTab='general'">
+                                    General
+                                </button>
+
+                                <button class="px-3 py-1.5 rounded-xl border text-xs font-bold transition"
+                                        :class="activeTab==='scene' ? 'bg-white/5 border-green-500/30' : 'bg-black/20 border-white/10 hover:border-white/20'"
+                                        @click="activeTab='scene'">
+                                    Scene
+                                </button>
+                            </div>
+                        </div>
 
                         <div v-if="!selectedRoom" class="text-white/50 text-sm">
                             בחר חדר משמאל.
                         </div>
 
-                        <div v-else class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                            <div class="space-y-1">
-                                <label class="text-xs text-white/45">שם</label>
-                                <input v-model="edit.name"
-                                       type="text"
-                                       class="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 outline-none
+                        <div v-else>
+                            <!-- GENERAL TAB -->
+                            <div v-if="activeTab === 'general'" class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                <div class="space-y-1">
+                                    <label class="text-xs text-white/45">שם</label>
+                                    <input v-model="edit.name"
+                                           type="text"
+                                           class="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 outline-none
                          focus:border-green-500/40 focus:ring-2 focus:ring-green-500/10" />
-                            </div>
+                                </div>
 
-                            <div class="space-y-1">
-                                <label class="text-xs text-white/45">אייקון</label>
-                                <input v-model="edit.icon"
-                                       type="text"
-                                       class="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 outline-none
+                                <div class="space-y-1">
+                                    <label class="text-xs text-white/45">אייקון</label>
+                                    <input v-model="edit.icon"
+                                           type="text"
+                                           class="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 outline-none
                          focus:border-green-500/40 focus:ring-2 focus:ring-green-500/10"
-                                       placeholder="🚪" />
+                                           placeholder="🚪" />
+                                </div>
+
+                                <div class="md:col-span-2 flex gap-2 pt-2">
+                                    <button class="px-4 py-2 rounded-xl bg-green-500 text-black font-extrabold hover:bg-green-400 transition disabled:opacity-40"
+                                            @click="saveRoom"
+                                            :disabled="saving || !canSave">
+                                        שמור
+                                    </button>
+
+                                    <button v-if="isCreating"
+                                            class="px-4 py-2 rounded-xl bg-white/5 border border-white/10 hover:border-white/20 transition font-bold"
+                                            @click="cancelCreate"
+                                            :disabled="saving">
+                                        ביטול
+                                    </button>
+
+                                    <button v-if="!isCreating && selectedRoom && !isArchived(selectedRoom)"
+                                            class="px-4 py-2 rounded-xl bg-white/5 border border-white/10 hover:border-yellow-500/40 transition font-bold disabled:opacity-40"
+                                            @click="archiveSelected"
+                                            :disabled="saving || isLiving(selectedRoom)">
+                                        ארכב
+                                    </button>
+
+                                    <button v-if="!isCreating && selectedRoom && isArchived(selectedRoom)"
+                                            class="px-4 py-2 rounded-xl bg-white/5 border border-white/10 hover:border-green-500/40 transition font-bold"
+                                            @click="restoreSelected"
+                                            :disabled="saving">
+                                        החזר
+                                    </button>
+                                </div>
+
+                                <div v-if="isLiving(selectedRoom)" class="md:col-span-2 text-[12px] text-yellow-300/80 pt-1">
+                                    living הוא חדר בסיס: לא ניתן לארכב.
+                                </div>
                             </div>
 
-                            
+                            <!-- SCENE TAB -->
+                            <div v-else class="space-y-3">
+                                <div class="text-xs text-white/45">Room Scene Background</div>
 
-                            <div class="md:col-span-2 flex gap-2 pt-2">
-                                <button class="px-4 py-2 rounded-xl bg-green-500 text-black font-extrabold hover:bg-green-400 transition disabled:opacity-40"
-                                        @click="saveRoom"
-                                        :disabled="saving || !canSave">
-                                    שמור
-                                </button>
+                                <div class="rounded-2xl border border-white/10 bg-black/30 p-3">
+                                    <div class="w-full aspect-[16/9] rounded-xl border border-white/10 overflow-hidden bg-black/40"
+                                         :style="sceneBoxStyle">
+                                        <div v-if="!scenePreview && !selectedRoom?.scene_background_url"
+                                             class="w-full h-full flex items-center justify-center text-white/40 text-sm">
+                                            אין רקע עדיין
+                                        </div>
+                                    </div>
 
-                                <button v-if="isCreating"
-                                        class="px-4 py-2 rounded-xl bg-white/5 border border-white/10 hover:border-white/20 transition font-bold"
-                                        @click="cancelCreate"
-                                        :disabled="saving">
-                                    ביטול
-                                </button>
+                                    <div class="mt-3 flex items-center justify-between gap-2">
+                                        <label class="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:border-white/20 transition text-sm font-bold cursor-pointer">
+                                            העלה תמונה
+                                            <input type="file" class="hidden" accept="image/*" @change="onPickSceneFile" />
+                                        </label>
 
-                                <button v-if="!isCreating && selectedRoom && !isArchived(selectedRoom)"
-                                        class="px-4 py-2 rounded-xl bg-white/5 border border-white/10 hover:border-yellow-500/40 transition font-bold disabled:opacity-40"
-                                        @click="archiveSelected"
-                                        :disabled="saving || isLiving(selectedRoom)">
-                                    ארכב
-                                </button>
+                                        <button class="px-4 py-2 rounded-xl bg-green-500 text-black font-extrabold hover:bg-green-400 transition disabled:opacity-40"
+                                                :disabled="saving || !sceneFile || !selectedRoom"
+                                                @click="saveSceneBg">
+                                            שמור רקע
+                                        </button>
+                                    </div>
 
-                                <button v-if="!isCreating && selectedRoom && isArchived(selectedRoom)"
-                                        class="px-4 py-2 rounded-xl bg-white/5 border border-white/10 hover:border-green-500/40 transition font-bold"
-                                        @click="restoreSelected"
-                                        :disabled="saving">
-                                    החזר
-                                </button>
-                            </div>
-
-                            <div v-if="isLiving(selectedRoom)" class="md:col-span-2 text-[12px] text-yellow-300/80 pt-1">
-                                living הוא חדר בסיס: לא ניתן לארכב.
+                                    <div class="text-[11px] text-white/40 mt-2">
+                                        טיפ: תמונה 16:9 נראית הכי טוב, אבל אנחנו עושים cover אז זה יתאים לכל מסך 🙂
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -210,7 +256,6 @@
                             <div class="font-extrabold text-red-200 mb-1">שגיאה</div>
                             <div class="text-sm text-red-100/80">{{ roomsStore.error.message || roomsStore.error }}</div>
                         </div>
-
                     </div>
 
                     <div class="p-4 border-t border-white/10 flex items-center justify-between">
@@ -230,7 +275,7 @@
 </template>
 
 <script setup>
-    import { computed, nextTick, onMounted, ref, watch } from "vue";
+    import { computed, nextTick, onMounted, onBeforeUnmount, ref, watch } from "vue";
     import { useRoomsStore } from "../stores/rooms";
     import { useHouseStore } from "../stores/house";
     import { useUIStore } from "../stores/ui";
@@ -270,7 +315,6 @@
         const map = new Map(activeRooms.value.map((r) => [r.id, r]));
         const ordered = localOrder.value.map((id) => map.get(id)).filter(Boolean);
 
-        // safety: append any room missing from localOrder (shouldn't happen but ok)
         const missing = activeRooms.value.filter((r) => !localOrder.value.includes(r.id));
         return [...ordered, ...missing];
     });
@@ -281,6 +325,55 @@
     });
 
     const selectedRoom = computed(() => (roomsStore.rooms ?? []).find((r) => r.id === selectedId.value) ?? null);
+
+    // Tabs
+    const activeTab = ref("general"); // "general" | "scene"
+    const sceneFile = ref(null);
+    const scenePreview = ref(null);
+
+    const sceneBoxStyle = computed(() => {
+        const url = scenePreview.value || selectedRoom.value?.scene_background_url || "";
+        if (!url) return {};
+        return {
+            backgroundImage: `url(${url})`,
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+        };
+    });
+
+    function cleanupScenePreview() {
+        try {
+            if (scenePreview.value && String(scenePreview.value).startsWith("blob:")) {
+                URL.revokeObjectURL(scenePreview.value);
+            }
+        } catch (_) { }
+        scenePreview.value = null;
+        sceneFile.value = null;
+    }
+
+    function onPickSceneFile(e) {
+        const f = e.target.files?.[0];
+        if (!f) return;
+        cleanupScenePreview();
+        sceneFile.value = f;
+        scenePreview.value = URL.createObjectURL(f);
+    }
+
+    async function saveSceneBg() {
+        if (!selectedRoom.value || !sceneFile.value) return;
+
+        saving.value = true;
+        try {
+            await roomsStore.setRoomSceneBackground(selectedRoom.value.id, sceneFile.value);
+            ui.toast("🖼️ רקע נשמר");
+            cleanupScenePreview();
+        } catch (e) {
+            console.error(e);
+            ui.toast("💥 שמירת רקע נכשלה");
+        } finally {
+            saving.value = false;
+        }
+    }
 
     function isLiving(r) {
         return (r?.key ?? "") === "living";
@@ -293,6 +386,7 @@
     }
 
     function close() {
+        cleanupScenePreview();
         emit("close");
     }
 
@@ -308,18 +402,19 @@
     }
 
     function selectRoom(id, e) {
-        // ✅ אם לחצו על input/בתוך input – לא לשנות בחירה ולא לבטל rename
-        if (e?.target?.closest?.("input, textarea")) return;
+        // אם לחצו על input/בתוך input – לא לשנות בחירה ולא לבטל rename
+        if (e?.target?.closest?.("input, textarea, label")) return;
 
-        // ✅ אם כרגע עורכים את אותו חדר – לא לסגור את העריכה
+        // אם כרגע עורכים את אותו חדר – לא לסגור את העריכה
         if (renamingId.value === id) return;
 
         cancelRename();
         selectedId.value = id;
         isCreating.value = false;
+        activeTab.value = "general";
+        cleanupScenePreview();
         hydrateEditFromSelected();
     }
-
 
     function hydrateEditFromSelected() {
         const r = selectedRoom.value;
@@ -345,11 +440,10 @@
     }
 
     function cancelRename() {
-        if (renamingSaving.value) return; // ✅ לא סוגרים בזמן שמירה
+        if (renamingSaving.value) return; // לא סוגרים בזמן שמירה
         renamingId.value = null;
         renameDraft.value = "";
     }
-
 
     async function commitRename(r) {
         const name = String(renameDraft.value || "").trim();
@@ -359,10 +453,8 @@
         }
 
         renamingSaving.value = true;
-
         try {
-            // ✅ timeout כדי שלא יהיה “נצח”
-            const ok = await Promise.race([
+            await Promise.race([
                 roomsStore.updateRoom(r.id, { name }),
                 new Promise((_, reject) => setTimeout(() => reject(new Error("TIMEOUT")), 8000)),
             ]);
@@ -374,7 +466,6 @@
                 hydrateEditFromSelected();
             }
 
-            // ✅ סוגרים רק אחרי הצלחה
             renamingId.value = null;
             renameDraft.value = "";
         } catch (e) {
@@ -389,7 +480,6 @@
             renamingSaving.value = false;
         }
     }
-
 
     // ---------- Create ----------
     function normalizeKey(k) {
@@ -414,6 +504,8 @@
         isCreating.value = true;
         const key = suggestKeyFromName("room");
         selectedId.value = "__new__";
+        activeTab.value = "general";
+        cleanupScenePreview();
         edit.value = { id: null, house_id: house.currentHouseId, name: "חדר חדש", icon: "🚪", key };
     }
 
@@ -439,13 +531,12 @@
             const icon = String(edit.value.icon || "").trim() || null;
 
             if (isCreating.value) {
-                const key = suggestKeyFromName(name); // ✅ auto key from name
+                const key = suggestKeyFromName(name);
                 await roomsStore.createRoom({ houseId: house.currentHouseId, name, key, icon });
                 ui.toast("✅ חדר נוצר");
 
                 isCreating.value = false;
 
-                // select by key
                 const created = (roomsStore.rooms ?? []).find((r) => r.key === key);
                 selectedId.value = created?.id ?? activeRooms.value[0]?.id ?? null;
                 hydrateEditFromSelected();
@@ -544,22 +635,16 @@
         const i = arr.indexOf(room.id);
         if (i === -1) return false;
 
-        // איפה living נמצא ברשימת הסדר הפעילה
         const living = activeRooms.value.find(r => isLiving(r));
         const livingIndex = living ? arr.indexOf(living.id) : -1;
 
         const j = i + dir;
-
-        // גבולות רגילים
         if (j < 0 || j >= arr.length) return false;
 
-        // ✅ אסור לעבור לפני living
-        // כלומר: יעד קטן/שווה ל-index של living (מעבר למעלה לפניו)
         if (livingIndex !== -1 && dir < 0 && j <= livingIndex) return false;
 
         return true;
     }
-
 
     function moveRoom(id, dir) {
         const room = (roomsStore.rooms ?? []).find(r => r.id === id);
@@ -576,7 +661,6 @@
         localOrder.value = arr;
         dirtyOrder.value = true;
     }
-
 
     function resetLocalOrder() {
         initLocalOrder();
@@ -614,7 +698,7 @@
         { immediate: true }
     );
 
-    onMounted(async () => {
-        
-    });
+    onMounted(async () => { });
+
+    onBeforeUnmount(() => cleanupScenePreview());
 </script>
