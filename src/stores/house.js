@@ -82,8 +82,10 @@ export const useHouseStore = defineStore('house', {
         // Rooms (הישן שלך)
         // --------------------
         enterRoom(roomKey) {
-            if (this.rooms[roomKey]) this.currentRoom = roomKey;
+            // ✅ תמיד מעדכן את currentRoom לפי ה-URL / הבחירה (גם אם החדר דינאמי ולא קיים ב-house.rooms הישן)
+            if (roomKey) this.currentRoom = String(roomKey);
         },
+
 
         addUserToRoom(roomKey, userName) {
             if (this.rooms[roomKey] && !this.rooms[roomKey].users.includes(userName)) {

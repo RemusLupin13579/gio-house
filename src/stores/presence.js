@@ -1,6 +1,7 @@
 import { defineStore } from "pinia";
 import { supabase } from "../services/supabase";
 import { session, profile } from "../stores/auth";
+import { useRoomsStore } from "../stores/rooms";
 
 export const usePresenceStore = defineStore("presence", {
     state: () => ({
@@ -18,11 +19,23 @@ export const usePresenceStore = defineStore("presence", {
 
         // ✅ user status (what the user actually is)
         myUserStatus: "online", // "online" | "afk" | "offline"
+
+        // ✅ NEW: prevent double-connect race on reload
+        connectPromise: null,
+        connectPromiseHouseId: null,
     }),
 
     getters: {
-        usersInRoom: (state) => (roomName) =>
-            Object.values(state.users).filter((u) => (u.room_name ?? "living") === roomName),
+        usersInRoom: (state) => (roomName) => {
+            const roomsStore = useRoomsStore();
+            const activeKeys = new Set((roomsStore.activeRooms ?? []).map(r => r.key));
+
+            return Object.values(state.users).filter((u) => {
+                const raw = (u.room_name ?? "living");
+                const safeRoom = activeKeys.has(raw) ? raw : "living";
+                return safeRoom === roomName;
+            });
+        },
 
         usersByRoom: (state) => {
             const grouped = {};
@@ -52,13 +65,8 @@ export const usePresenceStore = defineStore("presence", {
                 return;
             }
 
-            try {
-                await this.channel.unsubscribe();
-            } catch (_) { }
-
-            try {
-                await supabase.removeChannel(this.channel);
-            } catch (_) { }
+            try { await this.channel.unsubscribe(); } catch (_) { }
+            try { await supabase.removeChannel(this.channel); } catch (_) { }
 
             this.channel = null;
             this.channelHouseId = null;
@@ -73,19 +81,41 @@ export const usePresenceStore = defineStore("presence", {
 
             console.log("[presence.connect] start", { houseId, userId, hasToken: !!token });
 
+            console.log("[presence.connect] start", { houseId, initialRoom, userId, hasToken: !!token });
+            console.trace("[presence.connect] caller stack");
+
+
             if (!userId || !houseId) {
                 this.status = "failed";
                 this.ready = false;
                 return false;
             }
 
+            // ✅ Single-flight: אם יש connect בתהליך לאותו בית — משתמשים בו (מונע race שגורם ל-CLOSED)
+            if (this.connectPromise && this.connectPromiseHouseId === houseId) {
+                const ok = await this.connectPromise;
+                // אחרי שהוא הסתיים — אם ביקשו חדר, ניישר קו
+                if (ok && initialRoom && this.channel && this.channelHouseId === houseId) {
+                    const me = this.users?.[userId];
+                    const cur = me?.room_name ?? me?.last_room ?? "living";
+                    if (initialRoom !== cur) await this.setRoom(initialRoom);
+                }
+                return ok;
+            }
+
             this.connectSeq += 1;
             const seq = this.connectSeq;
 
-            // already connected
+            // ✅ Already connected to this house: honor requested room
             if (this.channel && this.channelHouseId === houseId) {
                 this.status = "ready";
                 this.ready = true;
+
+                const me = this.users?.[userId];
+                const cur = me?.room_name ?? me?.last_room ?? "living";
+                if (initialRoom && initialRoom !== cur) {
+                    await this.setRoom(initialRoom);
+                }
                 return true;
             }
 
@@ -171,11 +201,13 @@ export const usePresenceStore = defineStore("presence", {
 
                             try {
                                 // ✅ on connect:
-                                await ch.track(buildPayload({
-                                    user_status: "online",
-                                    room_name: safeInitial,
-                                    last_room: safeInitial,
-                                }));
+                                await ch.track(
+                                    buildPayload({
+                                        user_status: "online",
+                                        room_name: safeInitial,
+                                        last_room: safeInitial,
+                                    })
+                                );
                             } catch (e) {
                                 console.warn("[presence.connect] track failed", e);
                             }
@@ -193,22 +225,14 @@ export const usePresenceStore = defineStore("presence", {
 
                 // anti-race cleanup
                 if (seq !== this.connectSeq) {
-                    try {
-                        await ch.unsubscribe();
-                    } catch (_) { }
-                    try {
-                        await supabase.removeChannel(ch);
-                    } catch (_) { }
+                    try { await ch.unsubscribe(); } catch (_) { }
+                    try { await supabase.removeChannel(ch); } catch (_) { }
                     return { ok: false, ch: null };
                 }
 
                 if (!ok) {
-                    try {
-                        await ch.unsubscribe();
-                    } catch (_) { }
-                    try {
-                        await supabase.removeChannel(ch);
-                    } catch (_) { }
+                    try { await ch.unsubscribe(); } catch (_) { }
+                    try { await supabase.removeChannel(ch); } catch (_) { }
                     return { ok: false, ch: null };
                 }
 
@@ -217,7 +241,11 @@ export const usePresenceStore = defineStore("presence", {
                 this.channelHouseId = houseId;
 
                 // optimistic self
-                const payload = buildPayload({ user_status: "online", room_name: safeInitial, last_room: safeInitial });
+                const payload = buildPayload({
+                    user_status: "online",
+                    room_name: safeInitial,
+                    last_room: safeInitial,
+                });
                 this.users = { ...(this.users || {}), [userId]: payload };
                 this.myUserStatus = payload.user_status;
 
@@ -226,26 +254,46 @@ export const usePresenceStore = defineStore("presence", {
                 return { ok: true, ch };
             };
 
-            // retry
-            const delays = [0, 500, 1200, 2500];
-            for (let i = 0; i < delays.length; i++) {
-                if (seq !== this.connectSeq) return false;
-                if (delays[i]) await new Promise((r) => setTimeout(r, delays[i]));
+            // ✅ Wrap retry loop as a single in-flight promise (prevents double connect on reload)
+            this.connectPromiseHouseId = houseId;
+            this.connectPromise = (async () => {
+                const delays = [0, 500, 1200, 2500];
 
-                try {
-                    const res = await attemptOnce();
-                    if (res.ok) return true;
-                } catch (e) {
-                    console.warn("[presence.connect] attempt crashed", e);
+                for (let i = 0; i < delays.length; i++) {
+                    if (seq !== this.connectSeq) return false;
+                    if (delays[i]) await new Promise((r) => setTimeout(r, delays[i]));
+
+                    try {
+                        const res = await attemptOnce();
+                        if (res.ok) return true;
+                    } catch (e) {
+                        console.warn("[presence.connect] attempt crashed", e);
+                    }
                 }
+
+                this.status = "failed";
+                this.ready = false;
+                this.users = {};
+                console.warn("[presence.connect] failed after retries", { houseId, channelName });
+                return false;
+            })();
+
+            const ok = await this.connectPromise;
+
+            // cleanup in-flight marker
+            this.connectPromise = null;
+            this.connectPromiseHouseId = null;
+
+            // ✅ after connect, ensure requested room (important on reload)
+            if (ok && initialRoom && this.channel && this.channelHouseId === houseId) {
+                const me = this.users?.[userId];
+                const cur = me?.room_name ?? me?.last_room ?? "living";
+                if (initialRoom !== cur) await this.setRoom(initialRoom);
             }
 
-            this.status = "failed";
-            this.ready = false;
-            this.users = {};
-            console.warn("[presence.connect] failed after retries", { houseId, channelName });
-            return false;
+            return ok;
         },
+
 
         async setRoom(roomName) {
             if (!this.channel) return false;

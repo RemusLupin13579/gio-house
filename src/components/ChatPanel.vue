@@ -5,7 +5,7 @@
             <div class="h-14 px-3 sm:px-4 flex items-center justify-between">
                 <div class="flex items-center gap-3 min-w-0">
                     <div class="w-9 h-9 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center">
-                        <span class="text-xl">{{ getRoomIcon(house.currentRoom) }}</span>
+                        <span class="text-xl">{{ currentRoomIcon }}</span>
                     </div>
 
                     <div class="min-w-0">
@@ -145,17 +145,30 @@
         paddingBottom: "env(safe-area-inset-bottom)",
     }));
 
-    function getRoomIcon(roomId) {
-        const icons = {
-            living: "🛋️",
-            gaming: "🎮",
-            bathroom: "🚿",
-            study: "📚",
-            cinema: "🎬",
-            afk: "😴",
-        };
-        return icons[roomId] || "🚪";
-    }
+    const FALLBACK_ICONS = {
+        living: "🛋️",
+        gaming: "🎮",
+        bathroom: "🚿",
+        study: "📚",
+        cinema: "🎬",
+        afk: "😴",
+    };
+
+    const currentRoomMeta = computed(() => {
+        const key = house.currentRoom;
+        if (!key) return null;
+        return roomsStore.byKey?.[key] ?? null;
+    });
+
+    const currentRoomIcon = computed(() => {
+        const key = house.currentRoom;
+        return currentRoomMeta.value?.icon || FALLBACK_ICONS[key] || "🚪";
+    });
+
+    const currentRoomName = computed(() => {
+        const key = house.currentRoom;
+        return currentRoomMeta.value?.name || key || "חדר";
+    });
 
     function onExpandPointerDown() {
         // אם המקלדת סגורה אבל ה-input עדיין בפוקוס (מצב נפוץ במובייל) -> blur כדי לא "להעיר" מקלדת
@@ -190,13 +203,11 @@
     const roomsError = computed(() => roomsStore.error);
 
     /* Derived */
-    const currentRoomName = computed(() => house.rooms?.[house.currentRoom]?.name || "חדר");
     const onlineCount = computed(() => userStore.usersInRoom(house.currentRoom).length);
     const currentRoomMessages = computed(() => {
         if (!roomUuid.value) return [];
         return messagesStore.messagesInRoom(roomUuid.value);
     });
-
 
     const keyboardPx = ref(0);
 
@@ -220,58 +231,42 @@
         return true;
     }
 
-    async function syncChat() {
-        const token = ++runToken;
-        chatError.value = null;
-        chatLoading.value = true;
-
-        try {
-            const ok = await ensureRoomsLoaded();
-            if (!ok) return;
-            if (token !== runToken) return;
-
-            const uuid = roomUuid.value;
-            if (!uuid) return;
-
-            if (activeUuid && activeUuid !== uuid) {
-                try { await messagesStore.unsubscribe(activeUuid); } catch (e) { console.warn("[ChatPanel] unsubscribe failed:", e); }
-            }
-            if (token !== runToken) return;
-
-            if (activeUuid !== uuid) {
-                await messagesStore.load(uuid);
-                messagesStore.subscribe(uuid);
-                activeUuid = uuid;
-            }
-
-            scrollToBottom();
-        } catch (e) {
-            chatError.value = e;
-            console.error("[ChatPanel] syncChat failed:", e);
-        } finally {
-            if (token === runToken) chatLoading.value = false;
-        }
-    }
-
     watch(
         [() => house.currentHouseId, () => house.currentRoom, () => roomUuid.value],
         async ([houseId, roomKey, uuid], [oldHouseId, oldRoomKey, oldUuid]) => {
-            if (!houseId || !roomKey || !uuid) return;
+            if (!houseId) return;
 
-            // אם עברנו חדר/בית - ננתק uuid קודם
-            if (oldUuid && oldUuid !== uuid) {
-                await messagesStore.unsubscribe(oldUuid);
+            chatError.value = null;
+            chatLoading.value = true;
+            const token = ++runToken;
+
+            try {
+                await ensureRoomsLoaded();
+                if (token !== runToken) return;
+
+                if (!roomKey || !uuid) return;
+
+                // אם עברנו חדר/בית - ננתק uuid קודם
+                if (oldUuid && oldUuid !== uuid) {
+                    await messagesStore.unsubscribe(oldUuid);
+                }
+
+                if (token !== runToken) return;
+
+                // טען+subscribe ל-uuid הנוכחי
+                await messagesStore.load(uuid);
+                messagesStore.subscribe(uuid);
+                activeUuid = uuid;
+                scrollToBottom();
+            } catch (e) {
+                chatError.value = e;
+                console.error("[ChatPanel] room watcher failed:", e);
+            } finally {
+                if (token === runToken) chatLoading.value = false;
             }
-
-            // טען+subscribe ל-uuid הנוכחי
-            await messagesStore.load(uuid);
-            messagesStore.subscribe(uuid);
-            activeUuid = uuid;
-            scrollToBottom();
         },
         { immediate: true }
     );
-
 
     async function sendMessage() {
         const text = newMessage.value.trim();
@@ -300,6 +295,12 @@
     onUnmounted(() => {
         window.visualViewport?.removeEventListener("resize", updateKeyboard);
         window.visualViewport?.removeEventListener("scroll", updateKeyboard);
+
+        // clean up subscription on unmount
+        if (activeUuid) {
+            try { messagesStore.unsubscribe(activeUuid); } catch (_) { }
+            activeUuid = null;
+        }
     });
 
     onErrorCaptured((err, instance, info) => {

@@ -126,22 +126,22 @@
             </h2>
 
             <div class="space-y-3">
-                <button v-for="room in Object.entries(house.rooms)"
-                        :key="room[0]"
-                        @click="enterRoom(room[0])"
+                <button v-for="room in activeRooms"
+                        :key="room.id"
+                        @click="enterRoom(room.key)"
                         class="w-full bg-gradient-to-r from-gray-900 to-gray-800 border border-green-500/40 rounded-2xl p-4 hover:border-green-400/70 hover:shadow-xl hover:shadow-green-500/20 transition-all active:scale-[0.99]">
                     <div class="flex items-center justify-between gap-3">
                         <div class="flex items-center gap-3 sm:gap-4">
-                            <span class="text-3xl sm:text-4xl">{{ getRoomIcon(room[0]) }}</span>
+                            <span class="text-3xl sm:text-4xl">{{ room.icon || "🚪" }}</span>
 
                             <div class="text-right">
                                 <div class="text-white font-bold text-base sm:text-lg">
-                                    {{ room[1].name }}
+                                    {{ room.name || room.key }}
                                 </div>
 
                                 <div class="text-green-500 text-sm">
                                     <span v-if="presence.status === 'connecting'" class="gio-skel-count"></span>
-                                    <span v-else>{{ `${presence.usersInRoom(room[0]).length} בפנים` }}</span>
+                                    <span v-else>{{ `${presence.usersInRoom(room.key).length} בפנים` }}</span>
                                 </div>
                             </div>
                         </div>
@@ -149,11 +149,11 @@
                         <div class="text-green-400 text-xl sm:text-2xl">←</div>
                     </div>
 
-                    <div v-if="presence.usersInRoom(room[0]).length > 0" class="mt-3 pt-3">
+                    <div v-if="presence.usersInRoom(room.key).length > 0" class="mt-3 pt-3">
                         <div class="h-px w-full bg-gradient-to-r from-transparent via-green-500/40 to-transparent mb-3"></div>
 
                         <div class="flex flex-row flex-wrap gap-2 justify-end items-center">
-                            <div v-for="u in presence.usersInRoom(room[0]).slice(0, 8)"
+                            <div v-for="u in presence.usersInRoom(room.key).slice(0, 8)"
                                  :key="u.user_id"
                                  class="w-8 h-8 rounded-full border-2 border-green-400/50 overflow-hidden bg-black/50 flex-shrink-0"
                                  :title="u.nickname">
@@ -163,18 +163,25 @@
                                 </div>
                             </div>
 
-                            <div v-if="presence.usersInRoom(room[0]).length > 8" class="text-green-400 text-xs font-bold">
-                                +{{ presence.usersInRoom(room[0]).length - 8 }}
+                            <div v-if="presence.usersInRoom(room.key).length > 8" class="text-green-400 text-xs font-bold">
+                                +{{ presence.usersInRoom(room.key).length - 8 }}
                             </div>
                         </div>
                     </div>
                 </button>
+
+                <div v-if="roomsStore.loading" class="text-center text-white/50 py-6">
+                    טוען חדרים…
+                </div>
+
+                <div v-else-if="activeRooms.length === 0" class="text-center text-white/50 py-6">
+                    אין חדרים פעילים בבית הזה
+                </div>
             </div>
         </section>
 
         <!-- ✅ Tooltip (Teleport -> body so it never gets clipped by the clock) -->
         <Teleport to="body">
-            <!-- click outside closes -->
             <div v-if="tooltip.open" class="gio-tooltip-backdrop" @click="closeTooltip()"></div>
 
             <div v-if="tooltip.open"
@@ -197,15 +204,16 @@
     import { useHouseStore } from "../stores/house";
     import { useRouter } from "vue-router";
     import { usePresenceStore } from "../stores/presence";
+    import { useRoomsStore } from "../stores/rooms";
 
     const warmup = ref(true);
     const router = useRouter();
     const house = useHouseStore();
     const presence = usePresenceStore();
+    const roomsStore = useRoomsStore();
 
     const activeTooltipUserId = ref(null);
 
-    // ✅ tooltip state (fixed, teleported)
     const tooltip = ref({
         open: false,
         x: 0,
@@ -234,6 +242,18 @@
     });
     const isPublicHouse = computed(() => !!currentHouse.value?.is_public);
 
+    // ✅ make sure rooms are loaded
+    watch(
+        () => house.currentHouseId,
+        async (hid) => {
+            if (!hid) return;
+            await roomsStore.loadForHouse(hid);
+        },
+        { immediate: true }
+    );
+
+    const activeRooms = computed(() => roomsStore.activeRooms ?? []);
+
     // ✅ build clock users
     const clockUsers = computed(() => {
         const list = Object.values(presence.users || {});
@@ -242,11 +262,8 @@
             .map((u) => {
                 const id = u.user_id ?? u.id;
                 const baseRoom = u.room_name ?? u.last_room ?? "living";
-                const st = u.user_status ?? "online"; // online | afk | offline
+                const st = u.user_status ?? "online";
                 const ts = Number(u.ts || 0);
-
-                // ✅ AFK is shown as a "station", not a real room
-                // ✅ OFFLINE stays on the clock at the same bottom position as AFK (per request)
                 const roomKeyForClock = (st === "afk" || st === "offline") ? "afk" : baseRoom;
 
                 return {
@@ -268,9 +285,9 @@
     }
 
     function statusColor(status, base) {
-        if (status === "afk") return "#facc15"; // yellow-400
-        if (status === "offline") return "#94a3b8"; // slate-400
-        return safeColor(base); // online -> user color
+        if (status === "afk") return "#facc15";
+        if (status === "offline") return "#94a3b8";
+        return safeColor(base);
     }
 
     function statusLabel(s) {
@@ -283,7 +300,6 @@
         );
     }
 
-    // ✅ tooltip open/close (teleported, fixed positioning)
     function clamp(n, min, max) {
         return Math.max(min, Math.min(max, n));
     }
@@ -294,14 +310,12 @@
         const r = anchorEl.getBoundingClientRect();
 
         const pad = 12;
-        const tipW = 210; // approximate width for clamping
-        const tipH = 70;  // approximate height for clamping
+        const tipW = 210;
+        const tipH = 70;
 
-        // center above by default
         let x = r.left + r.width / 2;
         let y = r.top - 12;
 
-        // if would go above viewport, place below
         if (y < pad + tipH) y = r.bottom + 12;
 
         x = clamp(x, pad + tipW / 2, window.innerWidth - pad - tipW / 2);
@@ -327,8 +341,6 @@
         }
 
         activeTooltipUserId.value = user.id;
-
-        // wait one tick in case layout shifts (tiny safety)
         nextTick(() => openTooltipForUser(user, el));
     }
 
@@ -343,7 +355,6 @@
         if (!insideAvatar && !insideTooltip) closeTooltip();
     }
 
-    // ✅ responsive sizing
     const clockWrapEl = ref(null);
     const clockSize = ref(0);
     let ro = null;
@@ -376,7 +387,6 @@
         ro = null;
     });
 
-    // sizing
     const radius = computed(() => Math.max(110, Math.min(170, Math.floor(clockSize.value * 0.40))));
     const baseHandLen = computed(() => Math.max(100, Math.min(160, Math.floor(clockSize.value * 0.38))));
     const handThickness = computed(() => Math.max(3, Math.min(5, Math.floor(clockSize.value * 0.012))));
@@ -398,7 +408,7 @@
         living: 0,
         gaming: 60,
         cinema: 120,
-        afk: 180, // ✅ 6 o’clock (bottom)
+        afk: 180,
         bathroom: 240,
         study: 300,
     };
@@ -468,17 +478,6 @@
         );
     }
 
-    function getRoomIcon(roomId) {
-        const icons = {
-            living: "🛋️",
-            gaming: "🎮",
-            bathroom: "🚿",
-            study: "📚",
-            cinema: "🎬",
-        };
-        return icons[roomId] || "🚪";
-    }
-
     async function enterRoom(roomKey) {
         house.enterRoom(roomKey);
         await presence.setRoom(roomKey);
@@ -491,7 +490,6 @@
         transform: scale(0.98);
     }
 
-    /* Tooltip */
     .gio-tooltip-backdrop {
         position: fixed;
         inset: 0;

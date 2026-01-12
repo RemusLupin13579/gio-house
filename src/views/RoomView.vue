@@ -38,7 +38,6 @@
     import { useRoomsStore } from "../stores/rooms";
 
     const roomsStore = useRoomsStore();
-
     const presence = usePresenceStore();
     const router = useRouter();
     const route = useRoute();
@@ -90,41 +89,77 @@
         paddingBottom: `calc(env(safe-area-inset-bottom) + ${keyboardPx.value}px)`,
     }));
 
-    async function syncRoom(roomKey) {
-        if (!roomKey) return;
-
-        if (house.rooms?.[roomKey]) {
-            house.enterRoom(roomKey);
-        }
-        await presence.setRoom(roomKey);
-    }
-
     const roomParam = computed(() =>
         route.params.key ?? route.params.roomKey ?? route.params.id ?? null
     );
 
+    const activeRoomKeys = computed(() => new Set((roomsStore.activeRooms ?? []).map(r => r.key)));
+
+    async function syncRoom() {
+        const houseId = house.currentHouseId;
+        if (!houseId) return;
+
+        // החדר מתוך ה-URL
+        const roomKey = String(route.params.id || "living");
+
+        // אל תעשה replace ל-router פה אם אתה כבר ב /room/:id
+        // (זה יגרום ל-watchers לרוץ שוב ולדרוס)
+        // אם יש אצלך router.replace(...) בתוך syncRoom — תמחוק/תנטרל אותו.
+
+        // ✅ קריטי: connect עם roomKey, לא בלי
+        const ok = await presence.connect(houseId, roomKey);
+
+        // ✅ קריטי: סטטוס חדר תמיד לפי ה-URL
+        if (ok) {
+            house.enterRoom?.(roomKey);
+            await presence.setRoom(roomKey);
+        }
+    }
+
+
     watch(
-        roomParam,
-        async (newRoomKey) => {
+        [() => house.currentHouseId, () => roomParam.value],
+        async ([houseId, newRoomKey]) => {
+            if (!houseId) return;
             await syncRoom(newRoomKey);
         },
         { immediate: true }
     );
 
-
     async function goBack() {
+        await router.push({ name: "home" });
         await presence.setRoom("living");
-        router.push("/");
     }
+
 
     /* Swipe back (but NOT from left edge - reserved for drawer open) */
     const OPEN_ZONE_RATIO = 0.40;
     const SYS_EDGE_PX = 28;
 
+    const touchStartX = ref(0);
+    const touchStartY = ref(0);
+    const touchEndX = ref(0);
+    const touchEndY = ref(0);
+
     function isInDrawerOpenZone(x) {
         const openZonePx = window.innerWidth * OPEN_ZONE_RATIO;
-        // אם התחלת באזור שפותח drawer (וגם לא ממש מהקצה)
         return x >= SYS_EDGE_PX && x <= openZonePx;
+    }
+
+    function handleTouchStart(e) {
+        const t = e.touches?.[0];
+        if (!t) return;
+        touchStartX.value = t.clientX;
+        touchStartY.value = t.clientY;
+        touchEndX.value = t.clientX;
+        touchEndY.value = t.clientY;
+    }
+
+    function handleTouchMove(e) {
+        const t = e.touches?.[0];
+        if (!t) return;
+        touchEndX.value = t.clientX;
+        touchEndY.value = t.clientY;
     }
 
     function handleTouchEnd() {
@@ -134,5 +169,4 @@
         const diffY = touchEndY.value - touchStartY.value;
         if (Math.abs(diffX) > Math.abs(diffY) && diffX > 100) goBack();
     }
-
 </script>

@@ -11,8 +11,6 @@
             <div class="font-bold text-green-300 truncate max-w-[60vw] mx-auto text-center">
                 {{ headerTitle }}
             </div>
-
-            
         </div>
 
         <aside class="hidden md:flex w-16 bg-[#0b0f12] border-r border-white/5 items-center">
@@ -53,11 +51,10 @@
                             <button class="w-full px-3 py-2 text-right hover:bg-white/5" @click="openInviteModal = true; houseMenuOpen=false">
                                 הזמן חברים
                             </button>
-                            <button class="w-full px-3 py-2 text-right hover:bg-white/5" @click="openHouseModal = true; houseMenuOpen=false">
-                                עריכת בית
-                            </button>
-                            <button class="w-full px-3 py-2 text-right hover:bg-white/5" @click="openHouseModal = true; houseMenuOpen=false">
-                                הגדרות
+                            <!-- ✅ placeholder לשלב הבא -->
+                            <div class="h-px bg-white/10 my-1"></div>
+                            <button class="w-full px-3 py-2 text-right hover:bg-white/5" @click="openRoomsModal = true; houseMenuOpen=false">
+                                ניהול בית
                             </button>
                         </div>
                     </div>
@@ -72,10 +69,28 @@
                             :key="r.id"
                             class="w-full px-3 py-2 rounded-xl flex items-center justify-between hover:bg-white/5 transition"
                             :class="isActiveRoom(r.key) ? 'bg-white/5 border border-green-500/30' : 'border border-transparent'"
-                            @click="enterRoom(r.key)">
+                            @click.self="enterRoom(r.key)">
                         <div class="flex items-center gap-2">
                             <span class="text-lg">{{ r.icon || "🚪" }}</span>
-                            <span class="font-semibold">{{ r.name || r.key }}</span>
+                            <div class="min-w-0">
+                                <input v-if="inlineEdit.id === r.id"
+                                       ref="inlineEditInput"
+                                       v-model="inlineEdit.draft"
+                                       class="w-full max-w-[180px] bg-black/40 border border-green-500/25 rounded-lg px-2 py-1 text-sm outline-none
+                                            focus:border-green-500/40 focus:ring-2 focus:ring-green-500/10"
+                                       @keydown.enter.prevent="commitInlineEdit(r)"
+                                       @keydown.esc.prevent="cancelInlineEdit"
+                                       @blur="cancelInlineEdit"
+                                       @click.stop />
+                                <span v-else
+                                      class="font-semibold truncate block max-w-[180px]"
+                                      @click.stop
+                                      @dblclick.stop.prevent="beginInlineEdit(r)"
+                                      title="Double click to rename">
+                                    {{ r.name || r.key }}
+                                </span>
+                            </div>
+
                         </div>
 
                         <span class="flex items-center gap-2 text-xs text-green-300">
@@ -86,7 +101,6 @@
                     </button>
                 </div>
             </div>
-
 
             <div class="flex-1"></div>
 
@@ -186,6 +200,12 @@
                                         <button class="w-full px-3 py-2 text-right hover:bg-white/5" @click="openHouseModal = true; houseMenuOpen=false">
                                             הגדרות
                                         </button>
+
+                                        <!-- ✅ placeholder לשלב הבא -->
+                                        <div class="h-px bg-white/10 my-1"></div>
+                                        <button class="w-full px-3 py-2 text-right hover:bg-white/5" @click="ui.toast('🚧 ניהול חדרים בשלב הבא'); houseMenuOpen=false">
+                                            ניהול חדרים
+                                        </button>
                                     </div>
                                 </div>
                             </div>
@@ -197,7 +217,6 @@
                             </button>
                         </div>
 
-
                         <div class="flex-1 overflow-auto p-3">
                             <div class="text-xs text-white/40 mb-2">חדרים</div>
 
@@ -206,10 +225,26 @@
                                         :key="r.id"
                                         class="w-full px-3 py-2 rounded-xl flex items-center justify-between hover:bg-white/5 transition"
                                         :class="isActiveRoom(r.key) ? 'bg-white/5 border border-green-500/30' : 'border border-transparent'"
-                                        @click="enterRoom(r.key, { closeDrawer: true })">
+                                        @click.self="enterRoom(r.key, { closeDrawer: true })">
                                     <div class="flex items-center gap-2">
                                         <span class="text-lg">{{ r.icon || "🚪" }}</span>
-                                        <span class="font-semibold">{{ r.name || r.key }}</span>
+                                        <div class="min-w-0">
+                                            <input v-if="inlineEdit.id === r.id"
+                                                   ref="inlineEditInput"
+                                                   v-model="inlineEdit.draft"
+                                                   class="w-full max-w-[180px] bg-black/40 border border-green-500/25 rounded-lg px-2 py-1 text-sm outline-none
+                                                        focus:border-green-500/40 focus:ring-2 focus:ring-green-500/10"
+                                                   @keydown.enter.prevent="commitInlineEdit(r)"
+                                                   @keydown.esc.prevent="cancelInlineEdit"
+                                                   @blur="cancelInlineEdit"
+                                                   @click.stop />
+                                            <span v-else
+                                                  class="font-semibold truncate block max-w-[180px]"
+                                                  @dblclick.stop.prevent="beginInlineEdit(r)"
+                                                  title="Double click to rename">
+                                                {{ r.name || r.key }}
+                                            </span>
+                                        </div>
                                     </div>
 
                                     <span class="flex items-center gap-2 text-xs text-green-300">
@@ -217,18 +252,18 @@
                                         <span v-else>{{ presence.usersInRoom(r.key).length }}</span>
                                         <span class="h-2 w-2 rounded-full bg-white/10" aria-hidden="true"></span>
                                     </span>
-                                    <div v-if="roomsStore.loading" class="text-xs text-white/50 px-2 py-3">
-                                        טוען חדרים...
-                                    </div>
-
-                                    <div v-else-if="activeRooms.length === 0" class="text-xs text-white/50 px-2 py-3">
-                                        אין חדרים פעילים בבית הזה
-                                    </div>
-
                                 </button>
 
+                                <div v-if="roomsStore.loading" class="text-xs text-white/50 px-2 py-3">
+                                    טוען חדרים...
+                                </div>
+
+                                <div v-else-if="activeRooms.length === 0" class="text-xs text-white/50 px-2 py-3">
+                                    אין חדרים פעילים בבית הזה
+                                </div>
                             </div>
                         </div>
+
                         <div class="h-14 px-3 border-t border-white/10 flex items-center justify-between">
                             <div class="flex items-center gap-2">
                                 <div class="w-9 h-9 rounded-xl bg-white/5 border border-white/10 overflow-hidden flex items-center justify-center">
@@ -258,7 +293,6 @@
                                 </div>
                             </div>
 
-
                             <button class="w-9 h-9 rounded-xl bg-white/5 border border-white/10 hover:border-green-500/50 transition" title="Settings">
                                 ⚙️
                             </button>
@@ -281,11 +315,12 @@
         <HouseInviteModal v-if="openInviteModal && currentHouse"
                           :house="currentHouse"
                           @close="openInviteModal=false" />
-
+        <RoomManagerModal v-if="openRoomsModal" @close="openRoomsModal=false" />
     </div>
 </template>
 
 <script setup>
+    import RoomManagerModal from "../components/RoomManagerModal.vue";
     import HousesSidebar from "../components/HousesSidebar.vue";
     import HouseInviteModal from "../components/HouseInviteModal.vue";
     import HouseSwitcherModal from "../components/HouseSwitcherModal.vue";
@@ -297,6 +332,9 @@
     import { useRoomsStore } from "../stores/rooms";
     import { useUIStore } from "../stores/ui";
 
+    const inlineEdit = ref({ id: null, draft: "" });
+    const inlineEditInput = ref(null);
+
     const ui = useUIStore();
     const openInviteModal = ref(false);
 
@@ -307,6 +345,7 @@
     const house = useHouseStore();
     const presence = usePresenceStore();
 
+    const openRoomsModal = ref(false);
     const openHouseModal = ref(false);
     const houseMenuOpen = ref(false);
     const showMobileTopBar = computed(() => route.name !== "room");
@@ -366,6 +405,7 @@
     function closeMobileNav(options = {}) {
         if (!mobileNavOpen.value) return;
         houseMenuOpen.value = false;
+
         const w = drawerWidth();
         animateDrawer(-w, 0, 140);
 
@@ -373,6 +413,7 @@
             mobileNavOpen.value = false;
         }, 155);
 
+        // ✅ אם סוגרים בגלל ניווט/סנכרון UI, אל תיגע בהיסטוריה
         if (drawerHistoryPushed.value && !options.skipHistoryBack) {
             suppressNextPop = true;
             history.back();
@@ -405,25 +446,40 @@
         }
     });
 
+    /* =========================
+       ✅ LOAD rooms + presence connect when house changes
+       ========================= */
     watch(
         [() => house.currentHouseId, () => route.name, () => route.params.id],
-        ([houseId, rName, rId]) => {
+        async ([houseId, rName, rId]) => {
             if (!houseId) return;
+
+            // טען חדרים (לא חוסם)
             void roomsStore.loadForHouse(houseId).catch(console.error);
 
-            const initialRoom =
-                rName === "room" && typeof rId === "string" && rId.length ? rId : "living";
+            // ✅ קובע חדר לפי ה-URL (כולל ריענון)
+            const path = window.location.pathname || "";
+            const m = path.match(/^\/room\/([^\/?#]+)/);
+            const roomFromPath = m ? decodeURIComponent(m[1]) : null;
 
-            void (async () => {
-                const ok = await presence.connect(houseId, initialRoom);
-                // ❌ לא עושים setRoom("living") כאן
-                // ✅ connect כבר עושה track עם initialRoom
-                // ואם תרצה “ליישר קו” בכל זאת:
-                // if (ok) await presence.setRoom(initialRoom);
-            })();
+            const roomFromRoute =
+                (rName === "room")
+                    ? (typeof rId === "string" && rId ? rId : (roomFromPath || "living"))
+                    : (roomFromPath || "living"); // אם route.name עוד לא מוכן בזמן ריענון
+
+            const ok = await presence.connect(houseId, roomFromRoute);
+
+            // ✅ אל תדרוס ל-living אף פעם פה.
+            // אם אנחנו באמת במסך חדר – נאכוף את החדר לפי ה-URL (למקרה שה-channel כבר היה קיים)
+            if (ok && (rName === "room" || !!roomFromPath)) {
+                house.enterRoom?.(roomFromRoute);
+            }
         },
         { immediate: true }
     );
+
+
+
 
 
     /* =========================
@@ -560,24 +616,7 @@
             const insideHeaderMenu = e.target?.closest?.("[data-house-menu]");
             if (!insideHeaderMenu) houseMenuOpen.value = false;
         }
-
     }
-
-    /* =========================
-       ✅ Presence bootstrap
-       ========================= */
-    watch(
-        () => house.currentHouseId,
-        (houseId) => {
-            if (!houseId) return;
-            void roomsStore.loadForHouse(houseId).catch(console.error);
-            void (async () => {
-                const ok = await presence.connect(houseId);
-                if (ok) await presence.setRoom("living");
-            })();
-        },
-        { immediate: true }
-    );
 
     /* =========================
        ✅ STATUS (Online / AFK / Offline)
@@ -619,7 +658,7 @@
     /* =========================
        ✅ AFK automation (status only — NOT a room)
        ========================= */
-    //const AFK_MS = 5000; // ✅:דיבוג 5000 - 5 שניות
+    //const AFK_MS = 5000; // ✅ דיבוג
     const AFK_MS = 10 * 60 * 1000; // 10 דקות
 
     let afkTimer = null;
@@ -695,42 +734,45 @@
     const nickname = computed(() => profile.value?.nickname ?? "User");
     const avatarUrl = computed(() => profile.value?.avatar_url ?? null);
 
+    const routeRoomKey = computed(() => {
+        const p = route.params || {};
+        return (p.key ?? p.roomKey ?? p.id ?? null);
+    });
+
     function isActiveRoom(roomKey) {
-        return route.name === "room" ? String(route.params.id) === roomKey : house.currentRoom === roomKey;
+        return route.name === "room"
+            ? String(routeRoomKey.value) === roomKey
+            : house.currentRoom === roomKey;
     }
 
     const activeRooms = computed(() => roomsStore.activeRooms ?? []);
 
-    function roomName(roomKey) {
-        return roomsStore.byKey?.[roomKey]?.name ?? roomKey;
-    }
-
-    function roomIcon(roomKey) {
-        return roomsStore.byKey?.[roomKey]?.icon ?? "🚪";
-    }
-
-
     async function enterRoom(roomKey, options = {}) {
+        if (inlineEdit.value.id) return; // בזמן עריכה לא נכנסים לחדר
+
+        // ✅ close drawer ASAP (UX)
+        if (options.closeDrawer && mobileNavOpen.value) closeMobileNav({ skipHistoryBack: true });
+
         house.enterRoom?.(roomKey);
         await router.push({ name: "room", params: { id: roomKey } });
 
-        // אחרי הניווט, תוודא שיש channel ואז track
+        // ensure connected (idempotent)
         if (house.currentHouseId) {
             await presence.connect(house.currentHouseId, roomKey);
         }
         await presence.setRoom(roomKey);
 
-        if (options.closeDrawer && mobileNavOpen.value) closeMobileNav();
+        // ✅ close drawer even if caller forgot
+        if (mobileNavOpen.value) closeMobileNav({ skipHistoryBack: true });
     }
-
-
-
 
     function switchHouse(houseId) {
         if (!houseId) return;
         house.setCurrentHouse(houseId);
+
         // ✅ סוגר מגירה במובייל
-        if (mobileNavOpen.value) closeMobileNav();
+        if (mobileNavOpen.value) closeMobileNav({ skipHistoryBack: true });
+
         if (route.name !== "home" && route.name !== "members") {
             router.push({ name: "home" });
         }
@@ -738,11 +780,18 @@
 
     const retryPresence = () => house.currentHouseId && presence.connect(house.currentHouseId);
 
-    const roomKeyFromRoute = computed(() => route.params.id);
-
+    /* =========================
+       ✅ Drawer close on ANY navigation (airtight)
+       ========================= */
+    watch(
+        () => route.fullPath,
+        () => {
+            if (mobileNavOpen.value) closeMobileNav({ skipHistoryBack: true });
+            houseMenuOpen.value = false;
+        }
+    );
 
     onMounted(() => {
-
         attachAfkListeners();
         scheduleAfk();
 
@@ -763,6 +812,48 @@
         window.removeEventListener("touchend", onTouchEndGlobal, { capture: true });
         window.removeEventListener("pointerdown", onGlobalPointerDown, { capture: true });
     });
+
+    /* =========================
+       ✅ Inline room rename
+       ========================= */
+    function beginInlineEdit(room) {
+        if (!room?.id) return;
+        // לא עורכים living אם אתה רוצה (אופציונלי). אם כן, מחק את התנאי:
+        // if (room.key === "living") return;
+
+        inlineEdit.value = { id: room.id, draft: room.name || room.key || "" };
+
+        nextTick(() => {
+            // ref בתוך v-for עלול להיות array — נטפל בזה
+            const el = Array.isArray(inlineEditInput.value) ? inlineEditInput.value.at(-1) : inlineEditInput.value;
+            el?.focus?.();
+            el?.select?.();
+        });
+    }
+
+    function cancelInlineEdit() {
+        inlineEdit.value = { id: null, draft: "" };
+    }
+
+    async function commitInlineEdit(room) {
+        const name = String(inlineEdit.value.draft || "").trim();
+        if (!name) {
+            ui?.toast?.("⚠️ שם לא יכול להיות ריק");
+            return;
+        }
+
+        try {
+            await roomsStore.updateRoom(room.id, { name });
+            ui?.toast?.("💾 נשמר");
+        } catch (e) {
+            console.error("[AppShell] inline rename failed:", e);
+            ui?.toast?.("💥 שינוי שם נכשל");
+        } finally {
+            cancelInlineEdit();
+        }
+    }
+
+
 </script>
 
 <style>
@@ -830,7 +921,6 @@
         transition: background .18s ease, box-shadow .18s ease;
     }
 
-    /* connection ready -> we color by data-user */
     .gio-presence-chip[data-state="ready"][data-user="online"] {
         border-color: rgba(34,197,94,0.45);
         background: rgba(34,197,94,0.10);
@@ -864,7 +954,6 @@
             box-shadow: 0 0 12px rgba(148, 163, 184, 0.22);
         }
 
-    /* connecting / failed */
     .gio-presence-chip[data-state="connecting"] .gio-dot {
         background: rgba(255,255,255,0.18);
     }
@@ -879,7 +968,7 @@
         width: 18px;
         height: 12px;
         border-radius: 6px;
-        background: linear-gradient( 90deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.06) );
+        background: linear-gradient(90deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.06));
         background-size: 200% 100%;
         animation: gioShimmer 1.1s ease-in-out infinite;
     }
