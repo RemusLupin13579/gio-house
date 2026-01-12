@@ -55,15 +55,20 @@ export async function initAuth() {
     authReady.value = true;
 
     supabase.auth.onAuthStateChange(async (_event, newSession) => {
-        session.value = newSession ?? null;
+        try {
+            session.value = newSession ?? null;
 
-        if (newSession?.user) {
-            await ensureProfile(newSession.user);
-            await fetchMyProfile();
-        } else {
-            profile.value = null;
+            if (newSession?.user) {
+                await ensureProfile(newSession.user);
+                await fetchMyProfile();
+            } else {
+                profile.value = null;
+            }
+        } catch (e) {
+            console.error("[onAuthStateChange] failed:", e);
         }
     });
+
 }
 
 export async function hardSignOut() {
