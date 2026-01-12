@@ -31,36 +31,32 @@
 
     onMounted(async () => {
         try {
-            // ✅ זה חשוב: ב-OAuth PKCE, אם הזרימה התחילה בדפדפן הזה,
-            // exchangeCodeForSession יעבוד. אם לא — נקבל PKCE missing.
             const url = new URL(window.location.href);
             const code = url.searchParams.get("code");
 
-            // אם אין code, כנראה חזרת עם hash tokens או משהו אחר.
-            // ננסה עדיין initAuth ונמשיך.
             if (code) {
                 const { error } = await supabase.auth.exchangeCodeForSession(code);
                 if (error) throw error;
             }
 
-            await initAuth();
+            // ✅ אל תקרא initAuth כאן.
+            // המתן שה-store יתעדכן דרך onAuthStateChange שב-bootstrap.
+            const start = Date.now();
+            while (!session.value && Date.now() - start < 4000) {
+                await new Promise(r => setTimeout(r, 50));
+            }
 
-            // ניקוי URL (רק קוסמטי)
             window.history.replaceState({}, "", "/auth/callback");
-
-            await router.replace({ name: "home" });
+            await router.replace({ name: session.value ? "home" : "login" });
         } catch (e) {
             console.error("[AuthCallback] failed:", e);
-
-            // ✅ אם PKCE חסר — זה אומר שה-redirect עבר לדומיין/דפדפן אחר
-            // או שנמחק storage בדרך.
             errorMsg.value =
                 e?.name === "AuthPKCECodeVerifierMissingError"
-                    ? "PKCE verifier חסר (התחלת את הלוגין במקום אחד וחזרת למקום אחר). נחזיר אותך ללוגין כדי להתחיל מחדש באותו דומיין."
+                    ? "PKCE verifier חסר (כנראה PWA/דפדפן אחר). נסה להתחבר שוב מאותו מקום."
                     : (e?.message || "Auth callback failed");
 
-            // חשוב: שולחים ללוגין עם returnUrl כדי שתוכל לחזור לאיפה שהיית
             await router.replace({ name: "login", query: { returnUrl: "/" } });
         }
     });
+
 </script>

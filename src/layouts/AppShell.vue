@@ -194,17 +194,11 @@
                                         <button class="w-full px-3 py-2 text-right hover:bg-white/5" @click="openInviteModal = true; houseMenuOpen=false">
                                             הזמן חברים
                                         </button>
-                                        <button class="w-full px-3 py-2 text-right hover:bg-white/5" @click="openHouseModal = true; houseMenuOpen=false">
-                                            עריכת בית
-                                        </button>
-                                        <button class="w-full px-3 py-2 text-right hover:bg-white/5" @click="openHouseModal = true; houseMenuOpen=false">
-                                            הגדרות
-                                        </button>
-
                                         <!-- ✅ placeholder לשלב הבא -->
                                         <div class="h-px bg-white/10 my-1"></div>
-                                        <button class="w-full px-3 py-2 text-right hover:bg-white/5" @click="ui.toast('🚧 ניהול חדרים בשלב הבא'); houseMenuOpen=false">
-                                            ניהול חדרים
+                                        <button class="w-full px-3 py-2 text-right hover:bg-white/5"
+                                                @click="openRoomsModal = true; houseMenuOpen=false">
+                                            ניהול בית
                                         </button>
                                     </div>
                                 </div>
