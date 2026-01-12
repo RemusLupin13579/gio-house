@@ -8,6 +8,7 @@ import AuthCallbackView from "../views/AuthCallbackView.vue";
 import OnboardingView from "../views/OnboardingView.vue";
 import MembersView from "../views/MembersView.vue";
 import { authReady, session, profile } from "../stores/auth";
+import { supabase } from "../services/supabase";
 
 const routes = [
     { path: "/login", name: "login", component: LoginView, meta: { public: true } },
@@ -36,27 +37,38 @@ const router = createRouter({
  * בלי זה – במובייל יש לוגין לופ.
  */
 router.beforeEach(async (to) => {
-    // ✅ אם כבר יש סשן, אין סיבה להישאר ב-login/callback
-    if ((to.name === "login" || to.name === "auth-callback") && session.value) {
-        return { name: "home" };
-    }
     const isPublic = Boolean(to.meta.public);
 
-    // ✅ מסלולים public (login/callback) צריכים להיטען מיד – בלי לחכות
-    if (isPublic) return true;
+    // ✅ מסלולים public נטענים מיד (login / auth-callback / וכו')
+    if (isPublic) {
+        // אבל אם כבר יש סשן מוכן + משתמש עבר onboarding -> אין סיבה להישאר ב-login
+        if (!authReady.value) return true;
 
-    // ✅ רק למסלולים מוגנים אנחנו מחכים ש-authReady יטען
+        const isAuthed = Boolean(session.value);
+        const needsOnboarding =
+            isAuthed && (!profile.value || !profile.value.nickname || profile.value.onboarded === false);
+
+        // אם מחובר -> redirect נכון
+        if (isAuthed) {
+            if (needsOnboarding && to.name !== "onboarding" && to.name !== "auth-callback") {
+                return { name: "onboarding" };
+            }
+            if (to.name === "login") return { name: "home" };
+        }
+
+        return true;
+    }
+
+    // ✅ למסלולים מוגנים מחכים ל-authReady
     if (!authReady.value) {
         await waitForAuthReady();
     }
 
     const isAuthed = Boolean(session.value);
-
     if (!isAuthed) return { name: "login" };
 
     const needsOnboarding =
-        isAuthed &&
-        (!profile.value || !profile.value.nickname || profile.value.onboarded === false);
+        !profile.value || !profile.value.nickname || profile.value.onboarded === false;
 
     if (needsOnboarding && to.name !== "onboarding" && to.name !== "auth-callback") {
         return { name: "onboarding" };
@@ -64,6 +76,7 @@ router.beforeEach(async (to) => {
 
     return true;
 });
+
 
 /**
  * helper קטן שמחכה ל-authReady

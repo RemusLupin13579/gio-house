@@ -184,6 +184,10 @@
                             </div>
                         </div>
                     </div>
+                    <button class="w-9 h-9 rounded-xl bg-white/5 border border-white/10 hover:border-green-500/50 transition"
+                            @click="signOut">
+                        ➜]
+                    </button>
 
                     <button class="w-9 h-9 rounded-xl bg-white/5 border border-white/10 hover:border-green-500/50 transition" title="Settings">
                         ⚙️
@@ -360,7 +364,10 @@
                                 </div>
                             </div>
                         </div>
-
+                        <button class="w-full px-4 py-3 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 transition text-white font-bold"
+                                @click="signOut">
+                            התנתקות
+                        </button>
                         <button class="w-9 h-9 rounded-xl bg-white/5 border border-white/10 hover:border-green-500/50 transition" title="Settings">
                             ⚙️
                         </button>
@@ -399,6 +406,9 @@
     import { session, profile } from "../stores/auth";
     import { useRoomsStore } from "../stores/rooms";
     import { useUIStore } from "../stores/ui";
+    import { useMessagesStore } from "../stores/messages";
+    import { supabase } from "../services/supabase";
+
 
     const inlineEdit = ref({ id: null, draft: "" });
     const inlineEditInput = ref(null);
@@ -409,7 +419,8 @@
     const roomsStore = useRoomsStore();
     const router = useRouter();
     const route = useRoute();
-
+    const rooms = useRoomsStore();
+    const messages = useMessagesStore();
     const house = useHouseStore();
     const presence = usePresenceStore();
 
@@ -519,6 +530,46 @@
         await presence.setRoom("living");
     }
 
+    async function signOut() {
+        try {
+            // 1) ניתוק realtime/presence כדי שלא יישארו ערוצים פתוחים
+            try { await presence.disconnect?.(); } catch (_) { }
+            try {
+                // אם אין לך disconnect בפועל, לפחות ננתק מסאבים של messages
+                const subs = Object.keys(messages.subs || {});
+                for (const roomId of subs) await messages.unsubscribe(roomId);
+            } catch (_) { }
+
+            // 2) איפוס סטייט מקומי
+            session.value = null;
+            profile.value = null;
+            house.reset?.();
+            rooms.reset?.();
+            // אם יש לך reset למessages/presence – מומלץ
+            messages.byRoom = {};
+            messages.subs = {};
+
+            // 3) ההתנתקות האמיתית
+            const { error } = await supabase.auth.signOut();
+            if (error) console.warn("signOut error:", error);
+
+            // 4) “ניקוי” כדי למנוע חזרה אוטומטית
+            try {
+                localStorage.removeItem("gio_current_house_id");
+                // Supabase כבר מנקה את המפתחות שלו, אבל לפעמים דפדפן עקשן
+                Object.keys(localStorage)
+                    .filter(k => k.startsWith("sb-"))
+                    .forEach(k => localStorage.removeItem(k));
+            } catch (_) { }
+
+            // 5) ללוגין
+            await router.replace({ name: "login" });
+        } catch (e) {
+            console.error("signOut failed:", e);
+            await router.replace({ name: "login" });
+        }
+    }
+
     function onPopState() {
         if (suppressNextPop) {
             suppressNextPop = false;
@@ -574,6 +625,9 @@
             }
         },
         { immediate: true }
+
+    
+
     );
 
 

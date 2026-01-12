@@ -12,10 +12,7 @@ async function ensureProfile(user) {
         .eq("id", user.id)
         .maybeSingle();
 
-    if (selectError) {
-        console.error("ensureProfile select error:", selectError);
-        return;
-    }
+    if (selectError) throw selectError;
     if (existing) return;
 
     const { error: insertError } = await supabase.from("profiles").insert({
@@ -24,27 +21,19 @@ async function ensureProfile(user) {
         onboarded: false,
         avatar_url: user.user_metadata?.avatar_url ?? user.user_metadata?.picture ?? null,
     });
-
-    if (insertError) console.error("ensureProfile insert error:", insertError);
+    if (insertError) throw insertError;
 }
 
 export async function fetchMyProfile() {
-    if (!session.value?.user) {
-        profile.value = null;
-        return;
-    }
+    if (!session.value?.user) { profile.value = null; return; }
 
     const { data, error } = await supabase
         .from("profiles")
-        .select("id, nickname, avatar_url, onboarded")
+        .select("id, nickname, avatar_url, onboarded, color")
         .eq("id", session.value.user.id)
         .maybeSingle();
 
-    if (error) {
-        console.error("fetchMyProfile error:", error);
-        return;
-    }
-
+    if (error) throw error;
     profile.value = data ?? null;
 }
 
@@ -75,4 +64,15 @@ export async function initAuth() {
             profile.value = null;
         }
     });
+}
+
+export async function hardSignOut() {
+    await supabase.auth.signOut();
+    session.value = null;
+    profile.value = null;
+
+    // לא מוחקים sb-* כאן בזמן flow. רק אם ממש חייבים:
+    // Object.keys(localStorage).filter(k=>k.startsWith("sb-")).forEach(k=>localStorage.removeItem(k));
+
+    authReady.value = true;
 }

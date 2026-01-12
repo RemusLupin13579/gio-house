@@ -117,7 +117,6 @@
             nickname: value,
             onboarded: true,
             ...(avatarUrl ? { avatar_url: avatarUrl } : {}),
-            updated_at: new Date().toISOString(), // לא חובה, אבל נחמד
         };
 
         const { error } = await supabase
