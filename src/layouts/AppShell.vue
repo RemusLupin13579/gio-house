@@ -13,303 +13,304 @@
             </div>
         </div>
 
-        <aside class="hidden md:flex w-16 bg-[#0b0f12] border-r border-white/5 items-center">
-            <HousesSidebar :houses="houseRail"
-                           :current-house-id="house.currentHouseId"
-                           @select-house="switchHouse"
-                           @open-add="openHouseModal = true" />
-        </aside>
+        <div class="gio-app-stage flex-1 min-h-0 flex md:flex-row"
+             :style="appStageStyle">
+            <aside class="hidden md:flex w-16 bg-[#0b0f12] border-r border-white/5 items-center">
+                <HousesSidebar :houses="houseRail"
+                               :current-house-id="house.currentHouseId"
+                               @select-house="switchHouse"
+                               @open-add="openHouseModal = true" />
+            </aside>
 
-        <section class="hidden md:flex w-72 bg-[#0c1116] border-r border-white/5 flex-col">
-            <div class="h-20 px-4 flex items-center justify-between border-b border-white/5">
-                <div class="flex items-center gap-2">
-                    <div class="gio-topbar">
-                        <div class="gio-topbar__left">
-                            <div class="gio-house-badge">
-                                <span class="gio-house-emoji">{{ isPublicHouse ? "🌍" : "🏠" }}</span>
-                                <div class="gio-house-text">
-                                    <div class="gio-house-title">
-                                        {{ isPublicHouse ? "GIO HOUSE" : (currentHouse?.name || "My House") }}
+            <section class="hidden md:flex w-72 bg-[#0c1116] border-r border-white/5 flex-col">
+                <div class="h-20 px-4 flex items-center justify-between border-b border-white/5">
+                    <div class="flex items-center gap-2">
+                        <div class="gio-topbar">
+                            <div class="gio-topbar__left">
+                                <div class="gio-house-badge">
+                                    <span class="gio-house-emoji">{{ isPublicHouse ? "🌍" : "🏠" }}</span>
+                                    <div class="gio-house-text">
+                                        <div class="gio-house-title">
+                                            {{ isPublicHouse ? "GIO HOUSE" : (currentHouse?.name || "My House") }}
+                                        </div>
+                                        <div class="gio-house-subtitle">
+                                            {{ isPublicHouse ? "איפה כולם עכשיו?" : "מי בבית עכשיו?" }}
+                                        </div>
                                     </div>
-                                    <div class="gio-house-subtitle">
-                                        {{ isPublicHouse ? "איפה כולם עכשיו?" : "מי בבית עכשיו?" }}
-                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="relative inline-block shrink-0" data-house-menu="1">
+                            <button class="w-9 h-9 rounded-xl bg-white/5 border border-white/10 hover:border-green-500/50 transition"
+                                    @click.stop="houseMenuOpen = !houseMenuOpen"
+                                    title="House menu">
+                                ⋯
+                            </button>
+
+                            <div v-if="houseMenuOpen"
+                                 class="absolute right-0 mt-2 w-48 bg-[#0b0f12] border border-white/10 rounded-xl shadow-xl overflow-hidden z-50">
+                                <button class="w-full px-3 py-2 text-right hover:bg-white/5"
+                                        @click="openInviteModal = true; houseMenuOpen=false">
+                                    הזמן חברים
+                                </button>
+                                <div class="h-px bg-white/10 my-1"></div>
+                                <button class="w-full px-3 py-2 text-right hover:bg-white/5"
+                                        @click="openRoomsModal = true; houseMenuOpen=false">
+                                    ניהול בית
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ✅ rooms list -->
+                <div class="p-3">
+                    <div class="text-xs text-white/40 mb-2">חדרים</div>
+
+                    <div class="space-y-1">
+                        <button v-for="r in activeRooms"
+                                :key="r.id"
+                                class="w-full px-3 py-2 rounded-xl flex items-center justify-between hover:bg-white/5 transition"
+                                :class="isActiveRoom(r.key) ? 'bg-white/5 border border-green-500/30' : 'border border-transparent'"
+                                @click.self="enterRoom(r.key)">
+                            <div class="flex items-center gap-2">
+                                <span class="text-lg">{{ r.icon || "🚪" }}</span>
+
+                                <div class="min-w-0">
+                                    <input v-if="inlineEdit.id === r.id"
+                                           ref="inlineEditInput"
+                                           v-model="inlineEdit.draft"
+                                           class="w-full max-w-[180px] bg-black/40 border border-green-500/25 rounded-lg px-2 py-1 text-sm outline-none
+                     focus:border-green-500/40 focus:ring-2 focus:ring-green-500/10"
+                                           @keydown.enter.prevent="commitInlineEdit(r)"
+                                           @keydown.esc.prevent="cancelInlineEdit"
+                                           @blur="cancelInlineEdit"
+                                           @click.stop />
+                                    <span v-else
+                                          class="font-semibold truncate block max-w-[180px]"
+                                          @click.stop
+                                          @dblclick.stop.prevent="beginInlineEdit(r)"
+                                          title="Double click to rename">
+                                        {{ r.name || r.key }}
+                                    </span>
+                                </div>
+                            </div>
+
+                            <span class="flex items-center gap-2 text-xs text-green-300">
+                                <span v-if="presence.status === 'connecting'" class="gio-skel-count"></span>
+                                <span v-else>{{ presence.usersInRoom(r.key).length }}</span>
+                                <span class="h-2 w-2 rounded-full bg-white/10" aria-hidden="true"></span>
+                            </span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="flex-1"></div>
+
+                <!-- ✅ footer -->
+                <div class="h-14 px-3 border-t border-white/5 flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                        <div class="w-9 h-9 rounded-xl bg-white/5 border border-white/10 overflow-hidden flex items-center justify-center">
+                            <img v-if="avatarUrl" :src="avatarUrl" class="w-full h-full object-cover" alt="" />
+                            <span v-else>🙂</span>
+                        </div>
+
+                        <div class="leading-tight">
+                            <div class="font-bold">{{ nickname }}</div>
+
+                            <div class="gio-topbar__right">
+                                <div class="h-5 gio-presence-chip cursor-pointer select-none"
+                                     :data-state="presence.status"
+                                     :data-user="myUserStatus"
+                                     @click="presence.status === 'ready' ? cycleMyStatus() : null"
+                                     title="Change status">
+                                    <span class="gio-dot" />
+
+                                    <span v-if="presence.status === 'connecting'" class="gio-sync">
+                                        Syncing <span class="gio-dots"><i></i><i></i><i></i></span>
+                                    </span>
+
+                                    <span v-else-if="presence.status === 'failed'">Offline</span>
+                                    <span v-else-if="presence.status === 'ready'">{{ myStatusLabel }}</span>
+                                    <span v-else>Idle</span>
+
+                                    <button v-if="presence.status === 'failed'"
+                                            class="gio-retry-btn"
+                                            @click.stop="retryPresence"
+                                            title="Retry">
+                                        Retry
+                                    </button>
                                 </div>
                             </div>
                         </div>
                     </div>
 
-                    <div class="relative inline-block shrink-0" data-house-menu="1">
-                        <button class="w-9 h-9 rounded-xl bg-white/5 border border-white/10 hover:border-green-500/50 transition"
-                                @click.stop="houseMenuOpen = !houseMenuOpen"
-                                title="House menu">
-                            ⋯
-                        </button>
-
-                        <div v-if="houseMenuOpen"
-                             class="absolute right-0 mt-2 w-48 bg-[#0b0f12] border border-white/10 rounded-xl shadow-xl overflow-hidden z-50">
-                            <button class="w-full px-3 py-2 text-right hover:bg-white/5" @click="openInviteModal = true; houseMenuOpen=false">
-                                הזמן חברים
-                            </button>
-                            <!-- ✅ placeholder לשלב הבא -->
-                            <div class="h-px bg-white/10 my-1"></div>
-                            <button class="w-full px-3 py-2 text-right hover:bg-white/5" @click="openRoomsModal = true; houseMenuOpen=false">
-                                ניהול בית
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="p-3">
-                <div class="text-xs text-white/40 mb-2">חדרים</div>
-
-                <div class="space-y-1">
-                    <button v-for="r in activeRooms"
-                            :key="r.id"
-                            class="w-full px-3 py-2 rounded-xl flex items-center justify-between hover:bg-white/5 transition"
-                            :class="isActiveRoom(r.key) ? 'bg-white/5 border border-green-500/30' : 'border border-transparent'"
-                            @click.self="enterRoom(r.key)">
-                        <div class="flex items-center gap-2">
-                            <span class="text-lg">{{ r.icon || "🚪" }}</span>
-                            <div class="min-w-0">
-                                <input v-if="inlineEdit.id === r.id"
-                                       ref="inlineEditInput"
-                                       v-model="inlineEdit.draft"
-                                       class="w-full max-w-[180px] bg-black/40 border border-green-500/25 rounded-lg px-2 py-1 text-sm outline-none
-                                            focus:border-green-500/40 focus:ring-2 focus:ring-green-500/10"
-                                       @keydown.enter.prevent="commitInlineEdit(r)"
-                                       @keydown.esc.prevent="cancelInlineEdit"
-                                       @blur="cancelInlineEdit"
-                                       @click.stop />
-                                <span v-else
-                                      class="font-semibold truncate block max-w-[180px]"
-                                      @click.stop
-                                      @dblclick.stop.prevent="beginInlineEdit(r)"
-                                      title="Double click to rename">
-                                    {{ r.name || r.key }}
-                                </span>
-                            </div>
-
-                        </div>
-
-                        <span class="flex items-center gap-2 text-xs text-green-300">
-                            <span v-if="presence.status === 'connecting'" class="gio-skel-count"></span>
-                            <span v-else>{{ presence.usersInRoom(r.key).length }}</span>
-                            <span class="h-2 w-2 rounded-full bg-white/10" aria-hidden="true"></span>
-                        </span>
+                    <button class="w-9 h-9 rounded-xl bg-white/5 border border-white/10 hover:border-green-500/50 transition" title="Settings">
+                        ⚙️
                     </button>
                 </div>
-            </div>
+            </section>
 
-            <div class="flex-1"></div>
 
-            <div class="h-14 px-3 border-t border-white/5 flex items-center justify-between">
-                <div class="flex items-center gap-2">
-                    <div class="w-9 h-9 rounded-xl bg-white/5 border border-white/10 overflow-hidden flex items-center justify-center">
-                        <img v-if="avatarUrl" :src="avatarUrl" class="w-full h-full object-cover" alt="" />
-                        <span v-else>🙂</span>
-                    </div>
+            <main class="flex-1 bg-black overflow-hidden min-h-0">
+                <div class="gio-fade h-full min-h-0" :key="house.currentHouseId">
+                    <RouterView />
+                </div>
+            </main>
+        </div>
 
-                    <div class="leading-tight">
-                        <div class="font-bold">{{ nickname }}</div>
+    <div v-if="mobileNavOpen" class="md:hidden fixed inset-0 z-[9999]">
+        <div class="absolute inset-0 bg-black/50 backdrop-blur-[2px] transition-opacity"
+             :style="{ opacity: overlayOpacity }"
+             @click="closeMobileNav()"></div>
 
-                        <!-- ✅ CLICKABLE STATUS CHIP (desktop) -->
-                        <div class="gio-topbar__right">
-                            <div class="h-5 gio-presence-chip cursor-pointer select-none"
-                                 :data-state="presence.status"
-                                 :data-user="myUserStatus"
-                                 @click="presence.status === 'ready' ? cycleMyStatus() : null"
-                                 title="Change status">
-                                <span class="gio-dot" />
-
-                                <span v-if="presence.status === 'connecting'" class="gio-sync">
-                                    Syncing
-                                    <span class="gio-dots"><i></i><i></i><i></i></span>
-                                </span>
-
-                                <span v-else-if="presence.status === 'failed'">Offline</span>
-
-                                <span v-else-if="presence.status === 'ready'">
-                                    {{ myStatusLabel }}
-                                </span>
-
-                                <span v-else>Idle</span>
-
-                                <button v-if="presence.status === 'failed'"
-                                        class="gio-retry-btn"
-                                        @click.stop="retryPresence"
-                                        title="Retry">
-                                    Retry
-                                </button>
-                            </div>
-                        </div>
-                    </div>
+        <div class="absolute left-0 top-0 h-full w-full bg-[#0b0f12]/95 shadow-2xl will-change-transform"
+             :style="{ transform: `translateX(${drawerTranslateX}px)` }"
+             @touchstart.passive="onDrawerTouchStart"
+             @touchmove.passive="onDrawerTouchMove"
+             @touchend="onDrawerTouchEnd">
+            <div class="flex h-full">
+                <div class="w-16 bg-[#0b0f12] border-r border-white/10">
+                    <HousesSidebar :houses="houseRail"
+                                   :current-house-id="house.currentHouseId"
+                                   @select-house="switchHouse"
+                                   @open-add="openHouseModal = true" />
                 </div>
 
-                <button class="w-9 h-9 rounded-xl bg-white/5 border border-white/10 hover:border-green-500/50 transition" title="Settings">
-                    ⚙️
-                </button>
-            </div>
-        </section>
+                <div class="flex-1 bg-[#0c1116] flex flex-col">
+                    <div class="h-16 px-4 flex items-center justify-between border-b border-white/10">
+                        <div class="flex items-center gap-2">
+                            <div class="font-bold text-green-300 truncate">{{ headerTitle }}</div>
 
-        <main class="flex-1 bg-black overflow-hidden min-h-0">
-            <div class="gio-fade h-full min-h-0" :key="house.currentHouseId">
-                <RouterView />
-            </div>
-        </main>
+                            <div class="relative inline-block shrink-0" data-house-menu="1">
+                                <button class="w-9 h-9 rounded-xl bg-white/5 border border-white/10 hover:border-green-500/50 transition"
+                                        @click.stop="houseMenuOpen = !houseMenuOpen"
+                                        title="House menu">
+                                    ⋯
+                                </button>
 
-        <div v-if="mobileNavOpen" class="md:hidden fixed inset-0 z-[9999]">
-            <div class="absolute inset-0 bg-black/50 backdrop-blur-[2px] transition-opacity"
-                 :style="{ opacity: overlayOpacity }"
-                 @click="closeMobileNav()"></div>
-
-            <div class="absolute left-0 top-0 h-full w-full bg-[#0b0f12]/95 shadow-2xl will-change-transform"
-                 :style="{ transform: `translateX(${drawerTranslateX}px)` }"
-                 @touchstart.passive="onDrawerTouchStart"
-                 @touchmove.passive="onDrawerTouchMove"
-                 @touchend="onDrawerTouchEnd">
-                <div class="flex h-full">
-                    <div class="w-16 bg-[#0b0f12] border-r border-white/10">
-                        <HousesSidebar :houses="houseRail"
-                                       :current-house-id="house.currentHouseId"
-                                       @select-house="switchHouse"
-                                       @open-add="openHouseModal = true" />
-                    </div>
-
-                    <div class="flex-1 bg-[#0c1116] flex flex-col">
-                        <div class="h-16 px-4 flex items-center justify-between border-b border-white/10">
-                            <div class="flex items-center gap-2">
-                                <div class="font-bold text-green-300 truncate">{{ headerTitle }}</div>
-
-                                <div class="relative inline-block shrink-0" data-house-menu="1">
-                                    <button class="w-9 h-9 rounded-xl bg-white/5 border border-white/10 hover:border-green-500/50 transition"
-                                            @click.stop="houseMenuOpen = !houseMenuOpen"
-                                            title="House menu">
-                                        ⋯
+                                <div v-if="houseMenuOpen"
+                                     class="absolute right-0 mt-2 w-48 bg-[#0b0f12] border border-white/10 rounded-xl shadow-xl overflow-hidden z-50">
+                                    <button class="w-full px-3 py-2 text-right hover:bg-white/5" @click="openInviteModal = true; houseMenuOpen=false">
+                                        הזמן חברים
                                     </button>
-
-                                    <div v-if="houseMenuOpen"
-                                         class="absolute right-0 mt-2 w-48 bg-[#0b0f12] border border-white/10 rounded-xl shadow-xl overflow-hidden z-50">
-                                        <button class="w-full px-3 py-2 text-right hover:bg-white/5" @click="openInviteModal = true; houseMenuOpen=false">
-                                            הזמן חברים
-                                        </button>
-                                        <!-- ✅ placeholder לשלב הבא -->
-                                        <div class="h-px bg-white/10 my-1"></div>
-                                        <button class="w-full px-3 py-2 text-right hover:bg-white/5"
-                                                @click="openRoomsModal = true; houseMenuOpen=false">
-                                            ניהול בית
-                                        </button>
-                                    </div>
+                                    <!-- ✅ placeholder לשלב הבא -->
+                                    <div class="h-px bg-white/10 my-1"></div>
+                                    <button class="w-full px-3 py-2 text-right hover:bg-white/5"
+                                            @click="openRoomsModal = true; houseMenuOpen=false">
+                                        ניהול בית
+                                    </button>
                                 </div>
                             </div>
-
-                            <button class="w-9 h-9 rounded-xl bg-white/5 border border-white/10 hover:border-green-500/50 transition active:scale-[0.98]"
-                                    @click="closeMobileNav()"
-                                    title="Close">
-                                ✕
-                            </button>
                         </div>
 
-                        <div class="flex-1 overflow-auto p-3">
-                            <div class="text-xs text-white/40 mb-2">חדרים</div>
+                        <button class="w-9 h-9 rounded-xl bg-white/5 border border-white/10 hover:border-green-500/50 transition active:scale-[0.98]"
+                                @click="closeMobileNav()"
+                                title="Close">
+                            ✕
+                        </button>
+                    </div>
 
-                            <div class="space-y-1">
-                                <button v-for="r in activeRooms"
-                                        :key="r.id"
-                                        class="w-full px-3 py-2 rounded-xl flex items-center justify-between hover:bg-white/5 transition"
-                                        :class="isActiveRoom(r.key) ? 'bg-white/5 border border-green-500/30' : 'border border-transparent'"
-                                        @click.self="enterRoom(r.key, { closeDrawer: true })">
-                                    <div class="flex items-center gap-2">
-                                        <span class="text-lg">{{ r.icon || "🚪" }}</span>
-                                        <div class="min-w-0">
-                                            <input v-if="inlineEdit.id === r.id"
-                                                   ref="inlineEditInput"
-                                                   v-model="inlineEdit.draft"
-                                                   class="w-full max-w-[180px] bg-black/40 border border-green-500/25 rounded-lg px-2 py-1 text-sm outline-none
+                    <div class="flex-1 overflow-auto p-3">
+                        <div class="text-xs text-white/40 mb-2">חדרים</div>
+
+                        <div class="space-y-1">
+                            <button v-for="r in activeRooms"
+                                    :key="r.id"
+                                    class="w-full px-3 py-2 rounded-xl flex items-center justify-between hover:bg-white/5 transition"
+                                    :class="isActiveRoom(r.key) ? 'bg-white/5 border border-green-500/30' : 'border border-transparent'"
+                                    @click.self="enterRoom(r.key, { closeDrawer: true })">
+                                <div class="flex items-center gap-2">
+                                    <span class="text-lg">{{ r.icon || "🚪" }}</span>
+                                    <div class="min-w-0">
+                                        <input v-if="inlineEdit.id === r.id"
+                                               ref="inlineEditInput"
+                                               v-model="inlineEdit.draft"
+                                               class="w-full max-w-[180px] bg-black/40 border border-green-500/25 rounded-lg px-2 py-1 text-sm outline-none
                                                         focus:border-green-500/40 focus:ring-2 focus:ring-green-500/10"
-                                                   @keydown.enter.prevent="commitInlineEdit(r)"
-                                                   @keydown.esc.prevent="cancelInlineEdit"
-                                                   @blur="cancelInlineEdit"
-                                                   @click.stop />
-                                            <span v-else
-                                                  class="font-semibold truncate block max-w-[180px]"
-                                                  @dblclick.stop.prevent="beginInlineEdit(r)"
-                                                  title="Double click to rename">
-                                                {{ r.name || r.key }}
-                                            </span>
-                                        </div>
-                                    </div>
-
-                                    <span class="flex items-center gap-2 text-xs text-green-300">
-                                        <span v-if="presence.status==='connecting'" class="gio-skel-count"></span>
-                                        <span v-else>{{ presence.usersInRoom(r.key).length }}</span>
-                                        <span class="h-2 w-2 rounded-full bg-white/10" aria-hidden="true"></span>
-                                    </span>
-                                </button>
-
-                                <div v-if="roomsStore.loading" class="text-xs text-white/50 px-2 py-3">
-                                    טוען חדרים...
-                                </div>
-
-                                <div v-else-if="activeRooms.length === 0" class="text-xs text-white/50 px-2 py-3">
-                                    אין חדרים פעילים בבית הזה
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="h-14 px-3 border-t border-white/10 flex items-center justify-between">
-                            <div class="flex items-center gap-2">
-                                <div class="w-9 h-9 rounded-xl bg-white/5 border border-white/10 overflow-hidden flex items-center justify-center">
-                                    <img v-if="avatarUrl" :src="avatarUrl" class="w-full h-full object-cover" alt="" />
-                                    <span v-else>🙂</span>
-                                </div>
-
-                                <div class="leading-tight">
-                                    <div class="font-bold">{{ nickname }}</div>
-
-                                    <div class="mt-1">
-                                        <div class="h-5 gio-presence-chip cursor-pointer select-none inline-flex"
-                                             :data-state="presence.status"
-                                             :data-user="myUserStatus"
-                                             @click="presence.status === 'ready' ? cycleMyStatus() : null"
-                                             title="Change status">
-                                            <span class="gio-dot" />
-                                            <span v-if="presence.status === 'connecting'" class="gio-sync">
-                                                Syncing
-                                                <span class="gio-dots"><i></i><i></i><i></i></span>
-                                            </span>
-                                            <span v-else-if="presence.status === 'failed'">Offline</span>
-                                            <span v-else-if="presence.status === 'ready'">{{ myStatusLabel }}</span>
-                                            <span v-else>Idle</span>
-                                        </div>
+                                               @keydown.enter.prevent="commitInlineEdit(r)"
+                                               @keydown.esc.prevent="cancelInlineEdit"
+                                               @blur="cancelInlineEdit"
+                                               @click.stop />
+                                        <span v-else
+                                              class="font-semibold truncate block max-w-[180px]"
+                                              @dblclick.stop.prevent="beginInlineEdit(r)"
+                                              title="Double click to rename">
+                                            {{ r.name || r.key }}
+                                        </span>
                                     </div>
                                 </div>
-                            </div>
 
-                            <button class="w-9 h-9 rounded-xl bg-white/5 border border-white/10 hover:border-green-500/50 transition" title="Settings">
-                                ⚙️
+                                <span class="flex items-center gap-2 text-xs text-green-300">
+                                    <span v-if="presence.status==='connecting'" class="gio-skel-count"></span>
+                                    <span v-else>{{ presence.usersInRoom(r.key).length }}</span>
+                                    <span class="h-2 w-2 rounded-full bg-white/10" aria-hidden="true"></span>
+                                </span>
                             </button>
+
+                            <div v-if="roomsStore.loading" class="text-xs text-white/50 px-2 py-3">
+                                טוען חדרים...
+                            </div>
+
+                            <div v-else-if="activeRooms.length === 0" class="text-xs text-white/50 px-2 py-3">
+                                אין חדרים פעילים בבית הזה
+                            </div>
                         </div>
+                    </div>
+
+                    <div class="h-14 px-3 border-t border-white/10 flex items-center justify-between">
+                        <div class="flex items-center gap-2">
+                            <div class="w-9 h-9 rounded-xl bg-white/5 border border-white/10 overflow-hidden flex items-center justify-center">
+                                <img v-if="avatarUrl" :src="avatarUrl" class="w-full h-full object-cover" alt="" />
+                                <span v-else>🙂</span>
+                            </div>
+
+                            <div class="leading-tight">
+                                <div class="font-bold">{{ nickname }}</div>
+
+                                <div class="mt-1">
+                                    <div class="h-5 gio-presence-chip cursor-pointer select-none inline-flex"
+                                         :data-state="presence.status"
+                                         :data-user="myUserStatus"
+                                         @click="presence.status === 'ready' ? cycleMyStatus() : null"
+                                         title="Change status">
+                                        <span class="gio-dot" />
+                                        <span v-if="presence.status === 'connecting'" class="gio-sync">
+                                            Syncing
+                                            <span class="gio-dots"><i></i><i></i><i></i></span>
+                                        </span>
+                                        <span v-else-if="presence.status === 'failed'">Offline</span>
+                                        <span v-else-if="presence.status === 'ready'">{{ myStatusLabel }}</span>
+                                        <span v-else>Idle</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <button class="w-9 h-9 rounded-xl bg-white/5 border border-white/10 hover:border-green-500/50 transition" title="Settings">
+                            ⚙️
+                        </button>
                     </div>
                 </div>
             </div>
         </div>
+    </div>
 
-        <!-- ✅ Toasts -->
-        <div class="fixed bottom-4 left-1/2 -translate-x-1/2 z-[10050] flex flex-col gap-2 pointer-events-none md:hidden">
-            <div v-for="t in ui.toasts"
-                 :key="t.id"
-                 class="px-4 py-2 rounded-2xl border border-white/10 bg-black/80 backdrop-blur text-white/90 text-sm font-bold shadow-xl">
-                {{ t.text }}
-            </div>
+    <!-- ✅ Toasts -->
+    <div class="fixed bottom-4 left-1/2 -translate-x-1/2 z-[10050] flex flex-col gap-2 pointer-events-none md:hidden">
+        <div v-for="t in ui.toasts"
+             :key="t.id"
+             class="px-4 py-2 rounded-2xl border border-white/10 bg-black/80 backdrop-blur text-white/90 text-sm font-bold shadow-xl">
+            {{ t.text }}
         </div>
+    </div>
 
-        <HouseSwitcherModal v-if="openHouseModal" @close="openHouseModal=false" />
-        <HouseInviteModal v-if="openInviteModal && currentHouse"
-                          :house="currentHouse"
-                          @close="openInviteModal=false" />
-        <RoomManagerModal v-if="openRoomsModal" @close="openRoomsModal=false" />
+    <HouseSwitcherModal v-if="openHouseModal" @close="openHouseModal=false" />
+    <HouseInviteModal v-if="openInviteModal && currentHouse"
+                      :house="currentHouse"
+                      @close="openInviteModal=false" />
+    <RoomManagerModal v-if="openRoomsModal" @close="openRoomsModal=false" />
     </div>
 </template>
 
@@ -355,10 +356,14 @@
         if (isMobile()) return window.innerWidth;
         return Math.min(window.innerWidth * 0.86, 360);
     }
+    function recalcDrawerW() {
+        drawerW.value = drawerWidth();
+    }
 
     function animateDrawer(toX, toOpacity, ms = 220) {
         const fromX = drawerTranslateX.value;
         const fromO = overlayOpacity.value;
+        const drawerW = ref(0);
         const start = performance.now();
         const easeOut = (t) => 1 - Math.pow(1 - t, 3);
 
@@ -484,7 +489,6 @@
     const startX = ref(0);
     const startY = ref(0);
 
-    const SYS_EDGE_PX = 12;
     const INTENT_SLOP = 6;
     const OPEN_COMMIT_RATIO = 0.12;
     const SWIPE_GAIN = 1.9;
@@ -504,7 +508,6 @@
         const t = e.touches?.[0];
         if (!t) return;
         if (shouldIgnoreTarget(e.target)) return;
-        if (t.clientX > SYS_EDGE_PX) return;
 
         swipeActive.value = true;
         swipeLockedHorizontal.value = false;
@@ -582,6 +585,27 @@
     const touchStartX = ref(0);
     const touchDragging = ref(false);
     const touchStartTranslate = ref(0);
+
+    const drawerProgress = computed(() => {
+        const w = drawerW.value || drawerWidth();
+        return Math.max(0, Math.min(1, 1 - Math.abs(drawerTranslateX.value) / w));
+    });
+
+    const slideDir = computed(() => {
+        const rtl = document?.documentElement?.dir === "rtl";
+        return rtl ? -1 : 1;
+    });
+
+    const appStageX = computed(() => {
+        const w = drawerW.value || drawerWidth();
+        return slideDir.value * Math.round(drawerProgress.value * w);
+    });
+
+    const appStageStyle = computed(() => ({
+        transform: `translateX(${appStageX.value}px)`,
+        transition: swipeActive.value || touchDragging.value ? "none" : "transform 140ms ease-out",
+        willChange: "transform",
+    }));
 
     function onDrawerTouchStart(e) {
         touchDragging.value = true;
@@ -788,7 +812,9 @@
     onMounted(() => {
         attachAfkListeners();
         scheduleAfk();
+        recalcDrawerW();
 
+        window.addEventListener("resize", recalcDrawerW);
         window.addEventListener("popstate", onPopState);
         window.addEventListener("touchstart", onTouchStartGlobal, { capture: true, passive: true });
         window.addEventListener("touchmove", onTouchMoveGlobal, { capture: true, passive: false });
@@ -800,6 +826,7 @@
         detachAfkListeners();
         clearAfkTimer();
 
+        window.removeEventListener("resize", recalcDrawerW);
         window.removeEventListener("popstate", onPopState);
         window.removeEventListener("touchstart", onTouchStartGlobal, { capture: true });
         window.removeEventListener("touchmove", onTouchMoveGlobal, { capture: true });

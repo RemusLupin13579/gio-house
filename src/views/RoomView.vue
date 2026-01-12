@@ -1,8 +1,5 @@
 <template>
-    <div class="h-full min-h-0 bg-black text-white flex flex-col overflow-hidden"
-         @touchstart="handleTouchStart"
-         @touchmove="handleTouchMove"
-         @touchend="handleTouchEnd">
+    <div class="h-full min-h-0 bg-black text-white flex flex-col overflow-hidden">
         <div class="absolute top-3 left-3 z-30" :style="safeTopStyle">
             <button @click="goBack"
                     class="px-4 py-2 bg-black/50 backdrop-blur border border-white/10 rounded-xl
@@ -131,42 +128,4 @@
         await presence.setRoom("living");
     }
 
-
-    /* Swipe back (but NOT from left edge - reserved for drawer open) */
-    const OPEN_ZONE_RATIO = 0.40;
-    const SYS_EDGE_PX = 28;
-
-    const touchStartX = ref(0);
-    const touchStartY = ref(0);
-    const touchEndX = ref(0);
-    const touchEndY = ref(0);
-
-    function isInDrawerOpenZone(x) {
-        const openZonePx = window.innerWidth * OPEN_ZONE_RATIO;
-        return x >= SYS_EDGE_PX && x <= openZonePx;
-    }
-
-    function handleTouchStart(e) {
-        const t = e.touches?.[0];
-        if (!t) return;
-        touchStartX.value = t.clientX;
-        touchStartY.value = t.clientY;
-        touchEndX.value = t.clientX;
-        touchEndY.value = t.clientY;
-    }
-
-    function handleTouchMove(e) {
-        const t = e.touches?.[0];
-        if (!t) return;
-        touchEndX.value = t.clientX;
-        touchEndY.value = t.clientY;
-    }
-
-    function handleTouchEnd() {
-        if (isInDrawerOpenZone(touchStartX.value)) return;
-
-        const diffX = touchEndX.value - touchStartX.value;
-        const diffY = touchEndY.value - touchStartY.value;
-        if (Math.abs(diffX) > Math.abs(diffY) && diffX > 100) goBack();
-    }
 </script>
