@@ -78,7 +78,7 @@
                                 :class="route.name === 'home' ? 'bg-white/5 border border-green-500/30' : ''"
                                 @click="goLobby({ closeDrawer: true })">
                             <div class="flex items-center gap-2">
-                                <span class="text-lg">🏠</span>
+                                <span class="text-lg">🏛️</span>
                                 <span class="font-semibold truncate block max-w-[180px]">לובי</span>
                             </div>
                         </button>
@@ -251,10 +251,24 @@
                         </button>
                     </div>
 
+                    <!-- מגירת מובייל -->
                     <div class="flex-1 overflow-auto p-3">
                         <div class="text-xs text-white/40 mb-2">חדרים</div>
 
                         <div class="space-y-1">
+                            <button class="w-full px-3 py-2 rounded-xl flex items-center justify-between hover:bg-white/5 transition border border-transparent"
+                                    :class="route.name === 'home' ? 'bg-white/5 border border-green-500/30' : ''"
+                                    @click="goLobby({ closeDrawer: true })">
+                                <div class="flex items-center gap-2 min-w-0">
+                                    <span class="text-lg">🏛️</span>
+                                    <span class="font-semibold truncate">לובי</span>
+                                </div>
+
+                                <span class="text-xs text-white/50">⌂</span>
+                            </button>
+
+                            <div class="h-px bg-white/10 my-2"></div>
+
                             <button v-for="r in activeRooms"
                                     :key="r.id"
                                     class="w-full px-3 py-2 rounded-xl hover:bg-white/5 transition"

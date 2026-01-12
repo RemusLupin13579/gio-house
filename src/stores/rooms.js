@@ -103,19 +103,26 @@ export const useRoomsStore = defineStore("rooms", {
 
         async updateRoom(roomId, patch) {
             if (!roomId) throw new Error("updateRoom: missing roomId");
-
             const safePatch = { ...patch };
-            // key rename is intentionally not supported here (URL/presence)
             if ("key" in safePatch) delete safePatch.key;
 
             const { error } = await supabase.from("rooms").update(safePatch).eq("id", roomId);
             if (error) throw error;
 
-            // reload current house
+            // optimistic local update
+            const idx = (this.rooms ?? []).findIndex((r) => r.id === roomId);
+            if (idx >= 0) {
+                this.rooms[idx] = { ...this.rooms[idx], ...safePatch };
+                this.byKey = Object.fromEntries((this.rooms ?? []).map((r) => [r.key, r]));
+            }
+
+            // refresh in background (no await)
             const houseId = this.loadedForHouseId;
-            if (houseId) await this.loadForHouse(houseId, { force: true });
+            if (houseId) void this.loadForHouse(houseId, { force: true });
+
             return true;
         },
+
 
         async archiveRoom(roomId) {
             const r = (this.rooms ?? []).find((x) => x.id === roomId);

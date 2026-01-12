@@ -54,7 +54,7 @@
                                 :class="selectedId === r.id
                 ? 'bg-white/5 border-green-500/30'
                 : 'bg-black/20 border-white/10 hover:border-white/20'"
-                                @click="selectRoom(r.id)"
+                                @click="selectRoom(r.id, $event)"
                                 :draggable="isDraggable(r)"
                                 @dragstart="onDragStart(r, $event)"
                                 @dragover.prevent="onDragOver(r)"
@@ -67,11 +67,18 @@
                                     <div v-if="renamingId === r.id" class="min-w-0">
                                         <input ref="renameInput"
                                                v-model="renameDraft"
-                                               class="w-full bg-black/50 border border-green-500/25 rounded-lg px-2 py-1 text-sm outline-none
-                             focus:border-green-500/40 focus:ring-2 focus:ring-green-500/10"
+                                               class="w-full max-w-[180px] h-8 bg-black/40 border border-green-500/25 rounded-lg px-2
+         text-sm text-white/90 outline-none appearance-none
+         focus:border-green-500/50 focus:ring-2 focus:ring-green-500/10
+         focus-visible:outline-none"
+                                               @pointerdown.stop
+                                               @mousedown.stop
+                                               @click.stop
                                                @keydown.enter.prevent="commitRename(r)"
                                                @keydown.esc.prevent="cancelRename"
-                                               @blur="cancelRename" />
+                                               @blur="renamingSaving ? null : cancelRename()" />
+
+
                                     </div>
 
                                     <div v-else class="min-w-0">
@@ -228,6 +235,8 @@
     import { useHouseStore } from "../stores/house";
     import { useUIStore } from "../stores/ui";
 
+    const renamingSaving = ref(false);
+
     const emit = defineEmits(["close"]);
 
     const roomsStore = useRoomsStore();
@@ -298,14 +307,19 @@
         dirtyOrder.value = false;
     }
 
-    function selectRoom(id) {
-        // cancel rename if switching
-        cancelRename();
+    function selectRoom(id, e) {
+        // ✅ אם לחצו על input/בתוך input – לא לשנות בחירה ולא לבטל rename
+        if (e?.target?.closest?.("input, textarea")) return;
 
+        // ✅ אם כרגע עורכים את אותו חדר – לא לסגור את העריכה
+        if (renamingId.value === id) return;
+
+        cancelRename();
         selectedId.value = id;
         isCreating.value = false;
         hydrateEditFromSelected();
     }
+
 
     function hydrateEditFromSelected() {
         const r = selectedRoom.value;
@@ -331,9 +345,11 @@
     }
 
     function cancelRename() {
+        if (renamingSaving.value) return; // ✅ לא סוגרים בזמן שמירה
         renamingId.value = null;
         renameDraft.value = "";
     }
+
 
     async function commitRename(r) {
         const name = String(renameDraft.value || "").trim();
@@ -342,24 +358,38 @@
             return;
         }
 
-        saving.value = true;
+        renamingSaving.value = true;
+
         try {
-            await roomsStore.updateRoom(r.id, { name });
+            // ✅ timeout כדי שלא יהיה “נצח”
+            const ok = await Promise.race([
+                roomsStore.updateRoom(r.id, { name }),
+                new Promise((_, reject) => setTimeout(() => reject(new Error("TIMEOUT")), 8000)),
+            ]);
+
             ui.toast("💾 נשמר");
 
-            // refresh selection editor if needed
             if (selectedId.value === r.id) {
                 await nextTick();
                 hydrateEditFromSelected();
             }
+
+            // ✅ סוגרים רק אחרי הצלחה
+            renamingId.value = null;
+            renameDraft.value = "";
         } catch (e) {
-            console.error(e);
-            ui.toast("💥 שינוי שם נכשל");
+            console.error("[commitRename] failed:", e);
+
+            if (String(e?.message || "").includes("TIMEOUT")) {
+                ui.toast("⏳ השמירה נתקעה (timeout) — בדוק Network/Policies");
+            } else {
+                ui.toast("💥 שינוי שם נכשל");
+            }
         } finally {
-            saving.value = false;
-            cancelRename();
+            renamingSaving.value = false;
         }
     }
+
 
     // ---------- Create ----------
     function normalizeKey(k) {
