@@ -351,6 +351,7 @@
     const mobileNavOpen = ref(false);
     const drawerTranslateX = ref(-400);
     const overlayOpacity = ref(0);
+    const drawerW = ref(0); // ✅ GLOBAL drawer width cache
 
     function drawerWidth() {
         if (isMobile()) return window.innerWidth;
@@ -363,7 +364,6 @@
     function animateDrawer(toX, toOpacity, ms = 220) {
         const fromX = drawerTranslateX.value;
         const fromO = overlayOpacity.value;
-        const drawerW = ref(0);
         const start = performance.now();
         const easeOut = (t) => 1 - Math.pow(1 - t, 3);
 
@@ -587,7 +587,7 @@
     const touchStartTranslate = ref(0);
 
     const drawerProgress = computed(() => {
-        const w = drawerW.value || drawerWidth();
+        const w = drawerW.value || drawerWidth() || 1;
         return Math.max(0, Math.min(1, 1 - Math.abs(drawerTranslateX.value) / w));
     });
 
