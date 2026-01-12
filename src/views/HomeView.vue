@@ -6,7 +6,7 @@
                 🏠 {{ isPublicHouse ? "GIO HOUSE" : (currentHouse?.name || "My House") }}
             </h1>
             <p class="text-sm sm:text-base text-green-600 mx-auto">
-                {{ isPublicHouse ? "איפה כולם עכשיו?" : "מי בבית עכשיו?" }}
+                {{ isPublicHouse ? "?איפה כולם עכשיו" : "?מי עכשיו בבית" }}
             </p>
         </header>
 
@@ -73,14 +73,8 @@
                          :style="{ transform: `rotate(${getUserRotation(user)}deg)` }">
                         <!-- hand -->
                         <div class="absolute left-1/2 top-1/2 origin-left"
-                             :style="{
-                width: `${getHandLen(user)}px`,
-                height: `${handThickness}px`,
-                transform: 'translateY(-50%)',
-                backgroundColor: statusColor(user.status, user.color),
-                boxShadow: `0 0 12px ${statusColor(user.status, user.color)}66`,
-                opacity: user.status === 'offline' ? '0.25' : (user.status === 'afk' ? '0.65' : '0.85'),
-              }"></div>
+                             :style="handStyle(user)"></div>
+
 
                         <!-- avatar -->
                         <div class="absolute left-1/2 top-1/2"
@@ -380,6 +374,19 @@
 
         return () => clearTimeout(t);
     });
+    function getRoomLabelStyle(roomId) {
+        const angleDeg = (ROOM_ANGLE[roomId] ?? ROOM_ANGLE.afk) - 90;
+        const rad = (angleDeg * Math.PI) / 180;
+
+        const x = Math.cos(rad) * radius.value;
+        const y = Math.sin(rad) * radius.value;
+
+        return {
+            left: `calc(50% + ${x}px)`,
+            top: `calc(50% + ${y}px)`,
+            transform: "translate(-50%, -50%)",
+        };
+    }
 
     onBeforeUnmount(() => {
         document.removeEventListener("pointerdown", onDocPointerDown);
@@ -403,6 +410,58 @@
         { id: "cinema", name: "קולנוע", icon: "🎬" },
         { id: "afk", name: "afk", icon: "😴" },
     ]);
+    function hexToRgba(hex, a) {
+        if (typeof hex !== "string" || !hex.startsWith("#")) return `rgba(34,197,94,${a})`;
+        const h = hex.replace("#", "");
+        const full = h.length === 3 ? h.split("").map((c) => c + c).join("") : h;
+        const r = parseInt(full.slice(0, 2), 16);
+        const g = parseInt(full.slice(2, 4), 16);
+        const b = parseInt(full.slice(4, 6), 16);
+        return `rgba(${r},${g},${b},${a})`;
+    }
+
+    const labelRadius = computed(() => radius.value); // איפה שהאייקונים יושבים
+
+    // ✅ מרווח ביטחון מהאייקון: תלוי גודל אווטאר + עוד קצת
+    const handSafetyGap = computed(() => {
+        // שומר מרווח קבוע + מרווח שמושפע מגודל אווטאר טיפוסי
+        const approxAvatar = Math.max(44, Math.min(60, Math.floor(clockSize.value * 0.15)));
+        return Math.max(26, Math.round(approxAvatar / 2) + 10); // 26–40 בערך
+    });
+
+    const maxHandLen = computed(() => {
+        // היד לא תגיע לאייקונים
+        return Math.max(72, Math.floor(labelRadius.value - handSafetyGap.value));
+    });
+    function handStyle(user) {
+        const len = getHandLen(user);
+        const c = statusColor(user.status, user.color);
+        const soft = hexToRgba(c, 0.20);
+        const mid = hexToRgba(c, 0.55);
+        const hard = hexToRgba(c, user.status === "offline" ? 0.35 : (user.status === "afk" ? 0.75 : 0.95));
+
+        const opacity =
+            user.status === "offline" ? 0.25 :
+                user.status === "afk" ? 0.65 : 0.85;
+
+        return {
+            width: `${len}px`,
+            height: `${handThickness.value}px`,
+            transform: "translateY(-50%)",
+            borderRadius: "999px",
+
+            // ✅ שובל איכותי במקום פס
+            background: `linear-gradient(90deg, rgba(0,0,0,0) 0%, ${soft} 35%, ${mid} 70%, ${hard} 100%)`,
+
+            // ✅ עומק עדין (לא זוהר זול)
+            boxShadow: `0 0 10px ${hexToRgba(c, 0.20)}`,
+
+            // ✅ עושה את הקו “רך” יותר
+            filter: "blur(0.2px)",
+
+            opacity,
+        };
+    }
 
     const ROOM_ANGLE = {
         living: 0,
@@ -419,22 +478,15 @@
             .sort((a, b) => String(a.id).localeCompare(String(b.id)));
 
         const idx = sameRoom.findIndex((u) => u.id === user.id);
-        return baseHandLen.value + idx * Math.max(6, Math.floor(clockSize.value * 0.02));
+
+        // ✅ סטגר קטן (כמו שהיה), אבל לא נותנים לו לברוח
+        const step = Math.max(6, Math.floor(clockSize.value * 0.018)); // קצת עדין יותר מ-0.02
+        const proposed = baseHandLen.value + idx * step;
+
+        // ✅ clamp כדי לא לעבור את קו האייקונים
+        return Math.min(proposed, maxHandLen.value);
     }
 
-    function getRoomLabelStyle(roomId) {
-        const angleDeg = (ROOM_ANGLE[roomId] ?? ROOM_ANGLE.afk) - 90;
-        const rad = (angleDeg * Math.PI) / 180;
-
-        const x = Math.cos(rad) * radius.value;
-        const y = Math.sin(rad) * radius.value;
-
-        return {
-            left: `calc(50% + ${x}px)`,
-            top: `calc(50% + ${y}px)`,
-            transform: "translate(-50%, -50%)",
-        };
-    }
 
     function getUserRotation(user) {
         const base = (ROOM_ANGLE[user.roomKey] ?? ROOM_ANGLE.afk) - 90;

@@ -8,9 +8,12 @@
                 ☰
             </button>
 
-            <div class="font-bold text-green-300 truncate max-w-[60vw] mx-auto text-center">
+            <button class="absolute left-1/2 -translate-x-1/2 w-[70vw] text-center font-bold text-green-300 truncate"
+                    @click="goLobby({ closeDrawer: false })"
+                    title="לובי">
                 {{ headerTitle }}
-            </div>
+            </button>
+
         </div>
 
         <div class="gio-app-stage flex-1 min-h-0 flex md:flex-row"
@@ -27,17 +30,19 @@
                     <div class="flex items-center gap-2">
                         <div class="gio-topbar">
                             <div class="gio-topbar__left">
-                                <div class="gio-house-badge">
+                                <button class="gio-house-badge text-right w-full"
+                                        @click="goLobby()"
+                                        title="לובי">
                                     <span class="gio-house-emoji">{{ isPublicHouse ? "🌍" : "🏠" }}</span>
                                     <div class="gio-house-text">
                                         <div class="gio-house-title">
                                             {{ isPublicHouse ? "GIO HOUSE" : (currentHouse?.name || "My House") }}
                                         </div>
                                         <div class="gio-house-subtitle">
-                                            {{ isPublicHouse ? "איפה כולם עכשיו?" : "מי בבית עכשיו?" }}
+                                            {{ isPublicHouse ? "?איפה כולם עכשיו" : "?מי עכשיו בבית" }}
                                         </div>
                                     </div>
-                                </div>
+                                </button>
                             </div>
                         </div>
 
@@ -69,40 +74,74 @@
                     <div class="text-xs text-white/40 mb-2">חדרים</div>
 
                     <div class="space-y-1">
+                        <button class="w-full px-3 py-2 rounded-xl flex items-center justify-between hover:bg-white/5 transition border border-transparent"
+                                :class="route.name === 'home' ? 'bg-white/5 border border-green-500/30' : ''"
+                                @click="goLobby({ closeDrawer: true })">
+                            <div class="flex items-center gap-2">
+                                <span class="text-lg">🏠</span>
+                                <span class="font-semibold truncate block max-w-[180px]">לובי</span>
+                            </div>
+                        </button>
+
+                        <div class="h-px bg-white/10 my-2"></div>
+
                         <button v-for="r in activeRooms"
                                 :key="r.id"
-                                class="w-full px-3 py-2 rounded-xl flex items-center justify-between hover:bg-white/5 transition"
+                                class="w-full px-3 py-2 rounded-xl hover:bg-white/5 transition"
                                 :class="isActiveRoom(r.key) ? 'bg-white/5 border border-green-500/30' : 'border border-transparent'"
-                                @click.self="enterRoom(r.key)">
-                            <div class="flex items-center gap-2">
-                                <span class="text-lg">{{ r.icon || "🚪" }}</span>
+                                @click="enterRoom(r.key)">
 
-                                <div class="min-w-0">
-                                    <input v-if="inlineEdit.id === r.id"
-                                           ref="inlineEditInput"
-                                           v-model="inlineEdit.draft"
-                                           class="w-full max-w-[180px] bg-black/40 border border-green-500/25 rounded-lg px-2 py-1 text-sm outline-none
-                     focus:border-green-500/40 focus:ring-2 focus:ring-green-500/10"
-                                           @keydown.enter.prevent="commitInlineEdit(r)"
-                                           @keydown.esc.prevent="cancelInlineEdit"
-                                           @blur="cancelInlineEdit"
-                                           @click.stop />
-                                    <span v-else
-                                          class="font-semibold truncate block max-w-[180px]"
-                                          @click.stop
-                                          @dblclick.stop.prevent="beginInlineEdit(r)"
-                                          title="Double click to rename">
-                                        {{ r.name || r.key }}
+                            <div class="gio-room-row">
+                                <!-- LEFT: icon + title -->
+                                <div class="gio-room-left">
+                                    <span class="text-lg shrink-0">{{ r.icon || "🚪" }}</span>
+
+                                    <div class="min-w-0 gio-room-title">
+                                        <input v-if="inlineEdit.id === r.id"
+                                               ref="inlineEditInput"
+                                               v-model="inlineEdit.draft"
+                                               class="w-full max-w-[180px] bg-black/40 border border-green-500/25 rounded-lg px-2 py-1 text-sm outline-none
+                                                    focus:border-green-500/40 focus:ring-2 focus:ring-green-500/10"
+                                               @keydown.enter.prevent="commitInlineEdit(r)"
+                                               @keydown.esc.prevent="cancelInlineEdit"
+                                               @blur="cancelInlineEdit"
+                                               @click.stop />
+                                        <span v-else
+                                              class="font-semibold truncate block max-w-[180px]"
+                                              @dblclick.stop.prevent="beginInlineEdit(r)"
+                                              title="Double click to rename">
+                                            {{ r.name || r.key }}
+                                        </span>
+                                    </div>
+                                </div>
+
+                                <!-- RIGHT: avatars + count -->
+                                <div class="gio-room-right" dir="ltr">
+                                    <div class="gio-room-avatars" dir="ltr">
+                                        <template v-for="(u, i) in roomUsers(r.key).slice(0, AVATARS_MAX)" :key="u.user_id || u.id || i">
+                                            <div class="gio-room-avatar"
+                                                 :style="{ zIndex: 10 + i }"
+                                                 :title="u.nickname || 'User'">
+                                                <img v-if="u.avatar_url" :src="u.avatar_url" alt="" />
+                                                <span v-else>{{ (u.nickname?.[0] ?? "•") }}</span>
+                                            </div>
+                                        </template>
+
+                                        <div v-if="roomUsers(r.key).length > AVATARS_MAX"
+                                             class="gio-room-avatar gio-room-more"
+                                             :title="`+${roomUsers(r.key).length - AVATARS_MAX}`">
+                                            +{{ roomUsers(r.key).length - AVATARS_MAX }}
+                                        </div>
+                                    </div>
+
+                                    <span class="gio-room-count">
+                                        <span v-if="presence.status === 'connecting'" class="gio-skel-count"></span>
+                                        <span v-else>{{ roomUsers(r.key).length }}</span>
                                     </span>
                                 </div>
                             </div>
-
-                            <span class="flex items-center gap-2 text-xs text-green-300">
-                                <span v-if="presence.status === 'connecting'" class="gio-skel-count"></span>
-                                <span v-else>{{ presence.usersInRoom(r.key).length }}</span>
-                                <span class="h-2 w-2 rounded-full bg-white/10" aria-hidden="true"></span>
-                            </span>
                         </button>
+
                     </div>
                 </div>
 
@@ -218,36 +257,56 @@
                         <div class="space-y-1">
                             <button v-for="r in activeRooms"
                                     :key="r.id"
-                                    class="w-full px-3 py-2 rounded-xl flex items-center justify-between hover:bg-white/5 transition"
+                                    class="w-full px-3 py-2 rounded-xl hover:bg-white/5 transition"
                                     :class="isActiveRoom(r.key) ? 'bg-white/5 border border-green-500/30' : 'border border-transparent'"
-                                    @click.self="enterRoom(r.key, { closeDrawer: true })">
-                                <div class="flex items-center gap-2">
-                                    <span class="text-lg">{{ r.icon || "🚪" }}</span>
-                                    <div class="min-w-0">
-                                        <input v-if="inlineEdit.id === r.id"
-                                               ref="inlineEditInput"
-                                               v-model="inlineEdit.draft"
-                                               class="w-full max-w-[180px] bg-black/40 border border-green-500/25 rounded-lg px-2 py-1 text-sm outline-none
-                                                        focus:border-green-500/40 focus:ring-2 focus:ring-green-500/10"
-                                               @keydown.enter.prevent="commitInlineEdit(r)"
-                                               @keydown.esc.prevent="cancelInlineEdit"
-                                               @blur="cancelInlineEdit"
-                                               @click.stop />
-                                        <span v-else
-                                              class="font-semibold truncate block max-w-[180px]"
-                                              @dblclick.stop.prevent="beginInlineEdit(r)"
-                                              title="Double click to rename">
-                                            {{ r.name || r.key }}
+                                    @click="enterRoom(r.key, { closeDrawer: true })">
+
+                                <div class="gio-room-row">
+                                    <div class="gio-room-left">
+                                        <span class="text-lg shrink-0">{{ r.icon || "🚪" }}</span>
+
+                                        <div class="min-w-0 gio-room-title">
+                                            <input v-if="inlineEdit.id === r.id"
+                                                   ref="inlineEditInput"
+                                                   v-model="inlineEdit.draft"
+                                                   class="w-full max-w-[180px] bg-black/40 border border-green-500/25 rounded-lg px-2 py-1 text-sm outline-none
+                      focus:border-green-500/40 focus:ring-2 focus:ring-green-500/10"
+                                                   @keydown.enter.prevent="commitInlineEdit(r)"
+                                                   @keydown.esc.prevent="cancelInlineEdit"
+                                                   @blur="cancelInlineEdit"
+                                                   @click.stop />
+                                            <span v-else
+                                                  class="font-semibold truncate block max-w-[180px]"
+                                                  @dblclick.stop.prevent="beginInlineEdit(r)"
+                                                  title="Double click to rename">
+                                                {{ r.name || r.key }}
+                                            </span>
+                                        </div>
+                                    </div>
+
+                                    <div class="gio-room-right" dir="ltr">
+                                        <div class="gio-room-avatars" dir="ltr">
+                                            <template v-for="(u, i) in roomUsers(r.key).slice(0, AVATARS_MAX)" :key="u.user_id || u.id || i">
+                                                <div class="gio-room-avatar" :style="{ zIndex: 10 + i }" :title="u.nickname || 'User'">
+                                                    <img v-if="u.avatar_url" :src="u.avatar_url" alt="" />
+                                                    <span v-else>{{ (u.nickname?.[0] ?? "•") }}</span>
+                                                </div>
+                                            </template>
+
+                                            <div v-if="roomUsers(r.key).length > AVATARS_MAX"
+                                                 class="gio-room-avatar gio-room-more">
+                                                +{{ roomUsers(r.key).length - AVATARS_MAX }}
+                                            </div>
+                                        </div>
+
+                                        <span class="gio-room-count">
+                                            <span v-if="presence.status==='connecting'" class="gio-skel-count"></span>
+                                            <span v-else>{{ roomUsers(r.key).length }}</span>
                                         </span>
                                     </div>
                                 </div>
-
-                                <span class="flex items-center gap-2 text-xs text-green-300">
-                                    <span v-if="presence.status==='connecting'" class="gio-skel-count"></span>
-                                    <span v-else>{{ presence.usersInRoom(r.key).length }}</span>
-                                    <span class="h-2 w-2 rounded-full bg-white/10" aria-hidden="true"></span>
-                                </span>
                             </button>
+
 
                             <div v-if="roomsStore.loading" class="text-xs text-white/50 px-2 py-3">
                                 טוען חדרים...
@@ -344,6 +403,14 @@
     const openHouseModal = ref(false);
     const houseMenuOpen = ref(false);
     const showMobileTopBar = computed(() => route.name !== "room");
+    const AVATARS_MAX = 5;
+
+    // ✅ קאש קטן כדי לא לקרוא getter פעמיים לכל חדר בתוך template
+    function roomUsers(roomKey) {
+        const list = presence.usersInRoom(roomKey) || [];
+        return list.filter(u => (u.user_status ?? "online") === "online");
+    }
+
 
     /* =========================
        ✅ MOBILE DRAWER STATE
@@ -359,6 +426,12 @@
     }
     function recalcDrawerW() {
         drawerW.value = drawerWidth();
+
+        // אם המגירה סגורה – ננעל אותה בדיוק לסגירה
+        if (!mobileNavOpen.value) {
+            drawerTranslateX.value = -drawerW.value;
+            overlayOpacity.value = 0;
+        }
     }
 
     function animateDrawer(toX, toOpacity, ms = 220) {
@@ -418,6 +491,18 @@
             history.back();
             drawerHistoryPushed.value = false;
         }
+    }
+
+    async function goLobby(options = {}) {
+        // סגירת מגירה במובייל ASAP
+        if (options.closeDrawer && mobileNavOpen.value) closeMobileNav({ skipHistoryBack: true });
+
+        // ניווט ללובי
+        if (route.name !== "home") await router.push({ name: "home" });
+
+        // נוכחות: מי שבבית נחשב living
+        if (house.currentHouseId) await presence.connect(house.currentHouseId, "living");
+        await presence.setRoom("living");
     }
 
     function onPopState() {
@@ -1019,4 +1104,81 @@
             transform: translateY(0);
         }
     }
+
+    .gio-room-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+    }
+
+    .gio-room-left {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-width: 0;
+        flex: 1;
+    }
+
+    .gio-room-title {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .gio-room-right {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-shrink: 0; /* ✅ קריטי: לא ימחץ טקסט */
+    }
+
+    .gio-room-avatars {
+        display: flex;
+        align-items: center;
+        flex-shrink: 0;
+        direction: ltr; /* ✅ מבטיח LTR גם ב-RTL */
+    }
+
+    .gio-room-avatar {
+        width: 22px;
+        height: 22px;
+        border-radius: 999px;
+        border: 2px solid rgba(34, 197, 94, 0.35);
+        background: rgba(0,0,0,0.35);
+        overflow: hidden;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 11px;
+        font-weight: 800;
+        color: rgba(210, 255, 225, 0.9);
+        /* ✅ stacking */
+        margin-left: -7px; /* overlap */
+        box-shadow: 0 0 0 2px rgba(11, 15, 18, 0.9); /* separation ring */
+    }
+
+        .gio-room-avatar:first-child {
+            margin-left: 0;
+        }
+
+        .gio-room-avatar img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+    .gio-room-more {
+        border-color: rgba(255,255,255,0.14);
+        color: rgba(255,255,255,0.75);
+        background: rgba(255,255,255,0.06);
+    }
+
+    .gio-room-count {
+        font-size: 12px;
+        font-weight: 800;
+        color: rgba(180, 255, 210, 0.9);
+        min-width: 14px;
+        text-align: right;
+    }
+
 </style>

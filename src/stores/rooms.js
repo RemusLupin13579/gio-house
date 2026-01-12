@@ -21,7 +21,7 @@ export const useRoomsStore = defineStore("rooms", {
             (state.rooms ?? [])
                 .filter((r) => r && r.is_archived === true)
                 .slice()
-                .sort((a, bb) => (a.sort_order ?? 0) - (Bb.sort_order ?? 0)),
+                .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)),
 
         byId: (state) => Object.fromEntries((state.rooms ?? []).map((r) => [r.id, r])),
 

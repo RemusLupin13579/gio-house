@@ -1,14 +1,5 @@
 <template>
     <div class="h-full min-h-0 bg-black text-white flex flex-col overflow-hidden">
-        <div class="absolute top-3 left-3 z-30" :style="safeTopStyle">
-            <button @click="goBack"
-                    class="px-4 py-2 bg-black/50 backdrop-blur border border-white/10 rounded-xl
-               text-green-300 hover:border-green-400/50 transition-all flex items-center gap-2
-               shadow-lg active:scale-[0.99]">
-                <span class="text-xl">←</span>
-                <span class="font-bold">חזרה</span>
-            </button>
-        </div>
 
         <div class="flex-1 min-h-0 grid" :style="gridStyle">
             <div class="min-h-0 overflow-hidden">
@@ -124,6 +115,10 @@
     );
 
     async function goBack() {
+        await router.push({ name: "home" });
+        await presence.setRoom("living");
+    }
+    async function goLobby() {
         await router.push({ name: "home" });
         await presence.setRoom("living");
     }
