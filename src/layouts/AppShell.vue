@@ -532,43 +532,35 @@
 
     async function signOut() {
         try {
-            // 1) ניתוק realtime/presence כדי שלא יישארו ערוצים פתוחים
+            // 1) להתנתק אמיתי מה-auth
+            const { error } = await supabase.auth.signOut();
+            if (error) console.warn("signOut error:", error);
+
+            // 2) לנתק realtime/subs שלך
             try { await presence.disconnect?.(); } catch (_) { }
             try {
-                // אם אין לך disconnect בפועל, לפחות ננתק מסאבים של messages
                 const subs = Object.keys(messages.subs || {});
                 for (const roomId of subs) await messages.unsubscribe(roomId);
             } catch (_) { }
 
-            // 2) איפוס סטייט מקומי
+            // 3) לאפס state מקומי
             session.value = null;
             profile.value = null;
             house.reset?.();
             rooms.reset?.();
-            // אם יש לך reset למessages/presence – מומלץ
             messages.byRoom = {};
             messages.subs = {};
 
-            // 3) ההתנתקות האמיתית
-            const { error } = await supabase.auth.signOut();
-            if (error) console.warn("signOut error:", error);
+            // 4) רק את הדברים שלך (לא של Supabase)
+            try { localStorage.removeItem("gio_current_house_id"); } catch (_) { }
 
-            // 4) “ניקוי” כדי למנוע חזרה אוטומטית
-            try {
-                localStorage.removeItem("gio_current_house_id");
-                // Supabase כבר מנקה את המפתחות שלו, אבל לפעמים דפדפן עקשן
-                Object.keys(localStorage)
-                    .filter(k => k.startsWith("sb-"))
-                    .forEach(k => localStorage.removeItem(k));
-            } catch (_) { }
-
-            // 5) ללוגין
             await router.replace({ name: "login" });
         } catch (e) {
             console.error("signOut failed:", e);
             await router.replace({ name: "login" });
         }
     }
+
 
     function onPopState() {
         if (suppressNextPop) {

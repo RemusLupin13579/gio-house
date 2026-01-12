@@ -37,18 +37,22 @@ const router = createRouter({
  * בלי זה – במובייל יש לוגין לופ.
  */
 router.beforeEach(async (to) => {
+    // ✅ Fix: אם חזרנו מה-OAuth עם bad_oauth_state על ה-root
+    // (זה נתקע על /?error=... ומבלבל את האפליקציה)
+    if (to.path === "/" && (to.query?.error_code === "bad_oauth_state" || to.query?.error === "invalid_request")) {
+        return { name: "login", query: { reason: String(to.query?.error_code || to.query?.error || "oauth_error") } };
+    }
+
     const isPublic = Boolean(to.meta.public);
 
     // ✅ מסלולים public נטענים מיד (login / auth-callback / וכו')
     if (isPublic) {
-        // אבל אם כבר יש סשן מוכן + משתמש עבר onboarding -> אין סיבה להישאר ב-login
         if (!authReady.value) return true;
 
         const isAuthed = Boolean(session.value);
         const needsOnboarding =
             isAuthed && (!profile.value || !profile.value.nickname || profile.value.onboarded === false);
 
-        // אם מחובר -> redirect נכון
         if (isAuthed) {
             if (needsOnboarding && to.name !== "onboarding" && to.name !== "auth-callback") {
                 return { name: "onboarding" };
@@ -59,7 +63,6 @@ router.beforeEach(async (to) => {
         return true;
     }
 
-    // ✅ למסלולים מוגנים מחכים ל-authReady
     if (!authReady.value) {
         await waitForAuthReady();
     }
@@ -76,6 +79,7 @@ router.beforeEach(async (to) => {
 
     return true;
 });
+
 
 
 /**
