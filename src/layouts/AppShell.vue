@@ -688,6 +688,9 @@
                 swipeActive.value = false;
                 return;
             }
+            // ✅ כאן זה הרגע שהחלטת “זה swipe לפתיחת drawer”
+            closeKeyboard();
+
             swipeLockedHorizontal.value = true;
             mobileNavOpen.value = true;
             drawerTranslateX.value = -drawerWidth();
@@ -1016,6 +1019,21 @@
             ui?.toast?.("💥 שינוי שם נכשל");
         } finally {
             cancelInlineEdit();
+        }
+    }
+
+    function closeKeyboard() {
+        const el = document.activeElement;
+        if (!el) return;
+
+        const tag = (el.tagName || "").toLowerCase();
+        const isEditable =
+            tag === "textarea" ||
+            tag === "input" ||
+            el.isContentEditable;
+
+        if (isEditable) {
+            el.blur();
         }
     }
 

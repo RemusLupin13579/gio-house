@@ -169,6 +169,23 @@
         nextTick(() => inputEl.value?.focus());
     }
 
+    function refocusComposer() {
+        const el = inputEl.value;
+        if (!el) return;
+        // delay קטן – אחרת iOS מתעלם
+        requestAnimationFrame(() => {
+            setTimeout(() => el.focus({ preventScroll: true }), 0);
+        });
+    }
+    longPressTimer = setTimeout(() => {
+        copyToClipboard(msg.text, msg.id);
+
+        // ✅ זה מה שימנע “נסגר לי המקלדת”
+        refocusComposer();
+
+        // אל תנסה preventDefault פה – זה לא באמת מציל ב-iOS
+    }, 700);
+
     async function copyToClipboard(text, id) {
         try {
             await navigator.clipboard.writeText(text);
@@ -205,13 +222,6 @@
         // 1. ביטול לחיצה ארוכה בתזוזה
         if (Math.abs(deltaX) > 10 || Math.abs(deltaY) > 10) {
             clearTimeout(longPressTimer);
-        }
-
-        // 2. זיהוי Swipe ימינה (פתיחת Drawer) - סגירת מקלדת מיידית
-        // אם התנועה ימינה (currentX > touchStartPos.x) והתחלנו בקצה השמאלי
-        if (currentX - touchStartPos.x > 20 && touchStartPos.x < 60) {
-            forceBlur();
-            return;
         }
 
         // 3. זיהוי Swipe שמאלה (Reply)
@@ -282,18 +292,6 @@
 
     onMounted(() => {
         scrollToBottom(true);
-
-        // מאזין גלובלי נוסף לסגירת מקלדת בתחילת Swipe מהצד
-        window.addEventListener('touchstart', (e) => {
-            if (e.touches[0].clientX < 40) forceBlur();
-        }, { passive: true });
-
-        // זיהוי תנועה ימינה בזמן אמת לסגירת מקלדת
-        window.addEventListener('touchmove', (e) => {
-            if (touchStartPos.x < 50 && e.touches[0].clientX - touchStartPos.x > 30) {
-                forceBlur();
-            }
-        }, { passive: true });
     });
 </script>
 
