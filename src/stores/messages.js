@@ -3,9 +3,6 @@ import { supabase } from "../services/supabase";
 import { session, profile } from "../stores/auth";
 import { useProfilesStore } from "../stores/profiles";
 
-/**
- * יוצר צבע עקבי לפי user_id (כדי שלא תצטרך לשמור DB)
- */
 function colorFromUserId(userId) {
     const s = String(userId || "anon");
     let hash = 0;
@@ -26,10 +23,6 @@ function formatTime(ts) {
     return d.toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" });
 }
 
-/**
- * ✅ normalize: תמיד מחזיר אובייקט “מוכן ל-UI”
- * גם אם profiles חסר, גם אם text null, גם אם created_at מוזר.
- */
 function normalizeMessage(row) {
     const profColor = row?.profiles?.color;
     const userColor = profColor || colorFromUserId(row?.user_id);
@@ -41,53 +34,64 @@ function normalizeMessage(row) {
 
     return {
         id: row?.id ?? `${row?.user_id ?? "u"}:${row?.created_at ?? Date.now()}`,
-        room_id: row?.room_id ?? row?.roomId ?? null,
+        room_id: row?.room_id ?? null,
         user_id: row?.user_id ?? null,
         text: String(row?.text ?? ""),
         created_at: row?.created_at ?? null,
-
-        // ✅ fields שה-ChatPanel שלך מצפה להם
         userName,
         userInitial: initialFromName(userName),
-        userColor: colorFromUserId(row?.user_id),
+        userColor,
         time: formatTime(row?.created_at),
         avatarUrl: row?.profiles?.avatar_url ?? null,
+        reply_to_id: row?.reply_to_id ?? null,
     };
 }
 
 export const useMessagesStore = defineStore("messages", {
     state: () => ({
-        byRoom: {}, // roomId -> normalized messages[]
-        subs: {},   // roomId -> realtime channel
+        byRoom: {},
+        subs: {},
+        lastReadTimestamps: JSON.parse(localStorage.getItem('chat_last_read') || '{}')
     }),
 
     getters: {
         messagesInRoom: (state) => (roomId) => state.byRoom[roomId] ?? [],
+        hasUnread: (state) => (roomId) => {
+            const msgs = state.byRoom[roomId] || [];
+            if (msgs.length === 0) return false;
+            const lastMsg = msgs[msgs.length - 1];
+            const lastRead = state.lastReadTimestamps[roomId] || 0;
+            return new Date(lastMsg.created_at).getTime() > lastRead;
+        }
     },
 
     actions: {
+        markAsRead(roomId) {
+            if (!roomId) return;
+            this.lastReadTimestamps[roomId] = Date.now();
+            localStorage.setItem('chat_last_read', JSON.stringify(this.lastReadTimestamps));
+        },
+
         async load(roomId, limit = 100) {
             if (!roomId) return;
-
-            // ✅ טוענים הודעות בלי join (יותר יציב ומהיר)
             const { data, error } = await supabase
                 .from("messages")
-                .select("id, room_id, user_id, text, created_at")
+                .select("id, room_id, user_id, text, created_at, reply_to_id")
                 .eq("room_id", roomId)
                 .order("created_at", { ascending: true })
                 .limit(limit);
 
             if (error) throw error;
 
-            // ✅ מביאים את כל הפרופילים של המשתמשים שנמצאים בהודעות (batch)
             const profilesStore = useProfilesStore();
             const userIds = (data ?? []).map(r => r.user_id);
             await profilesStore.ensureLoaded(userIds);
 
-            // ✅ מנרמלים עם profiles מה-cache
             this.byRoom[roomId] = (data ?? []).map(row =>
                 normalizeMessage({ ...row, profiles: profilesStore.byId[row.user_id] })
             );
+
+            this.markAsRead(roomId);
         },
 
         subscribe(roomId) {
@@ -95,7 +99,6 @@ export const useMessagesStore = defineStore("messages", {
             if (this.subs[roomId]) return;
 
             const profilesStore = useProfilesStore();
-
             const ch = supabase
                 .channel(`messages:${roomId}`)
                 .on(
@@ -105,9 +108,7 @@ export const useMessagesStore = defineStore("messages", {
                         const raw = payload?.new;
                         if (!raw) return;
 
-                        // ✅ טוענים פרופיל רק אם חסר (ללא query לכל הודעה אם כבר יש)
                         await profilesStore.ensureLoaded([raw.user_id]);
-
                         const normalized = normalizeMessage({
                             ...raw,
                             profiles: profilesStore.byId[raw.user_id],
@@ -130,24 +131,26 @@ export const useMessagesStore = defineStore("messages", {
             delete this.subs[roomId];
         },
 
-        async send(roomId, text) {
+        async send(roomId, text, replyToId = null) {
             const userId = session.value?.user?.id;
-            if (!userId) throw new Error("Not authenticated");
-            if (!roomId) throw new Error("Missing roomId");
+            if (!userId || !roomId) throw new Error("Missing auth or roomId");
 
             const clean = String(text ?? "").trim();
             if (!clean) return;
 
-            // ✅ שולחים הודעה (בלי join)
             const { data, error } = await supabase
                 .from("messages")
-                .insert({ room_id: roomId, user_id: userId, text: clean })
-                .select("id, room_id, user_id, text, created_at")
+                .insert({
+                    room_id: roomId,
+                    user_id: userId,
+                    text: clean,
+                    reply_to_id: replyToId
+                })
+                .select("id, room_id, user_id, text, created_at, reply_to_id")
                 .single();
 
             if (error) throw error;
 
-            // ✅ נוודא שהפרופיל שלי קיים ב-cache לפני normalize
             const profilesStore = useProfilesStore();
             await profilesStore.ensureLoaded([userId]);
 
@@ -157,8 +160,9 @@ export const useMessagesStore = defineStore("messages", {
             });
 
             if (!this.byRoom[roomId]) this.byRoom[roomId] = [];
-            const exists = this.byRoom[roomId].some((m) => m.id === normalized.id);
-            if (!exists) this.byRoom[roomId].push(normalized);
+            this.byRoom[roomId].push(normalized);
+
+            this.markAsRead(roomId);
             return normalized;
         },
     },
