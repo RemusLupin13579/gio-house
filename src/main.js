@@ -7,6 +7,7 @@ import { useHouseStore } from "./stores/house";
 import "./assets/main.css";
 
 const pinia = createPinia();
+window.__pinia = pinia;
 const app = createApp(App).use(pinia).use(router);
 
 // חשוב: לתפוס גם קריסות “שקטות”

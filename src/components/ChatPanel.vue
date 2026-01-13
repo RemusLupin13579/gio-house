@@ -136,6 +136,7 @@
                           @input="onComposerInput"
                           @focus="onComposerFocus"
                           @blur="onComposerBlur"
+                          @keydown="onComposerKeydown"
                           placeholder="Write a message..."
                           class="flex-1 bg-white/5 border border-white/10 rounded-2xl px-4 py-2 text-sm outline-none focus:border-green-500/30 transition resize-none min-h-[40px] max-h-32"></textarea>
 
@@ -368,6 +369,17 @@
         return `${names[0]} and +${names.length - 1} are typing…`;
     });
 
+    function onComposerKeydown(e) {
+        if (e.key !== "Enter") return;
+
+        // Shift+Enter => newline (תן לטקסטארה לעשות את שלה)
+        if (e.shiftKey) return;
+
+        // Enter רגיל => send
+        e.preventDefault();
+        handleFormSubmit();
+    }
+
     /* =========================
        ✅ Send message
        ========================= */
@@ -385,7 +397,11 @@
 
         if (inputEl.value) inputEl.value.style.height = "40px";
 
-        await messagesStore.send(roomUuid.value, text, replyId);
+        try {
+            await messagesStore.send(roomUuid.value, text, replyId);
+        } catch (e) {
+            console.error("[send failed]", e);
+        }
         scrollToBottom(true);
     }
 
@@ -417,12 +433,17 @@
 
     // ✅ חשוב: subscribe/unsubscribe לפי room
     watch(roomUuid, async (id, prev) => {
+        console.log("[ChatPanel] roomUuid changed", { prev, id, currentRoom: house.currentRoom, byKeyReady: !!roomsStore.byKey?.[house.currentRoom] });
         if (prev) await messagesStore.unsubscribe(prev);
         if (id) {
+            console.log("[ChatPanel] calling load+subscribe", id);
             await messagesStore.load(id);
             await messagesStore.subscribe(id);
+        } else {
+            console.log("[ChatPanel] roomUuid is null, skipping load");
         }
     }, { immediate: true });
+
 
     watch(() => currentRoomMessages.value.length, () => {
         if (isAtBottom.value) scrollToBottom(false);

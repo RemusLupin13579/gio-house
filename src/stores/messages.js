@@ -52,7 +52,12 @@ export const useMessagesStore = defineStore("messages", {
         byRoom: {},
         subs: {},
         lastReadTimestamps: JSON.parse(localStorage.getItem("chat_last_read") || "{}"),
+
+        // ✅ created_at based cursor
+        lastSeenCreatedAt: {},
+        catchupLocks: {},
     }),
+
 
     getters: {
         messagesInRoom: (state) => (roomId) => state.byRoom[roomId] ?? [],
@@ -72,38 +77,128 @@ export const useMessagesStore = defineStore("messages", {
             localStorage.setItem("chat_last_read", JSON.stringify(this.lastReadTimestamps));
         },
 
-        async load(roomId, limit = 100) {
+        _upsert(roomId, normalized) {
+            if (!roomId || !normalized) return;
+
+            if (!this.byRoom[roomId]) this.byRoom[roomId] = [];
+            const list = this.byRoom[roomId];
+
+            const idx = list.findIndex((m) => m.id === normalized.id);
+            if (idx === -1) list.push(normalized);
+            else list[idx] = normalized;
+
+            list.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+
+            const last = list[list.length - 1];
+            if (last?.created_at) this.lastSeenCreatedAt[roomId] = last.created_at;
+        },
+
+
+        async _catchUp(roomId) {
             if (!roomId) return;
+            if (this.catchupLocks[roomId]) return;
+            this.catchupLocks[roomId] = true;
+
+            try {
+                const since = this.lastSeenCreatedAt[roomId];
+                if (!since) return;
+
+                const { data, error } = await supabase
+                    .from("messages")
+                    .select("id, room_id, user_id, text, created_at, reply_to_id")
+                    .eq("room_id", roomId)
+                    .gt("created_at", since)
+                    .order("created_at", { ascending: true })
+                    .limit(200);
+
+                if (error) {
+                    console.warn("[messages.catchup] error", error);
+                    return;
+                }
+                if (!data?.length) return;
+
+                const profilesStore = useProfilesStore();
+                const userIds = data.map((r) => r.user_id).filter(Boolean);
+                await profilesStore.ensureLoaded(userIds);
+
+                for (const row of data) {
+                    const normalized = normalizeMessage({ ...row, profiles: profilesStore.byId[row.user_id] });
+                    this._upsert(roomId, normalized);
+                }
+
+                const last = this.byRoom[roomId]?.[this.byRoom[roomId].length - 1];
+                if (last?.created_at) this.lastSeenCreatedAt[roomId] = last.created_at;
+
+                console.log("[messages.catchup] applied", { roomId, added: data.length, since });
+            } finally {
+                this.catchupLocks[roomId] = false;
+            }
+        },
+
+
+        async load(roomId, limit = 100) {
+            console.log("[messages.load] called", { roomId, limit });
+
+            if (!roomId) {
+                console.warn("[messages.load] aborted: no roomId");
+                return;
+            }
 
             const { data, error } = await supabase
                 .from("messages")
                 .select("id, room_id, user_id, text, created_at, reply_to_id")
                 .eq("room_id", roomId)
-                .order("created_at", { ascending: true })
+                .order("created_at", { ascending: false }) // ✅ newest first (correct with UUID ids)
                 .limit(limit);
 
-            if (error) throw error;
+            console.log("[messages.load] result", {
+                roomId,
+                count: data?.length ?? 0,
+                error,
+                sample: data?.[0],
+            });
+
+            if (error) {
+                console.error("[messages.load] query error", error);
+                throw error;
+            }
+
+            const rows = (data ?? []).slice().reverse(); // ✅ oldest -> newest
 
             const profilesStore = useProfilesStore();
-            const userIds = (data ?? []).map((r) => r.user_id).filter(Boolean);
+            const userIds = rows.map((r) => r.user_id).filter(Boolean);
             await profilesStore.ensureLoaded(userIds);
 
-            this.byRoom[roomId] = (data ?? []).map((row) =>
+            const normalizedList = rows.map((row) =>
                 normalizeMessage({ ...row, profiles: profilesStore.byId[row.user_id] })
             );
+
+            // ✅ upsert merge to avoid ghosts/duplications
+            const prev = this.byRoom[roomId] ?? [];
+            const map = new Map(prev.map((m) => [m.id, m]));
+            for (const m of normalizedList) map.set(m.id, m);
+
+            this.byRoom[roomId] = Array.from(map.values()).sort(
+                (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+            );
+
+            const last = this.byRoom[roomId][this.byRoom[roomId].length - 1];
+            if (last?.created_at) this.lastSeenCreatedAt[roomId] = last.created_at;
+
+            console.log("[messages.load] stored", {
+                roomId,
+                storedCount: this.byRoom[roomId]?.length,
+                lastSeenCreatedAt: this.lastSeenCreatedAt[roomId],
+            });
 
             this.markAsRead(roomId);
         },
 
-        async subscribe(roomId) {
+
+
+        subscribe(roomId) {
             if (!roomId) return;
             if (this.subs[roomId]) return;
-
-            // ✅ חשוב: realtime auth לפני subscribe (מונע מצב "לא מגיעים אירועים עד רענון")
-            const token = session.value?.access_token;
-            try {
-                if (token && supabase.realtime?.setAuth) supabase.realtime.setAuth(token);
-            } catch (_) { }
 
             const profilesStore = useProfilesStore();
 
@@ -117,29 +212,26 @@ export const useMessagesStore = defineStore("messages", {
                         if (!raw) return;
 
                         await profilesStore.ensureLoaded([raw.user_id]);
+
                         const normalized = normalizeMessage({
                             ...raw,
                             profiles: profilesStore.byId[raw.user_id],
                         });
 
-                        if (!this.byRoom[roomId]) this.byRoom[roomId] = [];
-
-                        // ✅ upsert by id (גם מונע כפילויות אם גם send() דוחף מקומית)
-                        const list = this.byRoom[roomId];
-                        const idx = list.findIndex((m) => m.id === normalized.id);
-                        if (idx === -1) list.push(normalized);
-                        else list[idx] = normalized;
+                        this._upsert(roomId, normalized);
                     }
                 );
 
-            // ✅ subscribe עם סטטוס כדי לדעת אם באמת התחברנו
             ch.subscribe((status) => {
-                // אפשר להשאיר לוגים אם תרצה:
-                // console.log("[messages.subscribe]", roomId, status);
+                console.log("[messages.subscribe]", roomId, status, new Date().toLocaleTimeString());
+
+                if (status === "SUBSCRIBED") {
+                    // ✅ on reconnect: catch up anything missed
+                    void this._catchUp(roomId);
+                }
+
                 if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-                    // retry עדין
                     setTimeout(() => {
-                        // אם עדיין רשום כתת-ערוץ פעיל — נעיף וננסה שוב
                         if (this.subs[roomId] === ch) {
                             this.unsubscribe(roomId).finally(() => this.subscribe(roomId));
                         }
@@ -188,13 +280,8 @@ export const useMessagesStore = defineStore("messages", {
                 profiles: profilesStore.byId[userId],
             });
 
-            if (!this.byRoom[roomId]) this.byRoom[roomId] = [];
-
-            // ✅ upsert by id (אם realtime גם יגיע – הוא יעדכן ולא יכפיל)
-            const list = this.byRoom[roomId];
-            const idx = list.findIndex((m) => m.id === normalized.id);
-            if (idx === -1) list.push(normalized);
-            else list[idx] = normalized;
+            // ✅ upsert (prevents ghosts if realtime also arrives)
+            this._upsert(roomId, normalized);
 
             this.markAsRead(roomId);
             return normalized;

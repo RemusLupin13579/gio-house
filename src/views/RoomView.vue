@@ -83,21 +83,21 @@
 
     const activeRoomKeys = computed(() => new Set((roomsStore.activeRooms ?? []).map(r => r.key)));
 
+    const roomUuid = computed(() =>
+        house.currentRoom ? roomsStore.getRoomUuidByKey(house.currentRoom) : null
+    );
+
     async function syncRoom() {
         const houseId = house.currentHouseId;
         if (!houseId) return;
 
-        // החדר מתוך ה-URL
+        // ✅ 1) תמיד לטעון rooms של הבית לפני שמנסים roomUuid/צ'אט
+        await roomsStore.loadForHouse(houseId);
+
         const roomKey = String(route.params.id || "living");
 
-        // אל תעשה replace ל-router פה אם אתה כבר ב /room/:id
-        // (זה יגרום ל-watchers לרוץ שוב ולדרוס)
-        // אם יש אצלך router.replace(...) בתוך syncRoom — תמחוק/תנטרל אותו.
-
-        // ✅ קריטי: connect עם roomKey, לא בלי
         const ok = await presence.connect(houseId, roomKey);
 
-        // ✅ קריטי: סטטוס חדר תמיד לפי ה-URL
         if (ok) {
             house.enterRoom?.(roomKey);
             await presence.setRoom(roomKey);
@@ -105,14 +105,21 @@
     }
 
 
+
     watch(
-        [() => house.currentHouseId, () => roomParam.value],
-        async ([houseId, newRoomKey]) => {
-            if (!houseId) return;
-            await syncRoom(newRoomKey);
+        [() => house.currentHouseId, () => house.currentRoom, () => roomUuid.value, () => roomsStore.loadedForHouseId],
+        ([hid, rkey, uuid, loaded]) => {
+            console.log("[ChatPanel] room wiring", {
+                houseId: hid,
+                roomKey: rkey,
+                roomUuid: uuid,
+                roomsLoadedFor: loaded,
+                roomsCount: roomsStore.rooms?.length ?? 0,
+            });
         },
         { immediate: true }
     );
+
 
     async function goBack() {
         await router.push({ name: "home" });
@@ -122,5 +129,16 @@
         await router.push({ name: "home" });
         await presence.setRoom("living");
     }
+    watch(
+        () => route.params.id,
+        () => void syncRoom(),
+        { immediate: true }
+    );
+
+    watch(
+        () => house.currentHouseId,
+        () => void syncRoom(),
+        { immediate: true }
+    );
 
 </script>
