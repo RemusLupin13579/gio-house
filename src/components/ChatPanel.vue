@@ -139,6 +139,7 @@
     const messagesContainer = ref(null);
     const bottomEl = ref(null);
     const shouldRefocusAfterTouch = ref(false);
+    const composerWasFocusedOnTouchStart = ref(false);
 
     // Swipe & Touch Logic
     const swipingId = ref(null);
@@ -188,14 +189,6 @@
             setTimeout(() => el.focus({ preventScroll: true }), 0);
         });
     }
-    longPressTimer = setTimeout(() => {
-        copyToClipboard(msg.text, msg.id);
-
-        // ✅ זה מה שימנע “נסגר לי המקלדת”
-        refocusComposer();
-
-        // אל תנסה preventDefault פה – זה לא באמת מציל ב-iOS
-    }, 700);
 
     async function copyToClipboard(text, id) {
         try {
@@ -216,16 +209,22 @@
         swipingId.value = msg.id;
         swipeOffset.value = 0;
 
+        // ✅ האם המקלדת/פוקוס היו פעילים רגע לפני הנגיעה בהודעה?
+        composerWasFocusedOnTouchStart.value = (document.activeElement === inputEl.value);
+
         shouldRefocusAfterTouch.value = false;
 
         clearTimeout(longPressTimer);
         longPressTimer = setTimeout(() => {
             copyToClipboard(msg.text, msg.id);
 
-            // ✅ אל תנסה focus עכשיו (האצבע עדיין על המסך) — רק נסמן
-            shouldRefocusAfterTouch.value = true;
+            // ✅ נסמן רק אם באמת היינו בפוקוס לפני
+            if (composerWasFocusedOnTouchStart.value) {
+                shouldRefocusAfterTouch.value = true;
+            }
         }, 700);
     }
+
 
 
 
@@ -235,13 +234,12 @@
         const deltaX = touchStartPos.x - currentX;
         const deltaY = touchStartPos.y - currentY;
 
-        // 1. ביטול לחיצה ארוכה בתזוזה
         if (Math.abs(deltaX) > 10 || Math.abs(deltaY) > 10) {
             clearTimeout(longPressTimer);
-            shouldRefocusAfterTouch.value = false; // ✅ חדש
+            shouldRefocusAfterTouch.value = false;
+            composerWasFocusedOnTouchStart.value = false; // ✅ חדש
         }
 
-        // 3. זיהוי Swipe שמאלה (Reply)
         if (deltaX > 10 && Math.abs(deltaX) > Math.abs(deltaY)) {
             if (e.cancelable) e.preventDefault();
             swipeOffset.value = Math.min(deltaX, 70);
@@ -251,11 +249,12 @@
     }
 
 
+
     function onTouchEnd() {
         clearTimeout(longPressTimer);
 
-        const didLongPress = shouldRefocusAfterTouch.value; // ✅ חדש
-        shouldRefocusAfterTouch.value = false;              // ✅ חדש
+        const didLongPress = shouldRefocusAfterTouch.value;
+        shouldRefocusAfterTouch.value = false;
 
         if (swipeOffset.value > 50 && swipingId.value) {
             const msg = getMessageById(swipingId.value);
@@ -265,13 +264,16 @@
         swipingId.value = null;
         swipeOffset.value = 0;
 
-        // ✅ רק אחרי שהאצבע השתחררה: מחזירים פוקוס -> המקלדת נשארת פתוחה
-        if (didLongPress) {
+        // ✅ מחזירים פוקוס רק אם הוא היה לפני
+        if (didLongPress && composerWasFocusedOnTouchStart.value) {
             requestAnimationFrame(() => {
                 setTimeout(() => inputEl.value?.focus?.({ preventScroll: true }), 0);
             });
         }
+
+        composerWasFocusedOnTouchStart.value = false;
     }
+
 
     async function handleFormSubmit() {
         const text = newMessage.value.trim();
