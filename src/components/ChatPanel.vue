@@ -84,6 +84,16 @@
             <div ref="bottomEl" class="h-px"></div>
         </div>
 
+        <Transition name="slide-up">
+            <button v-if="!isAtBottom"
+                    @click="scrollToBottom(true)"
+                    class="absolute bottom-20 left-1/2 -translate-x-1/2 flex items-center justify-center
+                   w-8 h-8 rounded-full bg-white/10 backdrop-blur-md border border-white/10
+                   text-white/70 hover:bg-white/20 hover:text-white transition-all z-20 shadow-lg">
+                <span class="text-lg leading-none">☟</span>
+            </button>
+        </Transition>
+
         <div class="shrink-0 border-t border-white/10 bg-black/40 backdrop-blur-md pb-safe">
             <div v-if="replyingTo" class="flex items-center justify-between px-4 py-2 bg-green-500/5 border-b border-white/5 animate-in slide-in-from-bottom-1 duration-200">
                 <div class="flex items-center gap-2 truncate">
@@ -128,6 +138,7 @@
     const inputEl = ref(null);
     const messagesContainer = ref(null);
     const bottomEl = ref(null);
+    const shouldRefocusAfterTouch = ref(false);
 
     // Swipe & Touch Logic
     const swipingId = ref(null);
@@ -205,13 +216,18 @@
         swipingId.value = msg.id;
         swipeOffset.value = 0;
 
+        shouldRefocusAfterTouch.value = false;
+
         clearTimeout(longPressTimer);
         longPressTimer = setTimeout(() => {
             copyToClipboard(msg.text, msg.id);
-            // מניעת איבוד פוקוס בגלל לחיצה ארוכה
-            if (e.cancelable) e.preventDefault();
+
+            // ✅ אל תנסה focus עכשיו (האצבע עדיין על המסך) — רק נסמן
+            shouldRefocusAfterTouch.value = true;
         }, 700);
     }
+
+
 
     function onTouchMove(e) {
         const currentX = e.touches[0].clientX;
@@ -222,6 +238,7 @@
         // 1. ביטול לחיצה ארוכה בתזוזה
         if (Math.abs(deltaX) > 10 || Math.abs(deltaY) > 10) {
             clearTimeout(longPressTimer);
+            shouldRefocusAfterTouch.value = false; // ✅ חדש
         }
 
         // 3. זיהוי Swipe שמאלה (Reply)
@@ -233,14 +250,27 @@
         }
     }
 
+
     function onTouchEnd() {
         clearTimeout(longPressTimer);
+
+        const didLongPress = shouldRefocusAfterTouch.value; // ✅ חדש
+        shouldRefocusAfterTouch.value = false;              // ✅ חדש
+
         if (swipeOffset.value > 50 && swipingId.value) {
             const msg = getMessageById(swipingId.value);
             if (msg) setReply(msg);
         }
+
         swipingId.value = null;
         swipeOffset.value = 0;
+
+        // ✅ רק אחרי שהאצבע השתחררה: מחזירים פוקוס -> המקלדת נשארת פתוחה
+        if (didLongPress) {
+            requestAnimationFrame(() => {
+                setTimeout(() => inputEl.value?.focus?.({ preventScroll: true }), 0);
+            });
+        }
     }
 
     async function handleFormSubmit() {
@@ -325,5 +355,19 @@
         overflow-wrap: break-word;
         word-wrap: break-word;
         word-break: break-word;
+    }
+
+    .slide-up-enter-active, .slide-up-leave-active {
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .slide-up-enter-from, .slide-up-leave-to {
+        opacity: 0;
+        transform: translate(-50%, 20px); /* שומר על המרכוז בזמן האנימציה */
+    }
+
+    /* ביטול ה-outline הכחול המעצבן בדפדפנים מסוימים */
+    button:focus {
+        outline: none;
     }
 </style>
