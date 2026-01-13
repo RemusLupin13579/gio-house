@@ -51,7 +51,7 @@ export const useMessagesStore = defineStore("messages", {
     state: () => ({
         byRoom: {},
         subs: {},
-        lastReadTimestamps: JSON.parse(localStorage.getItem('chat_last_read') || '{}')
+        lastReadTimestamps: JSON.parse(localStorage.getItem("chat_last_read") || "{}"),
     }),
 
     getters: {
@@ -62,18 +62,19 @@ export const useMessagesStore = defineStore("messages", {
             const lastMsg = msgs[msgs.length - 1];
             const lastRead = state.lastReadTimestamps[roomId] || 0;
             return new Date(lastMsg.created_at).getTime() > lastRead;
-        }
+        },
     },
 
     actions: {
         markAsRead(roomId) {
             if (!roomId) return;
             this.lastReadTimestamps[roomId] = Date.now();
-            localStorage.setItem('chat_last_read', JSON.stringify(this.lastReadTimestamps));
+            localStorage.setItem("chat_last_read", JSON.stringify(this.lastReadTimestamps));
         },
 
         async load(roomId, limit = 100) {
             if (!roomId) return;
+
             const { data, error } = await supabase
                 .from("messages")
                 .select("id, room_id, user_id, text, created_at, reply_to_id")
@@ -84,21 +85,28 @@ export const useMessagesStore = defineStore("messages", {
             if (error) throw error;
 
             const profilesStore = useProfilesStore();
-            const userIds = (data ?? []).map(r => r.user_id);
+            const userIds = (data ?? []).map((r) => r.user_id).filter(Boolean);
             await profilesStore.ensureLoaded(userIds);
 
-            this.byRoom[roomId] = (data ?? []).map(row =>
+            this.byRoom[roomId] = (data ?? []).map((row) =>
                 normalizeMessage({ ...row, profiles: profilesStore.byId[row.user_id] })
             );
 
             this.markAsRead(roomId);
         },
 
-        subscribe(roomId) {
+        async subscribe(roomId) {
             if (!roomId) return;
             if (this.subs[roomId]) return;
 
+            // ✅ חשוב: realtime auth לפני subscribe (מונע מצב "לא מגיעים אירועים עד רענון")
+            const token = session.value?.access_token;
+            try {
+                if (token && supabase.realtime?.setAuth) supabase.realtime.setAuth(token);
+            } catch (_) { }
+
             const profilesStore = useProfilesStore();
+
             const ch = supabase
                 .channel(`messages:${roomId}`)
                 .on(
@@ -115,11 +123,29 @@ export const useMessagesStore = defineStore("messages", {
                         });
 
                         if (!this.byRoom[roomId]) this.byRoom[roomId] = [];
-                        const exists = this.byRoom[roomId].some((m) => m.id === normalized.id);
-                        if (!exists) this.byRoom[roomId].push(normalized);
+
+                        // ✅ upsert by id (גם מונע כפילויות אם גם send() דוחף מקומית)
+                        const list = this.byRoom[roomId];
+                        const idx = list.findIndex((m) => m.id === normalized.id);
+                        if (idx === -1) list.push(normalized);
+                        else list[idx] = normalized;
                     }
-                )
-                .subscribe();
+                );
+
+            // ✅ subscribe עם סטטוס כדי לדעת אם באמת התחברנו
+            ch.subscribe((status) => {
+                // אפשר להשאיר לוגים אם תרצה:
+                // console.log("[messages.subscribe]", roomId, status);
+                if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+                    // retry עדין
+                    setTimeout(() => {
+                        // אם עדיין רשום כתת-ערוץ פעיל — נעיף וננסה שוב
+                        if (this.subs[roomId] === ch) {
+                            this.unsubscribe(roomId).finally(() => this.subscribe(roomId));
+                        }
+                    }, 1200);
+                }
+            });
 
             this.subs[roomId] = ch;
         },
@@ -127,7 +153,10 @@ export const useMessagesStore = defineStore("messages", {
         async unsubscribe(roomId) {
             const ch = this.subs[roomId];
             if (!ch) return;
-            await supabase.removeChannel(ch);
+
+            try { await ch.unsubscribe(); } catch (_) { }
+            try { await supabase.removeChannel(ch); } catch (_) { }
+
             delete this.subs[roomId];
         },
 
@@ -144,7 +173,7 @@ export const useMessagesStore = defineStore("messages", {
                     room_id: roomId,
                     user_id: userId,
                     text: clean,
-                    reply_to_id: replyToId
+                    reply_to_id: replyToId,
                 })
                 .select("id, room_id, user_id, text, created_at, reply_to_id")
                 .single();
@@ -160,7 +189,12 @@ export const useMessagesStore = defineStore("messages", {
             });
 
             if (!this.byRoom[roomId]) this.byRoom[roomId] = [];
-            this.byRoom[roomId].push(normalized);
+
+            // ✅ upsert by id (אם realtime גם יגיע – הוא יעדכן ולא יכפיל)
+            const list = this.byRoom[roomId];
+            const idx = list.findIndex((m) => m.id === normalized.id);
+            if (idx === -1) list.push(normalized);
+            else list[idx] = normalized;
 
             this.markAsRead(roomId);
             return normalized;

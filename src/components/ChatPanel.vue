@@ -20,7 +20,8 @@
         <div ref="messagesContainer"
              class="flex-1 min-h-0 overflow-y-auto px-3 sm:px-4 pt-6 overscroll-contain relative"
              @scroll="handleScroll">
-            <div class="flex flex-col gap-4 pb-4">
+            <!-- ✅ חשוב: padding-bottom דינאמי לפי typingLabel (לא typingText) -->
+            <div class="flex flex-col gap-4" :class="typingLabel ? 'pb-8' : 'pb-4'">
                 <template v-for="msg in currentRoomMessages" :key="msg.id">
                     <div class="relative overflow-visible">
                         <div class="absolute inset-y-0 right-0 w-16 flex items-center justify-center text-green-500 opacity-0 transition-opacity"
@@ -42,12 +43,14 @@
                             <div class="hidden md:flex absolute top-1 right-2 bg-black/90 backdrop-blur-md border border-white/20 rounded-lg shadow-2xl p-0.5 z-[50] opacity-0 group-hover:opacity-100 transition-all scale-90 group-hover:scale-100 origin-right">
                                 <button @click="setReply(msg)" class="p-1.5 hover:bg-green-500/20 rounded-md text-white/60 hover:text-green-400">
                                     <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                              d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
                                     </svg>
                                 </button>
                                 <button @click="copyToClipboard(msg.text, msg.id)" class="p-1.5 hover:bg-blue-500/20 rounded-md text-white/60 hover:text-blue-400">
                                     <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                              d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
                                     </svg>
                                 </button>
                             </div>
@@ -109,10 +112,12 @@
                 <button @click="replyingTo = null" class="text-white/30 hover:text-white text-xs px-2">✕</button>
             </div>
 
-            <!-- ✅ Typing bar (מעל ה-input) -->
+            <!-- ✅ Typing bar (יותר נמוך) -->
             <Transition name="typing-pop">
                 <div v-if="typingLabel"
-                     class="px-3 sm:px-4 py-2 border-b border-white/5 bg-black/25">
+                     class="px-3 sm:px-4 py-0.5 text-[11px] leading-4
+                 bg-black/40 backdrop-blur border-t border-white/10
+                 text-white/60 flex items-center">
                     <div class="typing-row">
                         <div class="typing-dots" aria-hidden="true">
                             <span></span><span></span><span></span>
@@ -195,9 +200,7 @@
         if (el) {
             el.scrollIntoView({ behavior: "smooth", block: "center" });
             highlightedId.value = id;
-            setTimeout(() => {
-                highlightedId.value = null;
-            }, 2000);
+            setTimeout(() => (highlightedId.value = null), 2000);
         }
     }
 
@@ -240,9 +243,7 @@
         clearTimeout(longPressTimer);
         longPressTimer = setTimeout(() => {
             copyToClipboard(msg.text, msg.id);
-            if (composerWasFocusedOnTouchStart.value) {
-                shouldRefocusAfterTouch.value = true;
-            }
+            if (composerWasFocusedOnTouchStart.value) shouldRefocusAfterTouch.value = true;
         }, 700);
     }
 
@@ -292,8 +293,8 @@
     /* =========================
        ✅ Typing indicator logic
        ========================= */
-    const TYPING_IDLE_MS = 1200;     // אחרי כמה זמן בלי input -> stop typing
-    const TYPING_THROTTLE_MS = 1800; // לא לשגר "typing=true" כל אות
+    const TYPING_IDLE_MS = 1200;
+    const TYPING_THROTTLE_MS = 1800;
 
     let typingIdleTimer = null;
     let lastTypingTrueSentAt = 0;
@@ -311,60 +312,49 @@
     }
 
     function bumpTyping() {
-        // אם אין חיבור/room – אל תנסה
         if (!presenceStore.ready || presenceStore.status !== "ready") return;
         if (!house.currentRoom) return;
 
         const now = Date.now();
 
-        // אם עוד לא “התחלנו” typing – נשגר true (עם throttle)
         if (!typingLocal.value) {
             if (now - lastTypingTrueSentAt > TYPING_THROTTLE_MS) {
                 lastTypingTrueSentAt = now;
                 void setTypingState(true);
             } else {
-                // גם אם לא שלחנו עכשיו, מצב מקומי typing כן
                 typingLocal.value = true;
             }
         } else {
-            // כבר typing, אבל מדי פעם נרענן timestamp כדי שלא יפוג אצל אחרים
             if (now - lastTypingTrueSentAt > TYPING_THROTTLE_MS) {
                 lastTypingTrueSentAt = now;
                 void presenceStore.setTyping(true);
             }
         }
 
-        // כל הקלדה דוחה את “stop typing”
         clearTypingTimers();
-        typingIdleTimer = setTimeout(() => {
-            void setTypingState(false);
-        }, TYPING_IDLE_MS);
+        typingIdleTimer = setTimeout(() => void setTypingState(false), TYPING_IDLE_MS);
     }
 
     function onComposerInput() {
         autoGrow();
         if (newMessage.value?.length) bumpTyping();
         else {
-            // אם ריק – stop typing מיד
             clearTypingTimers();
             void setTypingState(false);
         }
     }
 
     function onComposerFocus() {
-        // אם יש טקסט ופתחתי focus -> נחשב כtyping
         if (newMessage.value?.trim()) bumpTyping();
     }
 
     function onComposerBlur() {
-        // blur => stop typing (כי זה מונע “נתקע typing”)
         clearTypingTimers();
         void setTypingState(false);
     }
 
     const typingUsers = computed(() => {
         const list = presenceStore.typingUsersInRoom(house.currentRoom) || [];
-        // אל תציג אותי כ”מקליד” לעצמי
         return list.filter((u) => (u.user_id ?? u.id) !== myId.value);
     });
 
@@ -387,16 +377,13 @@
 
         const replyId = replyingTo.value?.id;
 
-        // stop typing immediately on send (UX)
         clearTypingTimers();
         await setTypingState(false);
 
         newMessage.value = "";
         replyingTo.value = null;
 
-        if (inputEl.value) {
-            inputEl.value.style.height = "40px";
-        }
+        if (inputEl.value) inputEl.value.style.height = "40px";
 
         await messagesStore.send(roomUuid.value, text, replyId);
         scrollToBottom(true);
@@ -410,9 +397,7 @@
         if (!inputEl.value) return;
         inputEl.value.style.height = "40px";
         const scHeight = inputEl.value.scrollHeight;
-        if (scHeight > 40) {
-            inputEl.value.style.height = Math.min(scHeight, 128) + "px";
-        }
+        if (scHeight > 40) inputEl.value.style.height = Math.min(scHeight, 128) + "px";
     }
 
     function toggleChatSize() {
@@ -426,27 +411,24 @@
     }
 
     // drawer open -> close keyboard
-    watch(
-        () => chatLayout?.isMobileNavOpen?.value,
-        (isOpen) => {
-            if (isOpen) forceBlur();
-        }
-    );
+    watch(() => chatLayout?.isMobileNavOpen?.value, (isOpen) => {
+        if (isOpen) forceBlur();
+    });
 
-    watch(roomUuid, (id) => {
-        if (id) messagesStore.load(id);
+    // ✅ חשוב: subscribe/unsubscribe לפי room
+    watch(roomUuid, async (id, prev) => {
+        if (prev) await messagesStore.unsubscribe(prev);
+        if (id) {
+            await messagesStore.load(id);
+            await messagesStore.subscribe(id);
+        }
     }, { immediate: true });
 
-    watch(
-        () => currentRoomMessages.value.length,
-        () => {
-            if (isAtBottom.value) scrollToBottom(false);
-        }
-    );
-
-    onMounted(() => {
-        scrollToBottom(true);
+    watch(() => currentRoomMessages.value.length, () => {
+        if (isAtBottom.value) scrollToBottom(false);
     });
+
+    onMounted(() => scrollToBottom(true));
 
     onBeforeUnmount(() => {
         clearTypingTimers();
@@ -501,19 +483,19 @@
     .typing-row {
         display: flex;
         align-items: center;
-        gap: 10px;
-        min-height: 18px;
+        gap: 8px;
+        min-height: 16px; /* נמוך יותר */
     }
 
     .typing-dots {
         display: inline-flex;
-        gap: 4px;
+        gap: 3px;
         align-items: center;
     }
 
         .typing-dots span {
-            width: 6px;
-            height: 6px;
+            width: 5px;
+            height: 5px;
             border-radius: 999px;
             background: rgba(34, 197, 94, 0.85);
             display: inline-block;
@@ -537,7 +519,7 @@
         }
 
         50% {
-            transform: translateY(-4px);
+            transform: translateY(-3px);
             opacity: 1;
         }
     }
@@ -553,11 +535,11 @@
         transform: translateY(6px);
     }
 
-    /* ביטול outline */
     button:focus {
         outline: none;
     }
 
+    /* ✅ iOS zoom prevention */
     textarea {
         font-size: 16px;
     }
