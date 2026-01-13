@@ -107,7 +107,7 @@ export const useMessagesStore = defineStore("messages", {
                     .from("messages")
                     .select("id, room_id, user_id, text, created_at, reply_to_id")
                     .eq("room_id", roomId)
-                    .gt("created_at", since)
+                    .gte("created_at", since)
                     .order("created_at", { ascending: true })
                     .limit(200);
 
@@ -198,7 +198,15 @@ export const useMessagesStore = defineStore("messages", {
 
         subscribe(roomId) {
             if (!roomId) return;
-            if (this.subs[roomId]) return;
+
+            // אם קיים אבל סגור/נסגר — נזרוק ונבנה מחדש
+            const existing = this.subs[roomId];
+            if (existing) {
+                const st = existing.state;
+                if (st === "joined" || st === "joining") return;
+                // closed / errored / leaving וכו'
+                void this.unsubscribe(roomId);
+            }
 
             const profilesStore = useProfilesStore();
 
@@ -222,25 +230,38 @@ export const useMessagesStore = defineStore("messages", {
                     }
                 );
 
+            // ✅ תמיד לשמור את ה-channel לפני subscribe כדי ש-retry יראה אותו
+            this.subs[roomId] = ch;
+
             ch.subscribe((status) => {
-                console.log("[messages.subscribe]", roomId, status, new Date().toLocaleTimeString());
+                console.log("[messages.subscribe]", roomId, status, "state:", ch.state, new Date().toLocaleTimeString());
 
                 if (status === "SUBSCRIBED") {
-                    // ✅ on reconnect: catch up anything missed
+                    // ✅ catchup אחרי התחברות
                     void this._catchUp(roomId);
+                    return;
                 }
 
-                if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+                // ✅ כל מצב בעייתי — resubscribe
+                if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
                     setTimeout(() => {
+                        // אם זה עדיין הערוץ הנוכחי
                         if (this.subs[roomId] === ch) {
                             this.unsubscribe(roomId).finally(() => this.subscribe(roomId));
                         }
-                    }, 1200);
+                    }, 600);
                 }
             });
 
-            this.subs[roomId] = ch;
+            // ✅ watchdog: אם הערוץ נהיה closed בלי סטטוס, נרים מחדש
+            setTimeout(() => {
+                if (this.subs[roomId] === ch && ch.state === "closed") {
+                    console.warn("[messages.subscribe] watchdog: channel is closed, resubscribing", roomId);
+                    this.unsubscribe(roomId).finally(() => this.subscribe(roomId));
+                }
+            }, 1500);
         },
+
 
         async unsubscribe(roomId) {
             const ch = this.subs[roomId];
