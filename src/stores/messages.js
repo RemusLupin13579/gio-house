@@ -1,3 +1,4 @@
+// stores/messages.js
 import { defineStore } from "pinia";
 import { supabase } from "../services/supabase";
 import { session, profile } from "../stores/auth";
@@ -58,7 +59,6 @@ export const useMessagesStore = defineStore("messages", {
         catchupLocks: {},
     }),
 
-
     getters: {
         messagesInRoom: (state) => (roomId) => state.byRoom[roomId] ?? [],
         hasUnread: (state) => (roomId) => {
@@ -92,7 +92,6 @@ export const useMessagesStore = defineStore("messages", {
             const last = list[list.length - 1];
             if (last?.created_at) this.lastSeenCreatedAt[roomId] = last.created_at;
         },
-
 
         async _catchUp(roomId) {
             if (!roomId) return;
@@ -135,7 +134,6 @@ export const useMessagesStore = defineStore("messages", {
             }
         },
 
-
         async load(roomId, limit = 100) {
             console.log("[messages.load] called", { roomId, limit });
 
@@ -148,7 +146,7 @@ export const useMessagesStore = defineStore("messages", {
                 .from("messages")
                 .select("id, room_id, user_id, text, created_at, reply_to_id")
                 .eq("room_id", roomId)
-                .order("created_at", { ascending: false }) // ✅ newest first (correct with UUID ids)
+                .order("created_at", { ascending: false })
                 .limit(limit);
 
             console.log("[messages.load] result", {
@@ -163,7 +161,7 @@ export const useMessagesStore = defineStore("messages", {
                 throw error;
             }
 
-            const rows = (data ?? []).slice().reverse(); // ✅ oldest -> newest
+            const rows = (data ?? []).slice().reverse();
 
             const profilesStore = useProfilesStore();
             const userIds = rows.map((r) => r.user_id).filter(Boolean);
@@ -173,7 +171,6 @@ export const useMessagesStore = defineStore("messages", {
                 normalizeMessage({ ...row, profiles: profilesStore.byId[row.user_id] })
             );
 
-            // ✅ upsert merge to avoid ghosts/duplications
             const prev = this.byRoom[roomId] ?? [];
             const map = new Map(prev.map((m) => [m.id, m]));
             for (const m of normalizedList) map.set(m.id, m);
@@ -194,17 +191,13 @@ export const useMessagesStore = defineStore("messages", {
             this.markAsRead(roomId);
         },
 
-
-
         subscribe(roomId) {
             if (!roomId) return;
 
-            // אם קיים אבל סגור/נסגר — נזרוק ונבנה מחדש
             const existing = this.subs[roomId];
             if (existing) {
                 const st = existing.state;
                 if (st === "joined" || st === "joining") return;
-                // closed / errored / leaving וכו'
                 void this.unsubscribe(roomId);
             }
 
@@ -230,22 +223,18 @@ export const useMessagesStore = defineStore("messages", {
                     }
                 );
 
-            // ✅ תמיד לשמור את ה-channel לפני subscribe כדי ש-retry יראה אותו
             this.subs[roomId] = ch;
 
             ch.subscribe((status) => {
                 console.log("[messages.subscribe]", roomId, status, "state:", ch.state, new Date().toLocaleTimeString());
 
                 if (status === "SUBSCRIBED") {
-                    // ✅ catchup אחרי התחברות
                     void this._catchUp(roomId);
                     return;
                 }
 
-                // ✅ כל מצב בעייתי — resubscribe
                 if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
                     setTimeout(() => {
-                        // אם זה עדיין הערוץ הנוכחי
                         if (this.subs[roomId] === ch) {
                             this.unsubscribe(roomId).finally(() => this.subscribe(roomId));
                         }
@@ -253,7 +242,6 @@ export const useMessagesStore = defineStore("messages", {
                 }
             });
 
-            // ✅ watchdog: אם הערוץ נהיה closed בלי סטטוס, נרים מחדש
             setTimeout(() => {
                 if (this.subs[roomId] === ch && ch.state === "closed") {
                     console.warn("[messages.subscribe] watchdog: channel is closed, resubscribing", roomId);
@@ -261,7 +249,6 @@ export const useMessagesStore = defineStore("messages", {
                 }
             }, 1500);
         },
-
 
         async unsubscribe(roomId) {
             const ch = this.subs[roomId];
@@ -274,46 +261,84 @@ export const useMessagesStore = defineStore("messages", {
         },
 
         async send(roomId, text, replyToId = null) {
-            const userId = session.value?.user?.id;
-            if (!userId || !roomId) throw new Error("Missing auth or roomId");
-
             const clean = String(text ?? "").trim();
             if (!clean) return;
 
-            const { data, error } = await supabase
-                .from("messages")
-                .insert({
-                    room_id: roomId,
-                    user_id: userId,
-                    text: clean,
-                    reply_to_id: replyToId,
-                })
-                .select("id, room_id, user_id, text, created_at, reply_to_id")
-                .single();
+            const tryOnce = async () => {
+                const userId = session.value?.user?.id;
+                if (!userId || !roomId) throw new Error("Missing auth or roomId");
 
-            if (error) throw error;
+                const { data, error } = await supabase
+                    .from("messages")
+                    .insert({
+                        room_id: roomId,
+                        user_id: userId,
+                        text: clean,
+                        reply_to_id: replyToId,
+                    })
+                    .select("id, room_id, user_id, text, created_at, reply_to_id")
+                    .single();
 
-            const profilesStore = useProfilesStore();
-            await profilesStore.ensureLoaded([userId]);
+                if (error) throw error;
+                return { data, userId };
+            };
 
-            const normalized = normalizeMessage({
-                ...data,
-                profiles: profilesStore.byId[userId],
-            });
+            try {
+                const { data, userId } = await tryOnce();
 
-            // ✅ upsert (prevents ghosts if realtime also arrives)
-            this._upsert(roomId, normalized);
+                const profilesStore = useProfilesStore();
+                await profilesStore.ensureLoaded([userId]);
 
-            this.markAsRead(roomId);
+                const normalized = normalizeMessage({
+                    ...data,
+                    profiles: profilesStore.byId[userId],
+                });
 
-            console.log("[messages.send] identity", {
-                sessionUserId: session.value?.user?.id,
-                roomId,
-                replyToId,
-                textLen: clean.length,
-            });
+                this._upsert(roomId, normalized);
+                this.markAsRead(roomId);
 
-            return normalized;
+                console.log("[messages.send] ok", {
+                    sessionUserId: session.value?.user?.id,
+                    roomId,
+                    replyToId,
+                    textLen: clean.length,
+                });
+
+                return normalized;
+            } catch (e) {
+                console.warn("[messages.send] first try failed", e);
+
+                // ✅ one refresh attempt (resume/tab-switch usually breaks auth/socket)
+                try {
+                    await supabase.auth.getSession();
+                    await supabase.auth.refreshSession();
+                } catch (refreshErr) {
+                    console.warn("[messages.send] refreshSession failed", refreshErr);
+                }
+
+                // ✅ retry once
+                const { data, userId } = await tryOnce();
+
+                const profilesStore = useProfilesStore();
+                await profilesStore.ensureLoaded([userId]);
+
+                const normalized = normalizeMessage({
+                    ...data,
+                    profiles: profilesStore.byId[userId],
+                });
+
+                this._upsert(roomId, normalized);
+                this.markAsRead(roomId);
+
+                console.log("[messages.send] ok after refresh", {
+                    sessionUserId: session.value?.user?.id,
+                    roomId,
+                    replyToId,
+                    textLen: clean.length,
+                });
+
+                return normalized;
+            }
         },
     },
 });
