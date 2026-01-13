@@ -26,7 +26,7 @@
                     <div class="relative overflow-visible">
                         <div class="absolute inset-y-0 right-0 w-16 flex items-center justify-center text-green-500 opacity-0 transition-opacity"
                              :style="{ opacity: swipingId === msg.id ? Math.min(swipeOffset / 40, 1) : 0 }">
-                            <span class="text-xl">➢</span>
+                            <span class="text-xl">⤶</span>
                         </div>
 
                         <div :id="'msg-' + msg.id"
@@ -71,8 +71,12 @@
                                     </div>
                                 </div>
 
-                                <div class="block max-w-[85%] sm:max-w-[75%] bg-white/[0.04] border border-white/5 rounded-2xl rounded-tl-none px-3 py-1.5 text-sm break-words whitespace-pre-wrap"
-                                     :dir="getTextDirection(msg.text)">
+                                <div class="block max-w-[85%] sm:max-w-[75%] bg-white/[0.04] border border-white/5 rounded-2xl rounded-tl-none px-3 py-1.5 text-sm break-words whitespace-pre-wrap select-none touch-callout-none"
+                                     :dir="getTextDirection(msg.text)"
+                                     @contextmenu.prevent
+                                     @touchstart="onTouchStart($event, msg)"
+                                     @touchmove="onTouchMove($event)"
+                                     @touchend="onTouchEnd">
                                     {{ msg.text }}
                                 </div>
                             </div>
@@ -170,9 +174,18 @@
 
     async function copyToClipboard(text, id) {
         try {
+            // שומרים על הפוקוס אם המקלדת פתוחה
+            const activeEl = document.activeElement;
+            const isInputFocused = activeEl === inputEl.value;
+
             await navigator.clipboard.writeText(text);
             if (window.navigator.vibrate) window.navigator.vibrate(50);
-            // אפשר להוסיף כאן טוסט קטן של "הועתק"
+
+            // אם המקלדת הייתה פתוחה, מחזירים לה פוקוס מיידית (למקרה שברח)
+            if (isInputFocused) {
+                inputEl.value.focus();
+            }
+            // כאן אפשר להפעיל אינדיקציה ויזואלית קטנה שהועתק
         } catch (err) { console.error(err); }
     }
 
@@ -255,16 +268,20 @@
         bottomEl.value.scrollIntoView({ behavior: force ? 'smooth' : 'auto', block: 'end' });
     }
 
+    watch(() => chatLayout?.isMobileNavOpen?.value, (isOpen) => {
+        if (isOpen) {
+            forceBlur();
+        }
+    }, { immediate: true });
+
+    // פונקציית Blur חזקה יותר
     function forceBlur() {
-        if (document.activeElement?.tagName === 'TEXTAREA' || document.activeElement?.tagName === 'INPUT') {
+        if (document.activeElement) {
             document.activeElement.blur();
         }
+        // במובייל לעיתים צריך "לזייף" לחיצה בחוץ כדי להוריד מקלדת
+        window.scrollTo(0, 0);
     }
-
-    // סגירת מקלדת כשפותחים את המגירה ב-AppShell
-    watch(() => chatLayout?.isMobileNavOpen?.value, (isOpen) => {
-        if (isOpen) forceBlur();
-    });
 
     watch(roomUuid, (id) => { if (id) messagesStore.load(id); }, { immediate: true });
     watch(() => currentRoomMessages.value.length, () => {
@@ -282,6 +299,23 @@
 </script>
 
 <style scoped>
+    /* מניעת בחירת טקסט ותפריט הקשר במובייל */
+    .touch-callout-none {
+        -webkit-touch-callout: none !important; /* מונע תפריט העתק/הדבק של iOS */
+        -webkit-user-select: none !important; /* מונע סימון טקסט ב-Safari */
+        -khtml-user-select: none !important;
+        -moz-user-select: none !important;
+        -ms-user-select: none !important;
+        user-select: none !important; /* מונע סימון טקסט כללי */
+    }
+
+    /* מוודא שה-input עצמו כן מאפשר בחירה (כי שם המשתמש כותב) */
+    textarea {
+        -webkit-touch-callout: default !important;
+        -webkit-user-select: text !important;
+        user-select: text !important;
+    }
+
     .pb-safe {
         padding-bottom: env(safe-area-inset-bottom);
     }
