@@ -32,9 +32,9 @@
                         <div :id="'msg-' + msg.id"
                              class="group relative flex items-start gap-3 transition-all p-1 rounded-xl"
                              :class="[
-                                swipingId === msg.id ? 'transition-none' : 'duration-300',
-                                highlightedId === msg.id ? 'bg-green-500/20 ring-1 ring-green-500/40' : '',
-                                replyingTo?.id === msg.id ? 'bg-white/5 ring-1 ring-white/10' : ''
+                                 swipingId === msg.id ? 'transition-none' : 'duration-300',
+                                 highlightedId === msg.id ? 'bg-green-500/20 ring-1 ring-green-500/40' : '',
+                                 replyingTo?.id === msg.id ? 'bg-white/5 ring-1 ring-white/10' : ''
                              ]"
                              :style="swipingId === msg.id ? { transform: `translateX(-${swipeOffset}px)` } : { transform: 'translateX(0)' }"
                              @touchstart="onTouchStart($event, msg)"
@@ -73,10 +73,7 @@
 
                                 <div class="block max-w-[85%] sm:max-w-[75%] bg-white/[0.04] border border-white/5 rounded-2xl rounded-tl-none px-3 py-1.5 text-sm break-words whitespace-pre-wrap select-none touch-callout-none"
                                      :dir="getTextDirection(msg.text)"
-                                     @contextmenu.prevent
-                                     @touchstart="onTouchStart($event, msg)"
-                                     @touchmove="onTouchMove($event)"
-                                     @touchend="onTouchEnd">
+                                     @contextmenu.prevent>
                                     {{ msg.text }}
                                 </div>
                             </div>
@@ -100,7 +97,7 @@
             <form @submit.prevent="handleFormSubmit" class="p-2 sm:p-3 flex gap-2 items-end">
                 <textarea ref="inputEl" v-model="newMessage" rows="1"
                           @input="autoGrow"
-                          placeholder="Aa"
+                          placeholder="Write a message..."
                           class="flex-1 bg-white/5 border border-white/10 rounded-2xl px-4 py-2 text-sm outline-none focus:border-green-500/30 transition resize-none min-h-[40px] max-h-32"></textarea>
 
                 <button type="submit" :disabled="!newMessage.trim()"
@@ -174,46 +171,51 @@
 
     async function copyToClipboard(text, id) {
         try {
-            // שומרים על הפוקוס אם המקלדת פתוחה
-            const activeEl = document.activeElement;
-            const isInputFocused = activeEl === inputEl.value;
-
             await navigator.clipboard.writeText(text);
             if (window.navigator.vibrate) window.navigator.vibrate(50);
-
-            // אם המקלדת הייתה פתוחה, מחזירים לה פוקוס מיידית (למקרה שברח)
-            if (isInputFocused) {
-                inputEl.value.focus();
-            }
-            // כאן אפשר להפעיל אינדיקציה ויזואלית קטנה שהועתק
         } catch (err) { console.error(err); }
     }
 
-    // --- Touch Handlers (The "Beef" of the fix) ---
+    // --- Keyboard & Touch Control ---
+    function forceBlur() {
+        if (document.activeElement && document.activeElement.tagName === 'TEXTAREA') {
+            document.activeElement.blur();
+        }
+    }
+
     function onTouchStart(e, msg) {
         touchStartPos = { x: e.touches[0].clientX, y: e.touches[0].clientY };
         swipingId.value = msg.id;
         swipeOffset.value = 0;
 
-        // Long press logic
         clearTimeout(longPressTimer);
         longPressTimer = setTimeout(() => {
             copyToClipboard(msg.text, msg.id);
+            // מניעת איבוד פוקוס בגלל לחיצה ארוכה
+            if (e.cancelable) e.preventDefault();
         }, 700);
     }
 
     function onTouchMove(e) {
-        const deltaX = touchStartPos.x - e.touches[0].clientX;
-        const deltaY = touchStartPos.y - e.touches[0].clientY;
+        const currentX = e.touches[0].clientX;
+        const currentY = e.touches[0].clientY;
+        const deltaX = touchStartPos.x - currentX;
+        const deltaY = touchStartPos.y - currentY;
 
-        // אם יש תזוזה משמעותית (אפילו 10 פיקסלים), בטל את ה-Long Press
+        // 1. ביטול לחיצה ארוכה בתזוזה
         if (Math.abs(deltaX) > 10 || Math.abs(deltaY) > 10) {
             clearTimeout(longPressTimer);
         }
 
-        // מזהה Swipe רק אם התנועה היא בעיקר אופקית ושמאלה
+        // 2. זיהוי Swipe ימינה (פתיחת Drawer) - סגירת מקלדת מיידית
+        // אם התנועה ימינה (currentX > touchStartPos.x) והתחלנו בקצה השמאלי
+        if (currentX - touchStartPos.x > 20 && touchStartPos.x < 60) {
+            forceBlur();
+            return;
+        }
+
+        // 3. זיהוי Swipe שמאלה (Reply)
         if (deltaX > 10 && Math.abs(deltaX) > Math.abs(deltaY)) {
-            // זה מונע מהדפדפן לגלול את הרשימה בזמן שעושים Swipe
             if (e.cancelable) e.preventDefault();
             swipeOffset.value = Math.min(deltaX, 70);
         } else {
@@ -268,20 +270,10 @@
         bottomEl.value.scrollIntoView({ behavior: force ? 'smooth' : 'auto', block: 'end' });
     }
 
+    // סגירת מקלדת כשה-Drawer נפתח דרך ה-state
     watch(() => chatLayout?.isMobileNavOpen?.value, (isOpen) => {
-        if (isOpen) {
-            forceBlur();
-        }
-    }, { immediate: true });
-
-    // פונקציית Blur חזקה יותר
-    function forceBlur() {
-        if (document.activeElement) {
-            document.activeElement.blur();
-        }
-        // במובייל לעיתים צריך "לזייף" לחיצה בחוץ כדי להוריד מקלדת
-        window.scrollTo(0, 0);
-    }
+        if (isOpen) forceBlur();
+    });
 
     watch(roomUuid, (id) => { if (id) messagesStore.load(id); }, { immediate: true });
     watch(() => currentRoomMessages.value.length, () => {
@@ -291,25 +283,27 @@
     onMounted(() => {
         scrollToBottom(true);
 
-        // Listener גלובלי למובייל: סגירת מקלדת רק בגרירה מהקצה השמאלי (פתיחת תפריט)
+        // מאזין גלובלי נוסף לסגירת מקלדת בתחילת Swipe מהצד
         window.addEventListener('touchstart', (e) => {
-            if (e.touches[0].clientX < 30) forceBlur();
+            if (e.touches[0].clientX < 40) forceBlur();
+        }, { passive: true });
+
+        // זיהוי תנועה ימינה בזמן אמת לסגירת מקלדת
+        window.addEventListener('touchmove', (e) => {
+            if (touchStartPos.x < 50 && e.touches[0].clientX - touchStartPos.x > 30) {
+                forceBlur();
+            }
         }, { passive: true });
     });
 </script>
 
 <style scoped>
-    /* מניעת בחירת טקסט ותפריט הקשר במובייל */
     .touch-callout-none {
-        -webkit-touch-callout: none !important; /* מונע תפריט העתק/הדבק של iOS */
-        -webkit-user-select: none !important; /* מונע סימון טקסט ב-Safari */
-        -khtml-user-select: none !important;
-        -moz-user-select: none !important;
-        -ms-user-select: none !important;
-        user-select: none !important; /* מונע סימון טקסט כללי */
+        -webkit-touch-callout: none !important;
+        -webkit-user-select: none !important;
+        user-select: none !important;
     }
 
-    /* מוודא שה-input עצמו כן מאפשר בחירה (כי שם המשתמש כותב) */
     textarea {
         -webkit-touch-callout: default !important;
         -webkit-user-select: text !important;
@@ -320,7 +314,6 @@
         padding-bottom: env(safe-area-inset-bottom);
     }
 
-    /* עיצוב ה-Scrollbar */
     ::-webkit-scrollbar {
         width: 4px;
     }
@@ -330,7 +323,6 @@
         border-radius: 10px;
     }
 
-    /* תיקון לשבירת מילים ארוכות מאוד */
     .break-words {
         overflow-wrap: break-word;
         word-wrap: break-word;
