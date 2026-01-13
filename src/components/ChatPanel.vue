@@ -23,36 +23,32 @@
 
             <div class="flex flex-col gap-4 pb-4">
                 <template v-for="msg in currentRoomMessages" :key="msg.id">
-                    <div class="relative overflow-hidden rounded-xl">
-                        <div class="relative">
-                            <div class="absolute inset-y-0 right-0 w-16 flex items-center justify-center text-green-500 opacity-0 transition-opacity overflow-hidden rounded-xl"
-                                 :style="{ opacity: swipingId === msg.id ? Math.min(swipeOffset / 50, 1) : 0 }">
-                                <span class="text-xl">➢</span>
-                            </div>
+                    <div class="relative overflow-visible">
+                        <div class="absolute inset-y-0 right-0 w-16 flex items-center justify-center text-green-500 opacity-0 transition-opacity"
+                             :style="{ opacity: swipingId === msg.id ? Math.min(swipeOffset / 40, 1) : 0 }">
+                            <span class="text-xl">➢</span>
                         </div>
 
                         <div :id="'msg-' + msg.id"
                              class="group relative flex items-start gap-3 transition-all p-1 rounded-xl"
                              :class="[
-                                swipingId === msg.id ? 'transition-none' : 'duration-500',
-                                highlightedId === msg.id ? 'bg-green-500/15 ring-1 ring-green-500/30 shadow-[0_0_20px_rgba(34,197,94,0.1)]' : ''
+                                swipingId === msg.id ? 'transition-none' : 'duration-300',
+                                highlightedId === msg.id ? 'bg-green-500/20 ring-1 ring-green-500/40' : '',
+                                replyingTo?.id === msg.id ? 'bg-white/5 ring-1 ring-white/10' : ''
                              ]"
                              :style="swipingId === msg.id ? { transform: `translateX(-${swipeOffset}px)` } : { transform: 'translateX(0)' }"
                              @touchstart="onTouchStart($event, msg)"
                              @touchmove="onTouchMove($event)"
-                             @touchend="onTouchEnd"
-                             @dblclick="setReply(msg)">
+                             @touchend="onTouchEnd">
 
                             <div class="hidden md:flex absolute top-1 right-2 bg-black/90 backdrop-blur-md border border-white/20 rounded-lg shadow-2xl p-0.5 z-[50] opacity-0 group-hover:opacity-100 transition-all scale-90 group-hover:scale-100 origin-right">
-                                <button @click="setReply(msg)" class="p-1.5 hover:bg-green-500/20 rounded-md text-white/60 hover:text-green-400 transition-colors">
+                                <button @click="setReply(msg)" class="p-1.5 hover:bg-green-500/20 rounded-md text-white/60 hover:text-green-400">
                                     <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" /></svg>
                                 </button>
-                                <button @click="copyToClipboard(msg.text, msg.id)" class="p-1.5 hover:bg-blue-500/20 rounded-md text-white/60 hover:text-blue-400 transition-colors">
-                                    <svg xmlns="http://www.w3.org/2000/vue" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg>
+                                <button @click="copyToClipboard(msg.text, msg.id)" class="p-1.5 hover:bg-blue-500/20 rounded-md text-white/60 hover:text-blue-400">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg>
                                 </button>
                             </div>
-
-                            <div v-if="copiedId === msg.id" class="absolute -top-6 left-1/2 -translate-x-1/2 bg-green-500 text-black text-[10px] font-bold px-2 py-0.5 rounded shadow-lg z-30">COPIED</div>
 
                             <div class="w-8 h-8 rounded-full border border-white/10 flex-shrink-0 flex items-center justify-center overflow-hidden bg-white/5">
                                 <img v-if="msg.avatarUrl" :src="msg.avatarUrl" class="w-full h-full object-cover" />
@@ -66,19 +62,17 @@
                                 </div>
 
                                 <div v-if="msg.reply_to_id && getMessageById(msg.reply_to_id)"
-                                     @click="scrollToAndHighlight(msg.reply_to_id)"
-                                     class="flex items-center gap-2 mb-1 cursor-pointer group/reply max-w-full opacity-60 hover:opacity-100 transition-opacity">
-                                    <div class="w-0.5 h-3 bg-white/20 rounded-full group-hover/reply:bg-green-500/50 transition-colors"></div>
+                                     @click.stop="scrollToAndHighlight(msg.reply_to_id)"
+                                     class="flex items-center gap-2 mb-1 cursor-pointer opacity-60 hover:opacity-100 transition-opacity max-w-[90%]">
+                                    <div class="w-0.5 h-3 bg-white/20 rounded-full shrink-0"></div>
                                     <div class="flex items-center gap-1.5 text-[10px] truncate">
                                         <span class="font-bold shrink-0" :style="{ color: getMessageById(msg.reply_to_id).userColor }">{{ getMessageById(msg.reply_to_id).userName }}</span>
                                         <span class="text-white/40 truncate italic">{{ getMessageById(msg.reply_to_id).text }}</span>
                                     </div>
                                 </div>
 
-                                <div class="inline-block max-w-full bg-white/[0.03] border border-white/5 rounded-2xl rounded-tl-none px-3 py-1.5 text-sm"
-                                     :dir="getTextDirection(msg.text)"
-                                     @mousedown="startLongPress($event, msg)"
-                                     @mouseup="cancelLongPress" @mouseleave="cancelLongPress">
+                                <div class="block max-w-[85%] sm:max-w-[75%] bg-white/[0.04] border border-white/5 rounded-2xl rounded-tl-none px-3 py-1.5 text-sm break-words whitespace-pre-wrap"
+                                     :dir="getTextDirection(msg.text)">
                                     {{ msg.text }}
                                 </div>
                             </div>
@@ -89,34 +83,25 @@
             <div ref="bottomEl" class="h-px"></div>
         </div>
 
-        <Transition name="slide-up">
-            <button v-if="!isAtBottom"
-                    @click="scrollToBottom(true)"
-                    class="absolute bottom-20 left-1/2 -translate-x-1/2 flex items-center justify-center
-                   w-8 h-8 rounded-full bg-white/10 backdrop-blur-md border border-white/10
-                   text-white/70 hover:bg-white/20 hover:text-white transition-all z-20 shadow-lg">
-                <span class="text-lg leading-none">⮟</span>
-            </button>
-        </Transition>
-
         <div class="shrink-0 border-t border-white/10 bg-black/40 backdrop-blur-md pb-safe">
-            <div v-if="replyingTo" class="flex items-center justify-between px-4 py-1.5 bg-green-500/5 border-b border-white/5">
+            <div v-if="replyingTo" class="flex items-center justify-between px-4 py-2 bg-green-500/5 border-b border-white/5 animate-in slide-in-from-bottom-1 duration-200">
                 <div class="flex items-center gap-2 truncate">
                     <div class="w-0.5 h-3 bg-green-500 rounded-full"></div>
-                    <span class="text-[10px] text-green-400 font-medium truncate">Replying to {{ replyingTo.userName }}</span>
+                    <span class="text-[10px] text-green-400 font-medium truncate">מגיב ל-{{ replyingTo.userName }}</span>
+                    <span class="text-[10px] text-white/30 truncate italic">"{{ replyingTo.text }}"</span>
                 </div>
                 <button @click="replyingTo = null" class="text-white/30 hover:text-white text-xs px-2">✕</button>
             </div>
 
             <form @submit.prevent="handleFormSubmit" class="p-2 sm:p-3 flex gap-2 items-end">
                 <textarea ref="inputEl" v-model="newMessage" rows="1"
-                          @keydown.enter.exact.prevent="handleFormSubmit"
-                          @input="autoGrow" placeholder="Aa"
-                          class="flex-1 bg-white/5 border border-white/10 rounded-2xl px-4 py-2 text-sm outline-none focus:border-green-500/30 transition resize-none min-h-[38px] max-h-32"></textarea>
+                          @input="autoGrow"
+                          placeholder="Aa"
+                          class="flex-1 bg-white/5 border border-white/10 rounded-2xl px-4 py-2 text-sm outline-none focus:border-green-500/30 transition resize-none min-h-[40px] max-h-32"></textarea>
 
                 <button type="submit" :disabled="!newMessage.trim()"
-                        class="w-10 h-10 rounded-full bg-green-500 text-black flex items-center justify-center hover:scale-105 active:scale-95 transition-all disabled:opacity-20">
-                    <span class="text-2xl leading-none select-none" :class="getTextDirection(newMessage) === 'rtl' ? 'scale-x-[-1]' : ''">➢</span>
+                        class="w-10 h-10 rounded-full bg-green-500 text-black flex items-center justify-center hover:scale-105 active:scale-95 transition-all disabled:opacity-20 shrink-0">
+                    <span class="text-2xl leading-none select-none">➢</span>
                 </button>
             </form>
         </div>
@@ -137,16 +122,16 @@
 
     const newMessage = ref("");
     const replyingTo = ref(null);
-    const copiedId = ref(null);
     const highlightedId = ref(null);
     const isAtBottom = ref(true);
     const inputEl = ref(null);
     const messagesContainer = ref(null);
     const bottomEl = ref(null);
 
+    // Swipe & Touch Logic
     const swipingId = ref(null);
     const swipeOffset = ref(0);
-    let touchStartX = 0;
+    let touchStartPos = { x: 0, y: 0 };
     let longPressTimer = null;
 
     const roomUuid = computed(() => house.currentRoom ? roomsStore.getRoomUuidByKey(house.currentRoom) : null);
@@ -157,8 +142,6 @@
     const currentRoomMessages = computed(() => roomUuid.value ? messagesStore.messagesInRoom(roomUuid.value) : []);
     const chatLayout = inject("chatLayout", null);
     const chatExpanded = computed(() => chatLayout?.chatExpanded?.value ?? false);
-
-    // --- Functions ---
 
     function getMessageById(id) {
         return currentRoomMessages.value.find(m => m.id === id);
@@ -177,7 +160,7 @@
         if (!messagesContainer.value) return;
         const el = messagesContainer.value;
         const bottomDist = el.scrollHeight - el.scrollTop - el.clientHeight;
-        isAtBottom.value = bottomDist < 150;
+        isAtBottom.value = bottomDist < 100;
     }
 
     function setReply(msg) {
@@ -188,39 +171,47 @@
     async function copyToClipboard(text, id) {
         try {
             await navigator.clipboard.writeText(text);
-            copiedId.value = id;
-            setTimeout(() => { copiedId.value = null; }, 1500);
+            if (window.navigator.vibrate) window.navigator.vibrate(50);
+            // אפשר להוסיף כאן טוסט קטן של "הועתק"
         } catch (err) { console.error(err); }
     }
 
-    function startLongPress(e, msg) {
+    // --- Touch Handlers (The "Beef" of the fix) ---
+    function onTouchStart(e, msg) {
+        touchStartPos = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        swipingId.value = msg.id;
+        swipeOffset.value = 0;
+
+        // Long press logic
+        clearTimeout(longPressTimer);
         longPressTimer = setTimeout(() => {
             copyToClipboard(msg.text, msg.id);
-            if (window.navigator.vibrate) window.navigator.vibrate(40);
         }, 700);
     }
 
-    function cancelLongPress() { clearTimeout(longPressTimer); }
-
-    function onTouchStart(e, msg) {
-        touchStartX = e.touches[0].clientX;
-        startLongPress(e, msg);
-    }
-
     function onTouchMove(e) {
-        const diff = touchStartX - e.touches[0].clientX;
-        // מזהה גרירה שמאלה בלבד
-        if (diff > 5) {
-            cancelLongPress();
-            swipingId.value = currentRoomMessages.value.find(m => e.currentTarget.contains(e.target))?.id;
-            swipeOffset.value = Math.min(diff, 60);
+        const deltaX = touchStartPos.x - e.touches[0].clientX;
+        const deltaY = touchStartPos.y - e.touches[0].clientY;
+
+        // אם יש תזוזה משמעותית (אפילו 10 פיקסלים), בטל את ה-Long Press
+        if (Math.abs(deltaX) > 10 || Math.abs(deltaY) > 10) {
+            clearTimeout(longPressTimer);
+        }
+
+        // מזהה Swipe רק אם התנועה היא בעיקר אופקית ושמאלה
+        if (deltaX > 10 && Math.abs(deltaX) > Math.abs(deltaY)) {
+            // זה מונע מהדפדפן לגלול את הרשימה בזמן שעושים Swipe
+            if (e.cancelable) e.preventDefault();
+            swipeOffset.value = Math.min(deltaX, 70);
+        } else {
+            swipeOffset.value = 0;
         }
     }
 
     function onTouchEnd() {
-        cancelLongPress();
-        if (swipeOffset.value > 45 && swipingId.value) {
-            const msg = currentRoomMessages.value.find(m => m.id === swipingId.value);
+        clearTimeout(longPressTimer);
+        if (swipeOffset.value > 50 && swipingId.value) {
+            const msg = getMessageById(swipingId.value);
             if (msg) setReply(msg);
         }
         swipingId.value = null;
@@ -231,12 +222,14 @@
         const text = newMessage.value.trim();
         if (!text || !roomUuid.value) return;
         const replyId = replyingTo.value?.id;
+
         newMessage.value = "";
         replyingTo.value = null;
+
         if (inputEl.value) {
-            inputEl.value.style.height = '38px';
-            inputEl.value.focus();
+            inputEl.value.style.height = '40px';
         }
+
         await messagesStore.send(roomUuid.value, text, replyId);
         scrollToBottom(true);
     }
@@ -247,10 +240,10 @@
 
     function autoGrow() {
         if (!inputEl.value) return;
-        inputEl.value.style.height = "38px";
+        inputEl.value.style.height = "40px";
         const scHeight = inputEl.value.scrollHeight;
-        if (scHeight > 38) {
-            inputEl.value.style.height = scHeight + "px";
+        if (scHeight > 40) {
+            inputEl.value.style.height = Math.min(scHeight, 128) + "px";
         }
     }
 
@@ -258,32 +251,32 @@
 
     async function scrollToBottom(force = false) {
         await nextTick();
-        bottomEl.value?.scrollIntoView({ behavior: force ? 'smooth' : 'auto', block: 'end' });
+        if (!bottomEl.value) return;
+        bottomEl.value.scrollIntoView({ behavior: force ? 'smooth' : 'auto', block: 'end' });
     }
 
     function forceBlur() {
-        if (document.activeElement && (document.activeElement.tagName === 'TEXTAREA' || document.activeElement.tagName === 'INPUT')) {
+        if (document.activeElement?.tagName === 'TEXTAREA' || document.activeElement?.tagName === 'INPUT') {
             document.activeElement.blur();
         }
     }
 
+    // סגירת מקלדת כשפותחים את המגירה ב-AppShell
     watch(() => chatLayout?.isMobileNavOpen?.value, (isOpen) => {
         if (isOpen) forceBlur();
-    }, { immediate: true });
+    });
 
     watch(roomUuid, (id) => { if (id) messagesStore.load(id); }, { immediate: true });
-    watch(() => currentRoomMessages.value.length, () => scrollToBottom(false));
+    watch(() => currentRoomMessages.value.length, () => {
+        if (isAtBottom.value) scrollToBottom(false);
+    });
 
     onMounted(() => {
         scrollToBottom(true);
-        // האזנה גלובלית למובייל: סגירת מקלדת כשגוררים לפתיחת מגירה
-        window.addEventListener('touchstart', (e) => {
-            if (e.touches[0].clientX < 40) forceBlur();
-        }, { passive: true });
 
-        window.addEventListener('touchmove', (e) => {
-            // אם אנחנו בתנועת גרירה רוחבית משמעותית מהצד
-            if (e.touches[0].clientX < 80) forceBlur();
+        // Listener גלובלי למובייל: סגירת מקלדת רק בגרירה מהקצה השמאלי (פתיחת תפריט)
+        window.addEventListener('touchstart', (e) => {
+            if (e.touches[0].clientX < 30) forceBlur();
         }, { passive: true });
     });
 </script>
@@ -293,19 +286,7 @@
         padding-bottom: env(safe-area-inset-bottom);
     }
 
-    .slide-up-enter-active, .slide-up-leave-active {
-        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    }
-
-    .slide-up-enter-from, .slide-up-leave-to {
-        opacity: 0;
-        transform: translate(-50%, 20px);
-    }
-
-    button:focus {
-        outline: none;
-    }
-
+    /* עיצוב ה-Scrollbar */
     ::-webkit-scrollbar {
         width: 4px;
     }
@@ -313,5 +294,12 @@
     ::-webkit-scrollbar-thumb {
         background: rgba(255,255,255,0.1);
         border-radius: 10px;
+    }
+
+    /* תיקון לשבירת מילים ארוכות מאוד */
+    .break-words {
+        overflow-wrap: break-word;
+        word-wrap: break-word;
+        word-break: break-word;
     }
 </style>
