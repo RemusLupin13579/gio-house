@@ -3,6 +3,8 @@ import { supabase } from "../services/supabase";
 import { session, profile } from "../stores/auth";
 import { useRoomsStore } from "../stores/rooms";
 
+const TYPING_EXPIRE_MS = 4500; // אם לא קיבלנו update יותר מדי זמן -> נחשיב כלא מקליד
+
 export const usePresenceStore = defineStore("presence", {
     state: () => ({
         channel: null,
@@ -28,12 +30,38 @@ export const usePresenceStore = defineStore("presence", {
     getters: {
         usersInRoom: (state) => (roomName) => {
             const roomsStore = useRoomsStore();
-            const activeKeys = new Set((roomsStore.activeRooms ?? []).map(r => r.key));
+            const activeKeys = new Set((roomsStore.activeRooms ?? []).map((r) => r.key));
 
             return Object.values(state.users).filter((u) => {
-                const raw = (u.room_name ?? "living");
+                const raw = u.room_name ?? "living";
                 const safeRoom = activeKeys.has(raw) ? raw : "living";
                 return safeRoom === roomName;
+            });
+        },
+
+        // ✅ typing users in room (excluding stale)
+        typingUsersInRoom: (state) => (roomName) => {
+            const roomsStore = useRoomsStore();
+            const activeKeys = new Set((roomsStore.activeRooms ?? []).map((r) => r.key));
+
+            const now = Date.now();
+            return Object.values(state.users).filter((u) => {
+                const raw = u.room_name ?? "living";
+                const safeRoom = activeKeys.has(raw) ? raw : "living";
+                if (safeRoom !== roomName) return false;
+
+                if (!u.typing) return false;
+
+                const ts = Number(u.typing_ts || 0);
+                if (!ts) return false;
+
+                // expire
+                if (now - ts > TYPING_EXPIRE_MS) return false;
+
+                // optional: אם user offline, אל תציג
+                if ((u.user_status ?? "online") === "offline") return false;
+
+                return true;
             });
         },
 
@@ -65,8 +93,12 @@ export const usePresenceStore = defineStore("presence", {
                 return;
             }
 
-            try { await this.channel.unsubscribe(); } catch (_) { }
-            try { await supabase.removeChannel(this.channel); } catch (_) { }
+            try {
+                await this.channel.unsubscribe();
+            } catch (_) { }
+            try {
+                await supabase.removeChannel(this.channel);
+            } catch (_) { }
 
             this.channel = null;
             this.channelHouseId = null;
@@ -80,10 +112,8 @@ export const usePresenceStore = defineStore("presence", {
             const safeInitial = initialRoom || "living";
 
             console.log("[presence.connect] start", { houseId, userId, hasToken: !!token });
-
             console.log("[presence.connect] start", { houseId, initialRoom, userId, hasToken: !!token });
             console.trace("[presence.connect] caller stack");
-
 
             if (!userId || !houseId) {
                 this.status = "failed";
@@ -91,10 +121,9 @@ export const usePresenceStore = defineStore("presence", {
                 return false;
             }
 
-            // ✅ Single-flight: אם יש connect בתהליך לאותו בית — משתמשים בו (מונע race שגורם ל-CLOSED)
+            // ✅ Single-flight
             if (this.connectPromise && this.connectPromiseHouseId === houseId) {
                 const ok = await this.connectPromise;
-                // אחרי שהוא הסתיים — אם ביקשו חדר, ניישר קו
                 if (ok && initialRoom && this.channel && this.channelHouseId === houseId) {
                     const me = this.users?.[userId];
                     const cur = me?.room_name ?? me?.last_room ?? "living";
@@ -106,7 +135,7 @@ export const usePresenceStore = defineStore("presence", {
             this.connectSeq += 1;
             const seq = this.connectSeq;
 
-            // ✅ Already connected to this house: honor requested room
+            // ✅ Already connected
             if (this.channel && this.channelHouseId === houseId) {
                 this.status = "ready";
                 this.ready = true;
@@ -141,6 +170,9 @@ export const usePresenceStore = defineStore("presence", {
                 const lastRoom = overrides.last_room ?? me?.last_room ?? me?.room_name ?? "living";
                 const roomName = overrides.room_name ?? lastRoom;
 
+                const typing = overrides.typing ?? me?.typing ?? false;
+                const typingTs = overrides.typing_ts ?? me?.typing_ts ?? null;
+
                 return {
                     user_id: userId,
                     house_id: houseId,
@@ -152,6 +184,10 @@ export const usePresenceStore = defineStore("presence", {
 
                     // ✅ real user status
                     user_status: overrides.user_status ?? this.myUserStatus ?? "online",
+
+                    // ✅ typing state
+                    typing,
+                    typing_ts: typing ? (typingTs || Date.now()) : null,
 
                     ts: Date.now(),
                 };
@@ -175,7 +211,6 @@ export const usePresenceStore = defineStore("presence", {
                         this.ready = true;
                         this.status = "ready";
 
-                        // ✅ keep myUserStatus in sync with server echo
                         const me = next?.[userId];
                         if (me?.user_status) this.myUserStatus = me.user_status;
                     } catch (e) {
@@ -200,12 +235,13 @@ export const usePresenceStore = defineStore("presence", {
                             clearTimeout(timer);
 
                             try {
-                                // ✅ on connect:
                                 await ch.track(
                                     buildPayload({
                                         user_status: "online",
                                         room_name: safeInitial,
                                         last_room: safeInitial,
+                                        typing: false,
+                                        typing_ts: null,
                                     })
                                 );
                             } catch (e) {
@@ -223,29 +259,37 @@ export const usePresenceStore = defineStore("presence", {
                     });
                 });
 
-                // anti-race cleanup
                 if (seq !== this.connectSeq) {
-                    try { await ch.unsubscribe(); } catch (_) { }
-                    try { await supabase.removeChannel(ch); } catch (_) { }
+                    try {
+                        await ch.unsubscribe();
+                    } catch (_) { }
+                    try {
+                        await supabase.removeChannel(ch);
+                    } catch (_) { }
                     return { ok: false, ch: null };
                 }
 
                 if (!ok) {
-                    try { await ch.unsubscribe(); } catch (_) { }
-                    try { await supabase.removeChannel(ch); } catch (_) { }
+                    try {
+                        await ch.unsubscribe();
+                    } catch (_) { }
+                    try {
+                        await supabase.removeChannel(ch);
+                    } catch (_) { }
                     return { ok: false, ch: null };
                 }
 
-                // commit
                 this.channel = ch;
                 this.channelHouseId = houseId;
 
-                // optimistic self
                 const payload = buildPayload({
                     user_status: "online",
                     room_name: safeInitial,
                     last_room: safeInitial,
+                    typing: false,
+                    typing_ts: null,
                 });
+
                 this.users = { ...(this.users || {}), [userId]: payload };
                 this.myUserStatus = payload.user_status;
 
@@ -254,7 +298,6 @@ export const usePresenceStore = defineStore("presence", {
                 return { ok: true, ch };
             };
 
-            // ✅ Wrap retry loop as a single in-flight promise (prevents double connect on reload)
             this.connectPromiseHouseId = houseId;
             this.connectPromise = (async () => {
                 const delays = [0, 500, 1200, 2500];
@@ -280,11 +323,9 @@ export const usePresenceStore = defineStore("presence", {
 
             const ok = await this.connectPromise;
 
-            // cleanup in-flight marker
             this.connectPromise = null;
             this.connectPromiseHouseId = null;
 
-            // ✅ after connect, ensure requested room (important on reload)
             if (ok && initialRoom && this.channel && this.channelHouseId === houseId) {
                 const me = this.users?.[userId];
                 const cur = me?.room_name ?? me?.last_room ?? "living";
@@ -294,20 +335,17 @@ export const usePresenceStore = defineStore("presence", {
             return ok;
         },
 
-
         async setRoom(roomName) {
             if (!this.channel) return false;
 
             const userId = session.value?.user?.id;
             if (!userId) return false;
 
-            // ✅ never allow "afk" as a room
             if (roomName === "afk") roomName = "living";
 
             const me = this.users?.[userId];
             const lastRoom = roomName || me?.last_room || me?.room_name || "living";
 
-            // ✅ moving rooms implies active, unless user explicitly offline
             const nextStatus = this.myUserStatus === "offline" ? "offline" : "online";
             this.myUserStatus = nextStatus;
 
@@ -322,6 +360,11 @@ export const usePresenceStore = defineStore("presence", {
                     room_name: roomName,
                     last_room: lastRoom,
                     user_status: nextStatus,
+
+                    // ✅ typing reset on room change (אופציונלי אבל מומלץ)
+                    typing: false,
+                    typing_ts: null,
+
                     ts: Date.now(),
                 });
                 return true;
@@ -356,16 +399,68 @@ export const usePresenceStore = defineStore("presence", {
                     nickname: profile.value?.nickname ?? "User",
                     avatar_url: profile.value?.avatar_url ?? null,
 
-                    // ✅ keep room real; status carries AFK
                     room_name: lastRoom,
                     last_room: lastRoom,
 
                     user_status,
+
+                    // ✅ אם עברת offline/afk – לא “מקליד”
+                    typing: false,
+                    typing_ts: null,
+
                     ts: Date.now(),
                 });
                 return true;
             } catch (e) {
                 console.warn("[presence.setUserStatus] failed", e);
+                return false;
+            }
+        },
+
+        // ✅ NEW: typing state
+        async setTyping(isTyping) {
+            if (!this.channel) return false;
+
+            const userId = session.value?.user?.id;
+            if (!userId) return false;
+
+            const me = this.users?.[userId];
+            const lastRoom = me?.last_room || me?.room_name || "living";
+
+            // אם אני offline – אין typing
+            if (this.myUserStatus === "offline") isTyping = false;
+
+            try {
+                await this.channel.track({
+                    user_id: userId,
+                    house_id: this.channelHouseId,
+                    nickname: profile.value?.nickname ?? "User",
+                    avatar_url: profile.value?.avatar_url ?? null,
+
+                    room_name: lastRoom,
+                    last_room: lastRoom,
+
+                    user_status: this.myUserStatus ?? "online",
+
+                    typing: !!isTyping,
+                    typing_ts: isTyping ? Date.now() : null,
+
+                    ts: Date.now(),
+                });
+
+                // optimistic
+                this.users = {
+                    ...(this.users || {}),
+                    [userId]: {
+                        ...(this.users?.[userId] || {}),
+                        typing: !!isTyping,
+                        typing_ts: isTyping ? Date.now() : null,
+                    },
+                };
+
+                return true;
+            } catch (e) {
+                console.warn("[presence.setTyping] failed", e);
                 return false;
             }
         },
