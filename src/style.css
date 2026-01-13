@@ -5,6 +5,17 @@
 /* ✅ App-like sizing */
 html, body, #app {
     height: 100%;
+    width: 100%;
+}
+
+/* ✅ stop sideways pan/overflow on iOS (keyboard + 100vw quirks) */
+html, body {
+    overflow-x: hidden;
+    overscroll-behavior-x: none;
+}
+
+#app {
+    overflow-x: hidden;
 }
 
 body {
@@ -13,7 +24,13 @@ body {
     -webkit-text-size-adjust: 100%;
 }
 
-/* ✅ iOS: smooth scrolling where needed */
+/* ✅ iOS: prevent highlight */
 * {
     -webkit-tap-highlight-color: transparent;
+}
+
+/* ✅ iOS: avoid weird zoom/pan when focusing inputs (optional but recommended) */
+/* אם אתה לא רוצה שזה יהיה גלובלי, תשים רק על textarea של הצ'אט */
+textarea {
+    font-size: 16px;
 }

@@ -1,5 +1,5 @@
 <template>
-    <div class="h-[100dvh] w-screen bg-black text-white overflow-hidden flex flex-col md:flex-row">
+    <div class="h-[100dvh] w-full bg-black text-white overflow-hidden flex flex-col md:flex-row">
         <div v-if="showMobileTopBar"
              class="md:hidden h-12 px-3 flex items-center justify-between border-b border-white/5">
             <button class="w-10 h-10 rounded-xl bg-white/5 border border-white/10 hover:border-green-500/50 transition active:scale-[0.98]"
@@ -8,7 +8,7 @@
                 ☰
             </button>
 
-            <button class="absolute left-1/2 -translate-x-1/2 w-[70vw] text-center font-bold text-green-300 truncate"
+            <button class="absolute left-1/2 -translate-x-1/2 w-[70%] max-w-[420px] text-center font-bold text-green-300 truncate"
                     @click="goLobby({ closeDrawer: false })"
                     title="לובי">
                 {{ headerTitle }}
@@ -956,11 +956,18 @@
             houseMenuOpen.value = false;
         }
     );
-
+    function resetHorizontalScroll() {
+        // iOS sometimes leaves the page panned horizontally
+        window.scrollTo({ left: 0, top: window.scrollY, behavior: "instant" });
+    }
     onMounted(() => {
         attachAfkListeners();
         scheduleAfk();
         recalcDrawerW();
+
+        resetHorizontalScroll();
+        window.addEventListener("orientationchange", resetHorizontalScroll, { passive: true });
+        window.addEventListener("resize", resetHorizontalScroll, { passive: true });
 
         window.addEventListener("resize", recalcDrawerW);
         window.addEventListener("popstate", onPopState);

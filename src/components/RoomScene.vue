@@ -1,5 +1,5 @@
 <template>
-    <div class="relative h-full w-full overflow-hidden rounded-2xl border border-white/10 bg-black">
+    <div class="relative h-full w-full max-w-full box-border overflow-hidden rounded-2xl border border-white/10 bg-black">
         <!-- Background image -->
         <div class="absolute inset-0">
             <div class="absolute inset-0" :style="bgStyle"></div>

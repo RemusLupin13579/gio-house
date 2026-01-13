@@ -557,4 +557,8 @@
     button:focus {
         outline: none;
     }
+
+    textarea {
+        font-size: 16px;
+    }
 </style>
