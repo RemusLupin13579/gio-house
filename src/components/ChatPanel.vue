@@ -1,5 +1,26 @@
 <template>
     <div class="h-full flex flex-col bg-[#0b0f12] text-white overflow-hidden relative">
+        <!-- ✅ Toasts (top-center) -->
+        <Transition name="copied-pop">
+            <div v-if="copiedToast.show"
+                 class="absolute top-12 left-1/2 -translate-x-1/2 z-[80]
+               px-3 py-1.5 rounded-xl border border-white/10
+               bg-black/80 backdrop-blur-md shadow-2xl
+               text-[12px] text-white/80">
+                Copied
+            </div>
+        </Transition>
+
+        <Transition name="copied-pop">
+            <div v-if="sendErrorToast.show"
+                 class="absolute top-12 left-1/2 -translate-x-1/2 z-[80]
+               px-3 py-1.5 rounded-xl border border-white/10
+               bg-black/80 backdrop-blur-md shadow-2xl
+               text-[12px] text-white/80">
+                {{ sendErrorToast.msg }}
+            </div>
+        </Transition>
+
         <div class="shrink-0 border-b border-white/10 bg-black/30 backdrop-blur z-10">
             <div class="h-14 px-3 sm:px-4 flex items-center justify-between">
                 <div class="flex items-center gap-3 min-w-0">
@@ -11,8 +32,7 @@
                         <div class="text-[10px] text-white/40 uppercase tracking-wider">{{ onlineCount }} Online</div>
                     </div>
                 </div>
-                <button @click="toggleChatSize"
-                        class="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center">
+                <button @click="toggleChatSize" class="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center">
                     <span class="text-lg">{{ chatExpanded ? "▾" : "▴" }}</span>
                 </button>
             </div>
@@ -21,6 +41,7 @@
         <div ref="messagesContainer"
              class="flex-1 min-h-0 overflow-y-auto px-3 sm:px-4 pt-6 overscroll-contain relative"
              @scroll="handleScroll">
+            <!-- ✅ חשוב: padding-bottom דינאמי לפי typingLabel (לא typingText) -->
             <div class="flex flex-col gap-4" :class="typingLabel ? 'pb-8' : 'pb-4'">
                 <template v-for="msg in currentRoomMessages" :key="msg.id">
                     <div class="relative overflow-visible">
@@ -31,23 +52,23 @@
 
                         <div :id="'msg-' + msg.id"
                              class="group relative flex items-start gap-3 transition-all p-1 rounded-xl"
+                             :class="[
+                swipingId === msg.id ? 'transition-none' : 'duration-300',
+                highlightedId === msg.id ? 'bg-green-500/20 ring-1 ring-green-500/40' : '',
+                replyingTo?.id === msg.id ? 'bg-white/5 ring-1 ring-white/10' : ''
+              ]"
+                             :style="swipingId === msg.id ? { transform: `translateX(-${swipeOffset}px)` } : { transform: 'translateX(0)' }"
+                             @touchstart="onTouchStart($event, msg)"
+                             @touchmove="onTouchMove($event)"
+                             @touchend="onTouchEnd"
+                             @dblclick.prevent.stop="setReply(msg)"
                              @pointerdown="onPointerDown($event, msg)"
                              @pointermove="onPointerMove($event)"
                              @pointerup="onPointerUp"
                              @pointercancel="onPointerUp"
-                             @pointerleave="onPointerUp"
-                             @dblclick.prevent.stop="setReply(msg)"
-                             @touchstart="onTouchStart($event, msg)"
-                             @touchmove="onTouchMove($event)"
-                             @touchend="onTouchEnd"
-                             :class="[
-                   swipingId === msg.id ? 'transition-none' : 'duration-300',
-                   highlightedId === msg.id ? 'bg-green-500/20 ring-1 ring-green-500/40' : '',
-                   replyingTo?.id === msg.id ? 'bg-white/5 ring-1 ring-white/10' : ''
-                 ]"
-                             :style="swipingId === msg.id ? { transform: `translateX(-${swipeOffset}px)` } : { transform: 'translateX(0)' }">
-
-                            <div class="hidden md:flex absolute top-1 right-2 bg-black/90 backdrop-blur-md border border-white/20 rounded-lg shadow-2xl p-0.5 z-[50] opacity-0 group-hover:opacity-100 transition-all scale-90 group-hover:scale-100 origin-right">
+                             @pointerleave="onPointerUp">
+                            <div class="hidden md:flex absolute top-1 right-2 bg-black/90 backdrop-blur-md border border-white/20 rounded-lg shadow-2xl p-0.5 z-[50]
+                       opacity-0 group-hover:opacity-100 transition-all scale-90 group-hover:scale-100 origin-right">
                                 <button @click="setReply(msg)" class="p-1.5 hover:bg-green-500/20 rounded-md text-white/60 hover:text-green-400">
                                     <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -85,14 +106,12 @@
                                     </div>
                                 </div>
 
-                                <div class="block max-w-[85%] sm:max-w-[75%] bg-white/[0.04] border border-white/5 rounded-2xl rounded-tl-none px-3 py-1.5 text-sm break-words whitespace-pre-wrap"
-                                     :class="isDesktop ? 'select-text' : 'select-none touch-callout-none'"
+                                <div class="block max-w-[85%] sm:max-w-[75%] bg-white/[0.04] border border-white/5 rounded-2xl rounded-tl-none px-3 py-1.5 text-sm break-words whitespace-pre-wrap select-none touch-callout-none"
                                      :dir="getTextDirection(msg.text)"
                                      @contextmenu="onContextMenu($event, msg)">
                                     {{ msg.text }}
                                 </div>
                             </div>
-
                         </div>
                     </div>
                 </template>
@@ -105,27 +124,15 @@
             <button v-if="!isAtBottom"
                     @click="scrollToBottom(true)"
                     class="absolute bottom-20 left-1/2 -translate-x-1/2 flex items-center justify-center
-                     w-8 h-8 rounded-full bg-white/10 backdrop-blur-md border border-white/10
-                     text-white/70 hover:bg-white/20 hover:text-white transition-all z-20 shadow-lg">
+               w-8 h-8 rounded-full bg-white/10 backdrop-blur-md border border-white/10
+               text-white/70 hover:bg-white/20 hover:text-white transition-all z-20 shadow-lg">
                 <span class="text-lg leading-none">☟</span>
             </button>
         </Transition>
 
-        <!-- ✅ Copied indicator (dark, clean) -->
-        <Transition name="copied-pop">
-            <div v-if="copiedToast.show"
-                 class="absolute top-3 left-1/2 -translate-x-1/2 z-[80]
-                  px-3 py-1.5 rounded-xl border border-white/10
-                  bg-black/80 backdrop-blur-md shadow-2xl
-                  text-[12px] text-white/80 flex items-center gap-2">
-                <span class="text-white/70">Copied</span>
-                <span class="text-white/30">•</span>
-                <span class="text-white/50 truncate max-w-[220px]">{{ copiedToast.preview }}</span>
-            </div>
-        </Transition>
-
         <div class="shrink-0 border-t border-white/10 bg-black/40 backdrop-blur-md pb-safe">
-            <div v-if="replyingTo" class="flex items-center justify-between px-4 py-2 bg-green-500/5 border-b border-white/5 animate-in slide-in-from-bottom-1 duration-200">
+            <div v-if="replyingTo"
+                 class="flex items-center justify-between px-4 py-2 bg-green-500/5 border-b border-white/5 animate-in slide-in-from-bottom-1 duration-200">
                 <div class="flex items-center gap-2 truncate">
                     <div class="w-0.5 h-3 bg-green-500 rounded-full"></div>
                     <span class="text-[10px] text-green-400 font-medium truncate">מגיב ל-{{ replyingTo.userName }}</span>
@@ -134,11 +141,12 @@
                 <button @click="replyingTo = null" class="text-white/30 hover:text-white text-xs px-2">✕</button>
             </div>
 
+            <!-- ✅ Typing bar (יותר נמוך) -->
             <Transition name="typing-pop">
                 <div v-if="typingLabel"
                      class="px-3 sm:px-4 py-0.5 text-[11px] leading-4
-                    bg-black/40 backdrop-blur border-t border-white/10
-                    text-white/60 flex items-center">
+                 bg-black/40 backdrop-blur border-t border-white/10
+                 text-white/60 flex items-center">
                     <div class="typing-row">
                         <div class="typing-dots" aria-hidden="true">
                             <span></span><span></span><span></span>
@@ -192,6 +200,25 @@
     const messagesContainer = ref(null);
     const bottomEl = ref(null);
 
+    // ✅ tiny toasts
+    const copiedToast = ref({ show: false });
+    let copiedTimer = null;
+
+    const sendErrorToast = ref({ show: false, msg: "" });
+    let sendErrTimer = null;
+
+    function showCopiedToast() {
+        copiedToast.value.show = true;
+        if (copiedTimer) clearTimeout(copiedTimer);
+        copiedTimer = setTimeout(() => (copiedToast.value.show = false), 900);
+    }
+
+    function showSendError(msg) {
+        sendErrorToast.value = { show: true, msg: msg || "Send failed" };
+        if (sendErrTimer) clearTimeout(sendErrTimer);
+        sendErrTimer = setTimeout(() => (sendErrorToast.value.show = false), 1600);
+    }
+
     // longpress keyboard keep-open flags
     const shouldRefocusAfterTouch = ref(false);
     const composerWasFocusedOnTouchStart = ref(false);
@@ -202,60 +229,10 @@
     let touchStartPos = { x: 0, y: 0 };
     let longPressTimer = null;
 
-    // ✅ desktop detection for select-text
-    const isDesktop = computed(() => window.matchMedia?.("(pointer:fine)")?.matches ?? true);
-
-    // ✅ Copied toast state
-    const copiedToast = ref({ show: false, preview: "" });
-    let copiedTimer = null;
-
-    function showCopiedToast(text) {
-        const preview = String(text ?? "").replace(/\s+/g, " ").trim().slice(0, 80);
-        copiedToast.value = { show: true, preview };
-        if (copiedTimer) clearTimeout(copiedTimer);
-        copiedTimer = setTimeout(() => {
-            copiedToast.value.show = false;
-        }, 1100);
-    }
-
-    // ✅ pointer-longpress for mouse/pen
-    let pointerPressTimer = null;
-    let pointerStart = { x: 0, y: 0 };
-    let pointerMsg = null;
-    let pointerActive = false;
-
-    function clearPointerTimer() {
-        if (pointerPressTimer) clearTimeout(pointerPressTimer);
-        pointerPressTimer = null;
-    }
-
-    function onPointerDown(e, msg) {
-        // mouse: only left click
-        if (e.pointerType === "mouse" && e.button !== 0) return;
-
-        pointerActive = true;
-        pointerMsg = msg;
-        pointerStart = { x: e.clientX, y: e.clientY };
-
-        clearPointerTimer();
-        pointerPressTimer = setTimeout(() => {
-            if (!pointerActive || !pointerMsg) return;
-            copyToClipboard(pointerMsg.text, pointerMsg.id);
-        }, 450);
-    }
-
-    function onPointerMove(e) {
-        if (!pointerActive) return;
-        const dx = e.clientX - pointerStart.x;
-        const dy = e.clientY - pointerStart.y;
-        if (Math.abs(dx) > 6 || Math.abs(dy) > 6) clearPointerTimer();
-    }
-
-    function onPointerUp() {
-        pointerActive = false;
-        pointerMsg = null;
-        clearPointerTimer();
-    }
+    // ✅ Pointer (desktop long-press)
+    let pointerStart = null;
+    let pointerLongPressTimer = null;
+    let pointerMoved = false;
 
     const roomUuid = computed(() => (house.currentRoom ? roomsStore.getRoomUuidByKey(house.currentRoom) : null));
     const currentRoomMeta = computed(() => (house.currentRoom ? roomsStore.byKey[house.currentRoom] : null));
@@ -296,29 +273,61 @@
     async function copyToClipboard(text, id) {
         try {
             await navigator.clipboard.writeText(text);
-            showCopiedToast(text);
             if (window.navigator.vibrate) window.navigator.vibrate(50);
+            showCopiedToast();
         } catch (err) {
             console.error(err);
+            showSendError("Copy failed");
         }
     }
 
-    // ✅ allow desktop context menu / block touch callout
     function onContextMenu(e, msg) {
-        const isTouchLike = e.pointerType === "touch" || ("ontouchstart" in window && !isDesktop.value);
-        if (isTouchLike) {
-            e.preventDefault();
-            return;
+        // desktop right click -> copy (clean and simple)
+        e?.preventDefault?.();
+        e?.stopPropagation?.();
+        if (msg?.text) void copyToClipboard(msg.text, msg.id);
+    }
+
+    /* =========================
+       ✅ Pointer long-press (desktop)
+       ========================= */
+    function clearPointerTimers() {
+        if (pointerLongPressTimer) clearTimeout(pointerLongPressTimer);
+        pointerLongPressTimer = null;
+    }
+
+    function onPointerDown(e, msg) {
+        // only primary button
+        if (e.button !== 0) return;
+        pointerMoved = false;
+        pointerStart = { x: e.clientX, y: e.clientY, id: msg.id };
+        clearPointerTimers();
+        pointerLongPressTimer = setTimeout(() => {
+            if (!pointerMoved && pointerStart?.id === msg.id) {
+                void copyToClipboard(msg.text, msg.id);
+            }
+        }, 520);
+    }
+
+    function onPointerMove(e) {
+        if (!pointerStart) return;
+        const dx = Math.abs(e.clientX - pointerStart.x);
+        const dy = Math.abs(e.clientY - pointerStart.y);
+        if (dx > 6 || dy > 6) {
+            pointerMoved = true;
+            clearPointerTimers();
         }
     }
 
-    // --- Keyboard & Touch Control ---
-    function forceBlur() {
-        if (document.activeElement && document.activeElement.tagName === "TEXTAREA") {
-            document.activeElement.blur();
-        }
+    function onPointerUp() {
+        clearPointerTimers();
+        pointerStart = null;
+        pointerMoved = false;
     }
 
+    /* =========================
+       ✅ Mobile touch: swipe reply + longpress copy
+       ========================= */
     function onTouchStart(e, msg) {
         touchStartPos = { x: e.touches[0].clientX, y: e.touches[0].clientY };
         swipingId.value = msg.id;
@@ -329,7 +338,7 @@
 
         clearTimeout(longPressTimer);
         longPressTimer = setTimeout(() => {
-            copyToClipboard(msg.text, msg.id);
+            void copyToClipboard(msg.text, msg.id);
             if (composerWasFocusedOnTouchStart.value) shouldRefocusAfterTouch.value = true;
         }, 700);
     }
@@ -463,7 +472,7 @@
     }
 
     /* =========================
-       ✅ Send message
+       ✅ Send message (fix: don't clear until success)
        ========================= */
     async function handleFormSubmit() {
         const text = newMessage.value.trim();
@@ -474,17 +483,27 @@
         clearTypingTimers();
         await setTypingState(false);
 
-        newMessage.value = "";
-        replyingTo.value = null;
-
-        if (inputEl.value) inputEl.value.style.height = "40px";
+        const draft = text;
 
         try {
-            await messagesStore.send(roomUuid.value, text, replyId);
+            await messagesStore.send(roomUuid.value, draft, replyId);
+
+            // ✅ only after success
+            newMessage.value = "";
+            replyingTo.value = null;
+            if (inputEl.value) inputEl.value.style.height = "40px";
+
+            scrollToBottom(true);
         } catch (e) {
             console.error("[send failed]", e);
+
+            // ✅ keep the message
+            newMessage.value = draft;
+
+            showSendError(
+                e?.message || e?.error_description || e?.details || "Send failed (auth/RLS?)"
+            );
         }
-        scrollToBottom(true);
     }
 
     function getTextDirection(text) {
@@ -508,9 +527,17 @@
         bottomEl.value.scrollIntoView({ behavior: force ? "smooth" : "auto", block: "end" });
     }
 
+    // drawer open -> close keyboard
     watch(() => chatLayout?.isMobileNavOpen?.value, (isOpen) => {
         if (isOpen) forceBlur();
     });
+
+    // --- Keyboard & Touch Control ---
+    function forceBlur() {
+        if (document.activeElement && document.activeElement.tagName === "TEXTAREA") {
+            document.activeElement.blur();
+        }
+    }
 
     watch(
         roomUuid,
@@ -531,6 +558,7 @@
                 return;
             }
 
+            // ✅ אם יש ערוץ אבל הוא תקוע/סגור — תבנה מחדש
             const ch = messagesStore.subs?.[id];
             const bad = ch && ch.state !== "joined" && ch.state !== "joining";
             if (bad) {
@@ -554,8 +582,12 @@
     onBeforeUnmount(() => {
         clearTypingTimers();
         void setTypingState(false);
-        clearPointerTimer();
+
+        clearTimeout(longPressTimer);
+        clearPointerTimers();
+
         if (copiedTimer) clearTimeout(copiedTimer);
+        if (sendErrTimer) clearTimeout(sendErrTimer);
     });
 </script>
 
@@ -658,20 +690,20 @@
         transform: translateY(6px);
     }
 
-    button:focus {
-        outline: none;
-    }
-
-    /* ✅ Copied toast animation */
+    /* ✅ toasts animation (shared) */
     .copied-pop-enter-active,
     .copied-pop-leave-active {
-        transition: all 140ms ease;
+        transition: all 160ms ease;
     }
 
     .copied-pop-enter-from,
     .copied-pop-leave-to {
         opacity: 0;
         transform: translate(-50%, -6px);
+    }
+
+    button:focus {
+        outline: none;
     }
 
     /* ✅ iOS zoom prevention */

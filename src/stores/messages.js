@@ -305,6 +305,14 @@ export const useMessagesStore = defineStore("messages", {
             this._upsert(roomId, normalized);
 
             this.markAsRead(roomId);
+
+            console.log("[messages.send] identity", {
+                sessionUserId: session.value?.user?.id,
+                roomId,
+                replyToId,
+                textLen: clean.length,
+            });
+
             return normalized;
         },
     },
