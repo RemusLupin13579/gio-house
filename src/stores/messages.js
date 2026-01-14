@@ -1,4 +1,3 @@
-// stores/messages.js
 import { defineStore } from "pinia";
 import { supabase } from "../services/supabase";
 import { session, profile } from "../stores/auth";
@@ -45,7 +44,63 @@ function normalizeMessage(row) {
         time: formatTime(row?.created_at),
         avatarUrl: row?.profiles?.avatar_url ?? null,
         reply_to_id: row?.reply_to_id ?? null,
+        client_id: row?.client_id ?? null,
     };
+}
+
+function uuidish() {
+    return `${Date.now()}-${Math.random().toString(16).slice(2)}${Math.random().toString(16).slice(2)}`;
+}
+
+function isAbortLike(e) {
+    const msg = String(e?.message || "");
+    return e?.name === "AbortError" || msg.includes("AbortError") || msg.includes("aborted");
+}
+
+/**
+ * ✅ Direct REST call (PostgREST) with true AbortController timeout.
+ */
+async function restRequest(pathWithQuery, { method = "GET", body = null, signal, headers = {} } = {}) {
+    const baseUrl = import.meta.env.VITE_SUPABASE_URL;
+    const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+    const { data: sessData } = await supabase.auth.getSession();
+    const accessToken = sessData?.session?.access_token;
+
+    if (!baseUrl || !anonKey) throw new Error("Missing VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY");
+    if (!accessToken) throw new Error("No access token (not authenticated)");
+
+    const url = `${baseUrl}/rest/v1/${pathWithQuery}`;
+
+    const res = await fetch(url, {
+        method,
+        signal,
+        headers: {
+            apikey: anonKey,
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+            ...headers,
+        },
+        body: body ? JSON.stringify(body) : null,
+    });
+
+    const text = await res.text();
+    let json = null;
+    try {
+        json = text ? JSON.parse(text) : null;
+    } catch (_) {
+        // keep json null
+    }
+
+    if (!res.ok) {
+        const msg = json?.message || json?.hint || text || `HTTP ${res.status}`;
+        const err = new Error(msg);
+        err.status = res.status;
+        err.payload = json;
+        throw err;
+    }
+
+    return json;
 }
 
 export const useMessagesStore = defineStore("messages", {
@@ -53,21 +108,13 @@ export const useMessagesStore = defineStore("messages", {
         byRoom: {},
         subs: {},
         lastReadTimestamps: JSON.parse(localStorage.getItem("chat_last_read") || "{}"),
-
-        // ✅ created_at based cursor
         lastSeenCreatedAt: {},
-        catchupLocks: {},
+        _guardsInstalled: false,
+        _reconnectLock: false,
     }),
 
     getters: {
         messagesInRoom: (state) => (roomId) => state.byRoom[roomId] ?? [],
-        hasUnread: (state) => (roomId) => {
-            const msgs = state.byRoom[roomId] || [];
-            if (msgs.length === 0) return false;
-            const lastMsg = msgs[msgs.length - 1];
-            const lastRead = state.lastReadTimestamps[roomId] || 0;
-            return new Date(lastMsg.created_at).getTime() > lastRead;
-        },
     },
 
     actions: {
@@ -79,7 +126,6 @@ export const useMessagesStore = defineStore("messages", {
 
         _upsert(roomId, normalized) {
             if (!roomId || !normalized) return;
-
             if (!this.byRoom[roomId]) this.byRoom[roomId] = [];
             const list = this.byRoom[roomId];
 
@@ -93,76 +139,61 @@ export const useMessagesStore = defineStore("messages", {
             if (last?.created_at) this.lastSeenCreatedAt[roomId] = last.created_at;
         },
 
-        async _catchUp(roomId) {
-            if (!roomId) return;
-            if (this.catchupLocks[roomId]) return;
-            this.catchupLocks[roomId] = true;
+        installRealtimeGuards() {
+            if (this._guardsInstalled) return;
+            this._guardsInstalled = true;
+
+            const kick = (why) => setTimeout(() => void this.ensureRealtime(why), 120);
+
+            document.addEventListener("visibilitychange", () => {
+                if (document.visibilityState === "visible") kick("visibility-visible");
+            });
+            window.addEventListener("focus", () => kick("window-focus"));
+            window.addEventListener("online", () => kick("online"));
+            window.addEventListener("pageshow", () => kick("pageshow"));
+        },
+
+        async ensureRealtime(reason = "manual") {
+            if (this._reconnectLock) return;
+            this._reconnectLock = true;
 
             try {
-                const since = this.lastSeenCreatedAt[roomId];
-                if (!since) return;
-
-                const { data, error } = await supabase
-                    .from("messages")
-                    .select("id, room_id, user_id, text, created_at, reply_to_id")
-                    .eq("room_id", roomId)
-                    .gte("created_at", since)
-                    .order("created_at", { ascending: true })
-                    .limit(200);
-
-                if (error) {
-                    console.warn("[messages.catchup] error", error);
-                    return;
-                }
-                if (!data?.length) return;
-
-                const profilesStore = useProfilesStore();
-                const userIds = data.map((r) => r.user_id).filter(Boolean);
-                await profilesStore.ensureLoaded(userIds);
-
-                for (const row of data) {
-                    const normalized = normalizeMessage({ ...row, profiles: profilesStore.byId[row.user_id] });
-                    this._upsert(roomId, normalized);
+                try {
+                    await supabase.auth.refreshSession();
+                } catch (e) {
+                    console.warn("[messages.ensureRealtime] refreshSession failed", e?.message || e);
                 }
 
-                const last = this.byRoom[roomId]?.[this.byRoom[roomId].length - 1];
-                if (last?.created_at) this.lastSeenCreatedAt[roomId] = last.created_at;
+                // reconnect realtime (helps when tab was backgrounded / laptop sleep)
+                try { supabase.realtime?.disconnect?.(); } catch (_) { }
+                try { supabase.realtime?.connect?.(); } catch (_) { }
 
-                console.log("[messages.catchup] applied", { roomId, added: data.length, since });
+                // rebuild room channels
+                const rooms = Object.keys(this.subs || {});
+                for (const roomId of rooms) {
+                    console.warn("[messages.ensureRealtime] rebuild channel", { reason, roomId });
+                    await this.unsubscribe(roomId);
+                    this.subscribe(roomId);
+                }
             } finally {
-                this.catchupLocks[roomId] = false;
+                this._reconnectLock = false;
             }
         },
 
         async load(roomId, limit = 100) {
             console.log("[messages.load] called", { roomId, limit });
 
-            if (!roomId) {
-                console.warn("[messages.load] aborted: no roomId");
-                return;
-            }
-
             const { data, error } = await supabase
                 .from("messages")
-                .select("id, room_id, user_id, text, created_at, reply_to_id")
+                .select("id, room_id, user_id, text, created_at, reply_to_id, client_id")
                 .eq("room_id", roomId)
                 .order("created_at", { ascending: false })
                 .limit(limit);
 
-            console.log("[messages.load] result", {
-                roomId,
-                count: data?.length ?? 0,
-                error,
-                sample: data?.[0],
-            });
-
-            if (error) {
-                console.error("[messages.load] query error", error);
-                throw error;
-            }
+            console.log("[messages.load] result", { roomId, count: data?.length ?? 0, error: error ?? null });
+            if (error) throw error;
 
             const rows = (data ?? []).slice().reverse();
-
             const profilesStore = useProfilesStore();
             const userIds = rows.map((r) => r.user_id).filter(Boolean);
             await profilesStore.ensureLoaded(userIds);
@@ -171,15 +202,9 @@ export const useMessagesStore = defineStore("messages", {
                 normalizeMessage({ ...row, profiles: profilesStore.byId[row.user_id] })
             );
 
-            const prev = this.byRoom[roomId] ?? [];
-            const map = new Map(prev.map((m) => [m.id, m]));
-            for (const m of normalizedList) map.set(m.id, m);
+            this.byRoom[roomId] = normalizedList;
 
-            this.byRoom[roomId] = Array.from(map.values()).sort(
-                (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-            );
-
-            const last = this.byRoom[roomId][this.byRoom[roomId].length - 1];
+            const last = this.byRoom[roomId]?.[this.byRoom[roomId].length - 1];
             if (last?.created_at) this.lastSeenCreatedAt[roomId] = last.created_at;
 
             console.log("[messages.load] stored", {
@@ -193,13 +218,10 @@ export const useMessagesStore = defineStore("messages", {
 
         subscribe(roomId) {
             if (!roomId) return;
+            this.installRealtimeGuards();
 
             const existing = this.subs[roomId];
-            if (existing) {
-                const st = existing.state;
-                if (st === "joined" || st === "joining") return;
-                void this.unsubscribe(roomId);
-            }
+            if (existing && (existing.state === "joined" || existing.state === "joining")) return;
 
             const profilesStore = useProfilesStore();
 
@@ -213,12 +235,7 @@ export const useMessagesStore = defineStore("messages", {
                         if (!raw) return;
 
                         await profilesStore.ensureLoaded([raw.user_id]);
-
-                        const normalized = normalizeMessage({
-                            ...raw,
-                            profiles: profilesStore.byId[raw.user_id],
-                        });
-
+                        const normalized = normalizeMessage({ ...raw, profiles: profilesStore.byId[raw.user_id] });
                         this._upsert(roomId, normalized);
                     }
                 );
@@ -226,117 +243,155 @@ export const useMessagesStore = defineStore("messages", {
             this.subs[roomId] = ch;
 
             ch.subscribe((status) => {
-                console.log("[messages.subscribe]", roomId, status, "state:", ch.state, new Date().toLocaleTimeString());
-
-                if (status === "SUBSCRIBED") {
-                    void this._catchUp(roomId);
-                    return;
-                }
-
+                console.log("[messages.subscribe]", roomId, status, "state:", ch.state);
                 if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
                     setTimeout(() => {
                         if (this.subs[roomId] === ch) {
                             this.unsubscribe(roomId).finally(() => this.subscribe(roomId));
                         }
-                    }, 600);
+                    }, 700);
                 }
             });
-
-            setTimeout(() => {
-                if (this.subs[roomId] === ch && ch.state === "closed") {
-                    console.warn("[messages.subscribe] watchdog: channel is closed, resubscribing", roomId);
-                    this.unsubscribe(roomId).finally(() => this.subscribe(roomId));
-                }
-            }, 1500);
         },
 
         async unsubscribe(roomId) {
             const ch = this.subs[roomId];
             if (!ch) return;
-
             try { await ch.unsubscribe(); } catch (_) { }
             try { await supabase.removeChannel(ch); } catch (_) { }
-
             delete this.subs[roomId];
         },
 
+        async _fetchByClientId(roomId, clientId) {
+            // REST select by client_id (so we stay consistent with the send path)
+            const q = `messages?select=id,room_id,user_id,text,created_at,reply_to_id,client_id&room_id=eq.${encodeURIComponent(
+                roomId
+            )}&client_id=eq.${encodeURIComponent(clientId)}&order=created_at.desc&limit=1`;
+
+            const rows = await restRequest(q, { method: "GET" });
+            return Array.isArray(rows) && rows.length ? rows[0] : null;
+        },
+
+        /**
+         * ✅ Stable send (no supabase-js insert):
+         * - attempt 1: REST insert with AbortController timeout
+         * - recover: ensureRealtime + REST upsert (merge duplicates) + fetch by client_id
+         *
+         * Requires unique index on (room_id, client_id).
+         */
         async send(roomId, text, replyToId = null) {
+            console.log("[messages.send] start", {
+                roomId,
+                hasUser: !!session.value?.user?.id,
+                vis: document.visibilityState,
+                online: navigator.onLine,
+                t: Date.now(),
+            });
+
+            const userId = session.value?.user?.id;
+            if (!userId || !roomId) throw new Error("Missing auth or roomId");
+
             const clean = String(text ?? "").trim();
             if (!clean) return;
 
-            const tryOnce = async () => {
-                const userId = session.value?.user?.id;
-                if (!userId || !roomId) throw new Error("Missing auth or roomId");
+            const profilesStore = useProfilesStore();
+            const clientId = uuidish();
 
-                const { data, error } = await supabase
-                    .from("messages")
-                    .insert({
-                        room_id: roomId,
-                        user_id: userId,
-                        text: clean,
-                        reply_to_id: replyToId,
-                    })
-                    .select("id, room_id, user_id, text, created_at, reply_to_id")
-                    .single();
+            const timeoutMs = 7000;
 
-                if (error) throw error;
-                return { data, userId };
+            const insertOnce = async () => {
+                const ac = new AbortController();
+                const timer = setTimeout(() => {
+                    console.warn("[messages.send] ABORT (timeout)", { timeoutMs });
+                    ac.abort();
+                }, timeoutMs);
+
+                try {
+                    const q = `messages?select=id,room_id,user_id,text,created_at,reply_to_id,client_id`;
+                    const rows = await restRequest(q, {
+                        method: "POST",
+                        body: {
+                            room_id: roomId,
+                            user_id: userId,
+                            text: clean,
+                            reply_to_id: replyToId,
+                            client_id: clientId,
+                        },
+                        signal: ac.signal,
+                        headers: {
+                            Prefer: "return=representation",
+                        },
+                    });
+
+                    const row = Array.isArray(rows) ? rows[0] : rows;
+                    console.log("[messages.send] insert returned", { attempt: "first", hasRow: !!row });
+                    if (!row) throw new Error("Insert returned no row");
+                    return row;
+                } finally {
+                    clearTimeout(timer);
+                }
+            };
+
+            const upsertAndFetch = async (why) => {
+                console.warn("[messages.send] recover => upsert+fetch", { why });
+                await this.ensureRealtime(`send-recover-${why}`);
+
+                // PostgREST upsert: use on_conflict and Prefer resolution=merge-duplicates
+                // NOTE: requires unique index on (room_id, client_id)
+                const qUpsert = `messages?on_conflict=room_id,client_id&select=id,room_id,user_id,text,created_at,reply_to_id,client_id`;
+
+                try {
+                    await restRequest(qUpsert, {
+                        method: "POST",
+                        body: {
+                            room_id: roomId,
+                            user_id: userId,
+                            text: clean,
+                            reply_to_id: replyToId,
+                            client_id: clientId,
+                        },
+                        headers: {
+                            Prefer: "resolution=merge-duplicates,return=representation",
+                        },
+                    });
+                } catch (e) {
+                    console.warn("[messages.send] upsert error (continue)", e?.message || e);
+                }
+
+                const row = await this._fetchByClientId(roomId, clientId);
+                if (!row) throw new Error("Recover failed: message not found after upsert");
+                return row;
             };
 
             try {
-                const { data, userId } = await tryOnce();
+                const row = await insertOnce();
 
-                const profilesStore = useProfilesStore();
                 await profilesStore.ensureLoaded([userId]);
-
-                const normalized = normalizeMessage({
-                    ...data,
-                    profiles: profilesStore.byId[userId],
-                });
-
+                const normalized = normalizeMessage({ ...row, profiles: profilesStore.byId[userId] });
                 this._upsert(roomId, normalized);
                 this.markAsRead(roomId);
 
-                console.log("[messages.send] ok", {
-                    sessionUserId: session.value?.user?.id,
-                    roomId,
-                    replyToId,
-                    textLen: clean.length,
-                });
-
+                console.log("[messages.send] ok", { attempt: "first", roomId, textLen: clean.length });
                 return normalized;
-            } catch (e) {
-                console.warn("[messages.send] first try failed", e);
+            } catch (e1) {
+                if (isAbortLike(e1)) {
+                    const row = await upsertAndFetch("abort");
+                    await profilesStore.ensureLoaded([userId]);
+                    const normalized = normalizeMessage({ ...row, profiles: profilesStore.byId[userId] });
+                    this._upsert(roomId, normalized);
+                    this.markAsRead(roomId);
 
-                // ✅ one refresh attempt (resume/tab-switch usually breaks auth/socket)
-                try {
-                    await supabase.auth.getSession();
-                    await supabase.auth.refreshSession();
-                } catch (refreshErr) {
-                    console.warn("[messages.send] refreshSession failed", refreshErr);
+                    console.log("[messages.send] ok", { attempt: "recover", roomId, textLen: clean.length });
+                    return normalized;
                 }
 
-                // ✅ retry once
-                const { data, userId } = await tryOnce();
-
-                const profilesStore = useProfilesStore();
+                const row = await upsertAndFetch(e1?.message || "error");
                 await profilesStore.ensureLoaded([userId]);
-
-                const normalized = normalizeMessage({
-                    ...data,
-                    profiles: profilesStore.byId[userId],
-                });
-
+                const normalized = normalizeMessage({ ...row, profiles: profilesStore.byId[userId] });
                 this._upsert(roomId, normalized);
                 this.markAsRead(roomId);
 
-                console.log("[messages.send] ok after refresh", {
-                    sessionUserId: session.value?.user?.id,
-                    roomId,
-                    replyToId,
-                    textLen: clean.length,
-                });
-
+                console.log("[messages.send] ok", { attempt: "recover", roomId, textLen: clean.length });
                 return normalized;
             }
         },

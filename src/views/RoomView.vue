@@ -96,7 +96,9 @@
 
         const roomKey = String(route.params.id || "living");
 
-        const ok = await presence.connect(houseId, roomKey);
+        // connect מתבצע רק ב-AppShell כשהבית מוכן
+        const ok = await presence.setRoom(roomKey);
+
 
         if (ok) {
             house.enterRoom?.(roomKey);

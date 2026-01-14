@@ -591,36 +591,14 @@
        ✅ LOAD rooms + presence connect when house changes
        ========================= */
     watch(
-        [() => house.currentHouseId, () => route.name, () => route.params.id],
-        async ([houseId, rName, rId]) => {
-            if (!houseId) return;
-
-            // טען חדרים (לא חוסם)
-            void roomsStore.loadForHouse(houseId).catch(console.error);
-
-            // ✅ קובע חדר לפי ה-URL (כולל ריענון)
-            const path = window.location.pathname || "";
-            const m = path.match(/^\/room\/([^\/?#]+)/);
-            const roomFromPath = m ? decodeURIComponent(m[1]) : null;
-
-            const roomFromRoute =
-                (rName === "room")
-                    ? (typeof rId === "string" && rId ? rId : (roomFromPath || "living"))
-                    : (roomFromPath || "living"); // אם route.name עוד לא מוכן בזמן ריענון
-
-            const ok = await presence.connect(houseId, roomFromRoute);
-
-            // ✅ אל תדרוס ל-living אף פעם פה.
-            // אם אנחנו באמת במסך חדר – נאכוף את החדר לפי ה-URL (למקרה שה-channel כבר היה קיים)
-            if (ok && (rName === "room" || !!roomFromPath)) {
-                house.enterRoom?.(roomFromRoute);
-            }
+        () => houseStore.activeHouseId,   // או whatever אצלך
+        async (houseId) => {
+            if (!houseId) return;           // ✅ זה הדבר שחסר לך
+            await presence.connect({ houseId, initialRoom: presence.roomName || "living" });
         },
         { immediate: true }
-
-    
-
     );
+
 
 
 
@@ -960,12 +938,37 @@
         // iOS sometimes leaves the page panned horizontally
         window.scrollTo({ left: 0, top: window.scrollY, behavior: "instant" });
     }
+    function resetGestures(reason) {
+        console.log("[AppShell] resetGestures", reason);
+
+        swipeActive.value = false;
+        swipeLockedHorizontal.value = false;
+        touchDragging.value = false;
+
+        // סגור drawer אם איכשהו הוא נשאר “פתוח-שקוף”
+        if (mobileNavOpen.value) {
+            mobileNavOpen.value = false;
+            drawerTranslateX.value = -drawerWidth();
+            overlayOpacity.value = 0;
+            drawerHistoryPushed.value = false;
+        }
+    }
+
+    function onVis() {
+        if (document.visibilityState === "visible") resetGestures("visibility:visible");
+    }
+    function onPageShow(e) {
+        // BFCache restore
+        resetGestures("pageshow" + (e?.persisted ? ":persisted" : ""));
+    }
     onMounted(() => {
         attachAfkListeners();
         scheduleAfk();
         recalcDrawerW();
-
         resetHorizontalScroll();
+
+        document.addEventListener("visibilitychange", onVis, { passive: true });
+        window.addEventListener("pageshow", onPageShow, { passive: true });
         window.addEventListener("orientationchange", resetHorizontalScroll, { passive: true });
         window.addEventListener("resize", resetHorizontalScroll, { passive: true });
 
@@ -975,12 +978,28 @@
         window.addEventListener("touchmove", onTouchMoveGlobal, { capture: true, passive: false });
         window.addEventListener("touchend", onTouchEndGlobal, { capture: true, passive: true });
         window.addEventListener("pointerdown", onGlobalPointerDown, { capture: true });
+
+        window.addEventListener("pageshow", (e) => {
+            if (e?.persisted) {
+                console.warn("[BFCache] restored -> reloading");
+                window.location.reload();
+            }
+        });
+        document.addEventListener("visibilitychange", () => {
+            if (document.visibilityState === "visible") {
+                // אם אתה רואה שהבאג חוזר גם בלי persisted – תפעיל גם את זה
+                // window.location.reload();
+            }
+        });
+
     });
 
     onBeforeUnmount(() => {
         detachAfkListeners();
         clearAfkTimer();
 
+        document.removeEventListener("visibilitychange", onVis);
+        window.removeEventListener("pageshow", onPageShow);
         window.removeEventListener("resize", recalcDrawerW);
         window.removeEventListener("popstate", onPopState);
         window.removeEventListener("touchstart", onTouchStartGlobal, { capture: true });

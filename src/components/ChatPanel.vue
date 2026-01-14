@@ -4,9 +4,9 @@
         <Transition name="copied-pop">
             <div v-if="copiedToast.show"
                  class="absolute top-12 left-1/2 -translate-x-1/2 z-[80]
-               px-3 py-1.5 rounded-xl border border-white/10
-               bg-black/80 backdrop-blur-md shadow-2xl
-               text-[12px] text-white/80">
+                  px-3 py-1.5 rounded-xl border border-white/10
+                  bg-black/80 backdrop-blur-md shadow-2xl
+                  text-[12px] text-white/80">
                 Copied
             </div>
         </Transition>
@@ -14,9 +14,9 @@
         <Transition name="copied-pop">
             <div v-if="sendErrorToast.show"
                  class="absolute top-12 left-1/2 -translate-x-1/2 z-[80]
-               px-3 py-1.5 rounded-xl border border-white/10
-               bg-black/80 backdrop-blur-md shadow-2xl
-               text-[12px] text-white/80">
+                  px-3 py-1.5 rounded-xl border border-white/10
+                  bg-black/80 backdrop-blur-md shadow-2xl
+                  text-[12px] text-white/80">
                 {{ sendErrorToast.msg }}
             </div>
         </Transition>
@@ -53,10 +53,10 @@
                         <div :id="'msg-' + msg.id"
                              class="group relative flex items-start gap-3 transition-all p-1 rounded-xl"
                              :class="[
-                swipingId === msg.id ? 'transition-none' : 'duration-300',
-                highlightedId === msg.id ? 'bg-green-500/20 ring-1 ring-green-500/40' : '',
-                replyingTo?.id === msg.id ? 'bg-white/5 ring-1 ring-white/10' : ''
-              ]"
+                    swipingId === msg.id ? 'transition-none' : 'duration-300',
+                    highlightedId === msg.id ? 'bg-green-500/20 ring-1 ring-green-500/40' : '',
+                    replyingTo?.id === msg.id ? 'bg-white/5 ring-1 ring-white/10' : ''
+                  ]"
                              :style="swipingId === msg.id ? { transform: `translateX(-${swipeOffset}px)` } : { transform: 'translateX(0)' }"
                              @touchstart="onTouchStart($event, msg)"
                              @touchmove="onTouchMove($event)"
@@ -67,8 +67,9 @@
                              @pointerup="onPointerUp"
                              @pointercancel="onPointerUp"
                              @pointerleave="onPointerUp">
+
                             <div class="hidden md:flex absolute top-1 right-2 bg-black/90 backdrop-blur-md border border-white/20 rounded-lg shadow-2xl p-0.5 z-[50]
-                       opacity-0 group-hover:opacity-100 transition-all scale-90 group-hover:scale-100 origin-right">
+                          opacity-0 group-hover:opacity-100 transition-all scale-90 group-hover:scale-100 origin-right">
                                 <button @click="setReply(msg)" class="p-1.5 hover:bg-green-500/20 rounded-md text-white/60 hover:text-green-400">
                                     <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -112,6 +113,7 @@
                                     {{ msg.text }}
                                 </div>
                             </div>
+
                         </div>
                     </div>
                 </template>
@@ -124,8 +126,8 @@
             <button v-if="!isAtBottom"
                     @click="scrollToBottom(true)"
                     class="absolute bottom-20 left-1/2 -translate-x-1/2 flex items-center justify-center
-               w-8 h-8 rounded-full bg-white/10 backdrop-blur-md border border-white/10
-               text-white/70 hover:bg-white/20 hover:text-white transition-all z-20 shadow-lg">
+                     w-8 h-8 rounded-full bg-white/10 backdrop-blur-md border border-white/10
+                     text-white/70 hover:bg-white/20 hover:text-white transition-all z-20 shadow-lg">
                 <span class="text-lg leading-none">☟</span>
             </button>
         </Transition>
@@ -141,12 +143,12 @@
                 <button @click="replyingTo = null" class="text-white/30 hover:text-white text-xs px-2">✕</button>
             </div>
 
-            <!-- ✅ Typing bar (יותר נמוך) -->
+            <!-- ✅ Typing bar -->
             <Transition name="typing-pop">
                 <div v-if="typingLabel"
                      class="px-3 sm:px-4 py-0.5 text-[11px] leading-4
-                 bg-black/40 backdrop-blur border-t border-white/10
-                 text-white/60 flex items-center">
+                    bg-black/40 backdrop-blur border-t border-white/10
+                    text-white/60 flex items-center">
                     <div class="typing-row">
                         <div class="typing-dots" aria-hidden="true">
                             <span></span><span></span><span></span>
@@ -170,7 +172,7 @@
                           class="flex-1 bg-white/5 border border-white/10 rounded-2xl px-4 py-2 text-sm outline-none focus:border-green-500/30 transition resize-none min-h-[40px] max-h-32"></textarea>
 
                 <button type="submit"
-                        :disabled="!newMessage.trim()"
+                        :disabled="sending || !newMessage.trim()"
                         class="w-10 h-10 rounded-full bg-green-500 text-black flex items-center justify-center hover:scale-105 active:scale-95 transition-all disabled:opacity-20 shrink-0">
                     <span class="text-2xl leading-none select-none">➢</span>
                 </button>
@@ -199,6 +201,9 @@
     const inputEl = ref(null);
     const messagesContainer = ref(null);
     const bottomEl = ref(null);
+
+    // ✅ sending lock (prevents double/triple sends)
+    const sending = ref(false);
 
     // ✅ tiny toasts
     const copiedToast = ref({ show: false });
@@ -233,6 +238,8 @@
     let pointerStart = null;
     let pointerLongPressTimer = null;
     let pointerMoved = false;
+
+    let nativeSubmit = null;
 
     const roomUuid = computed(() => (house.currentRoom ? roomsStore.getRoomUuidByKey(house.currentRoom) : null));
     const currentRoomMeta = computed(() => (house.currentRoom ? roomsStore.byKey[house.currentRoom] : null));
@@ -282,7 +289,6 @@
     }
 
     function onContextMenu(e, msg) {
-        // desktop right click -> copy (clean and simple)
         e?.preventDefault?.();
         e?.stopPropagation?.();
         if (msg?.text) void copyToClipboard(msg.text, msg.id);
@@ -297,7 +303,6 @@
     }
 
     function onPointerDown(e, msg) {
-        // only primary button
         if (e.button !== 0) return;
         pointerMoved = false;
         pointerStart = { x: e.clientX, y: e.clientY, id: msg.id };
@@ -467,16 +472,32 @@
     function onComposerKeydown(e) {
         if (e.key !== "Enter") return;
         if (e.shiftKey) return;
+        if (sending.value) return;
         e.preventDefault();
         handleFormSubmit();
     }
 
     /* =========================
-       ✅ Send message (fix: don't clear until success)
+       ✅ Send message (NO timeout here)
        ========================= */
     async function handleFormSubmit() {
+        if (sending.value) return;
+
+        console.log("[send] submit", {
+            textLen: newMessage.value.length,
+            trimmedLen: newMessage.value.trim().length,
+            roomKey: house.currentRoom,
+            roomUuid: roomUuid.value,
+            roomsLoadedFor: roomsStore.loadedForHouseId,
+            houseId: house.currentHouseId,
+            online: navigator.onLine,
+            vis: document.visibilityState
+        });
+
         const text = newMessage.value.trim();
         if (!text || !roomUuid.value) return;
+
+        sending.value = true;
 
         const replyId = replyingTo.value?.id;
 
@@ -484,25 +505,33 @@
         await setTypingState(false);
 
         const draft = text;
+        const sendId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+        console.log("[send] start", { sendId, roomId: roomUuid.value, replyId, draftLen: draft.length });
+        console.time(`[send] ${sendId}`);
 
         try {
+            // ✅ Important: store handles timeout + recovery + retry
             await messagesStore.send(roomUuid.value, draft, replyId);
 
-            // ✅ only after success
+            console.timeEnd(`[send] ${sendId}`);
+            console.log("[send] success", { sendId });
+
             newMessage.value = "";
             replyingTo.value = null;
             if (inputEl.value) inputEl.value.style.height = "40px";
-
             scrollToBottom(true);
         } catch (e) {
-            console.error("[send failed]", e);
+            console.timeEnd(`[send] ${sendId}`);
+            console.error("[send failed]", { sendId, e });
 
-            // ✅ keep the message
             newMessage.value = draft;
 
             showSendError(
-                e?.message || e?.error_description || e?.details || "Send failed (auth/RLS?)"
+                e?.message || e?.error_description || e?.details || "Send failed"
             );
+        } finally {
+            sending.value = false;
         }
     }
 
@@ -558,7 +587,6 @@
                 return;
             }
 
-            // ✅ אם יש ערוץ אבל הוא תקוע/סגור — תבנה מחדש
             const ch = messagesStore.subs?.[id];
             const bad = ch && ch.state !== "joined" && ch.state !== "joining";
             if (bad) {
@@ -577,9 +605,29 @@
         if (isAtBottom.value) scrollToBottom(false);
     });
 
-    onMounted(() => scrollToBottom(true));
+    onMounted(() => {
+        scrollToBottom(true);
+
+        messagesStore.installRealtimeGuards?.();
+
+        nativeSubmit = (e) => {
+            console.log("[native] submit captured", {
+                target: e.target?.tagName,
+                time: new Date().toISOString(),
+                vis: document.visibilityState,
+            });
+        };
+
+        window.addEventListener("submit", nativeSubmit, true);
+
+        // debug hook (optional)
+        window.__gioSubmit = handleFormSubmit;
+        console.log("[debug] __gioSubmit attached");
+    });
 
     onBeforeUnmount(() => {
+        if (nativeSubmit) window.removeEventListener("submit", nativeSubmit, true);
+
         clearTypingTimers();
         void setTypingState(false);
 
@@ -596,12 +644,6 @@
         -webkit-touch-callout: none !important;
         -webkit-user-select: none !important;
         user-select: none !important;
-    }
-
-    textarea {
-        -webkit-touch-callout: default !important;
-        -webkit-user-select: text !important;
-        user-select: text !important;
     }
 
     .pb-safe {
@@ -709,5 +751,8 @@
     /* ✅ iOS zoom prevention */
     textarea {
         font-size: 16px;
+        -webkit-touch-callout: default !important;
+        -webkit-user-select: text !important;
+        user-select: text !important;
     }
 </style>

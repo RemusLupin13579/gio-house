@@ -1,473 +1,248 @@
 import { defineStore } from "pinia";
 import { supabase } from "../services/supabase";
-import { session, profile } from "../stores/auth";
-import { useRoomsStore } from "../stores/rooms";
+import { session } from "./auth";
 
-const TYPING_EXPIRE_MS = 4500; // אם לא קיבלנו update יותר מדי זמן -> נחשיב כלא מקליד
+function asArrayPresenceState(stateObj) {
+    // stateObj shape: { userId: [payload, payload, ...], ... }
+    if (!stateObj || typeof stateObj !== "object") return [];
+    const out = [];
+    for (const [uid, arr] of Object.entries(stateObj)) {
+        const payload = Array.isArray(arr) ? arr[0] : arr;
+        if (payload) out.push({ uid, ...payload });
+    }
+    return out;
+}
 
 export const usePresenceStore = defineStore("presence", {
     state: () => ({
+        houseId: null,
+        userId: null,
+
+        status: "offline",
+        roomName: "living",
+        lastRoom: "living",
+
+        // Realtime channel
         channel: null,
-        channelHouseId: null,
-        users: {},
-        ready: false,
+        channelTopic: null,
 
-        // anti-race + retry
-        connectSeq: 0,
-        retryTimer: null,
+        // Presence state snapshot (from realtime)
+        presenceState: {},
 
-        // ✅ connection status (socket)
-        status: "idle", // "idle" | "connecting" | "ready" | "failed"
-
-        // ✅ user status (what the user actually is)
-        myUserStatus: "online", // "online" | "afk" | "offline"
-
-        // ✅ NEW: prevent double-connect race on reload
-        connectPromise: null,
-        connectPromiseHouseId: null,
+        // guards
+        _connectPromise: null,
+        _connecting: false,
+        _connected: false,
+        _lastConnectAt: 0,
     }),
 
     getters: {
-        usersInRoom: (state) => (roomName) => {
-            const roomsStore = useRoomsStore();
-            const activeKeys = new Set((roomsStore.activeRooms ?? []).map((r) => r.key));
-
-            return Object.values(state.users).filter((u) => {
-                const raw = u.room_name ?? "living";
-                const safeRoom = activeKeys.has(raw) ? raw : "living";
-                return safeRoom === roomName;
-            });
-        },
-
-        // ✅ typing users in room (excluding stale)
-        typingUsersInRoom: (state) => (roomName) => {
-            const roomsStore = useRoomsStore();
-            const activeKeys = new Set((roomsStore.activeRooms ?? []).map((r) => r.key));
-
-            const now = Date.now();
-            return Object.values(state.users).filter((u) => {
-                const raw = u.room_name ?? "living";
-                const safeRoom = activeKeys.has(raw) ? raw : "living";
-                if (safeRoom !== roomName) return false;
-
-                if (!u.typing) return false;
-
-                const ts = Number(u.typing_ts || 0);
-                if (!ts) return false;
-
-                // expire
-                if (now - ts > TYPING_EXPIRE_MS) return false;
-
-                // optional: אם user offline, אל תציג
-                if ((u.user_status ?? "online") === "offline") return false;
-
-                return true;
-            });
-        },
-
-        usersByRoom: (state) => {
-            const grouped = {};
-            for (const u of Object.values(state.users)) {
-                const key = u.room_name ?? "unknown";
-                if (!grouped[key]) grouped[key] = [];
-                grouped[key].push(u);
-            }
-            return grouped;
+        // convenience: all users (flattened)
+        users(state) {
+            return asArrayPresenceState(state.presenceState);
         },
     },
 
     actions: {
-        _clearRetry() {
-            if (this.retryTimer) clearTimeout(this.retryTimer);
-            this.retryTimer = null;
+        /**
+         * Used by templates: presenceStore.usersInRoom('living')
+         */
+        usersInRoom(roomName) {
+            const room = roomName || "living";
+            return this.users.filter((u) => (u.room || "living") === room);
         },
 
-        async _hardDisconnect() {
-            this._clearRetry();
+        isConnected() {
+            return !!this.channel && this._connected;
+        },
 
-            if (!this.channel) {
-                this.channel = null;
-                this.channelHouseId = null;
-                this.users = {};
-                this.ready = false;
+        /**
+         * Connect ONCE per houseId. Safe if called too early (houseId undefined): no-op + warn.
+         */
+        async connect({ houseId, initialRoom = "living" } = {}) {
+            const userId = session.value?.user?.id;
+
+            console.log("[presence.connect] start", { houseId, userId, hasToken: !!session.value });
+
+            // ✅ IMPORTANT: do not throw -> avoids render crashes when callers race.
+            if (!houseId) {
+                console.warn("[presence.connect] missing houseId (ignored)");
+                return;
+            }
+            if (!userId) {
+                console.warn("[presence.connect] missing userId (ignored)");
                 return;
             }
 
-            try {
-                await this.channel.unsubscribe();
-            } catch (_) { }
-            try {
-                await supabase.removeChannel(this.channel);
-            } catch (_) { }
-
-            this.channel = null;
-            this.channelHouseId = null;
-            this.users = {};
-            this.ready = false;
-        },
-
-        async connect(houseId, initialRoom = "living") {
-            const userId = session.value?.user?.id;
-            const token = session.value?.access_token;
-            const safeInitial = initialRoom || "living";
-
-            console.log("[presence.connect] start", { houseId, userId, hasToken: !!token });
-            console.log("[presence.connect] start", { houseId, initialRoom, userId, hasToken: !!token });
-            console.trace("[presence.connect] caller stack");
-
-            if (!userId || !houseId) {
-                this.status = "failed";
-                this.ready = false;
-                return false;
+            // if already connected to same house, just ensure room tracked
+            const sameHouse = this._connected && this.houseId === houseId && this.channel;
+            if (sameHouse) {
+                this.userId = userId;
+                this.houseId = houseId;
+                if (initialRoom) await this.setRoom(initialRoom);
+                return;
             }
 
-            // ✅ Single-flight
-            if (this.connectPromise && this.connectPromiseHouseId === houseId) {
-                const ok = await this.connectPromise;
-                if (ok && initialRoom && this.channel && this.channelHouseId === houseId) {
-                    const me = this.users?.[userId];
-                    const cur = me?.room_name ?? me?.last_room ?? "living";
-                    if (initialRoom !== cur) await this.setRoom(initialRoom);
-                }
-                return ok;
-            }
+            // reuse in-flight connect
+            if (this._connectPromise) return this._connectPromise;
 
-            this.connectSeq += 1;
-            const seq = this.connectSeq;
+            // throttle reconnect storms
+            const now = Date.now();
+            if (now - this._lastConnectAt < 800 && this._connecting) return this._connectPromise;
+            this._lastConnectAt = now;
 
-            // ✅ Already connected
-            if (this.channel && this.channelHouseId === houseId) {
-                this.status = "ready";
-                this.ready = true;
+            this._connecting = true;
 
-                const me = this.users?.[userId];
-                const cur = me?.room_name ?? me?.last_room ?? "living";
-                if (initialRoom && initialRoom !== cur) {
-                    await this.setRoom(initialRoom);
-                }
-                return true;
-            }
-
-            this.status = "connecting";
-            this.ready = false;
-
-            await this._hardDisconnect();
-            if (seq !== this.connectSeq) return false;
-
-            // realtime auth
-            try {
-                if (token && supabase.realtime?.setAuth) supabase.realtime.setAuth(token);
-            } catch (e) {
-                console.warn("[presence.connect] realtime setAuth failed", e);
-            }
-
-            const channelName = `presence:house:${houseId}`;
-
-            const buildPayload = (overrides = {}) => {
-                const me = this.users?.[userId];
-
-                // ✅ last real room (never "afk" as a room)
-                const lastRoom = overrides.last_room ?? me?.last_room ?? me?.room_name ?? "living";
-                const roomName = overrides.room_name ?? lastRoom;
-
-                const typing = overrides.typing ?? me?.typing ?? false;
-                const typingTs = overrides.typing_ts ?? me?.typing_ts ?? null;
-
-                return {
-                    user_id: userId,
-                    house_id: houseId,
-                    nickname: profile.value?.nickname ?? "User",
-                    avatar_url: profile.value?.avatar_url ?? null,
-
-                    room_name: roomName,
-                    last_room: lastRoom,
-
-                    // ✅ real user status
-                    user_status: overrides.user_status ?? this.myUserStatus ?? "online",
-
-                    // ✅ typing state
-                    typing,
-                    typing_ts: typing ? (typingTs || Date.now()) : null,
-
-                    ts: Date.now(),
-                };
-            };
-
-            const attemptOnce = async () => {
-                const ch = supabase.channel(channelName, {
-                    config: { presence: { key: userId } },
-                });
-
-                console.log("[presence.connect] channel created", { houseId, topic: ch?.topic });
-
-                ch.on("presence", { event: "sync" }, () => {
-                    try {
-                        const state = ch.presenceState();
-                        const next = {};
-                        for (const [k, arr] of Object.entries(state)) {
-                            next[k] = arr[arr.length - 1];
-                        }
-                        this.users = next;
-                        this.ready = true;
-                        this.status = "ready";
-
-                        const me = next?.[userId];
-                        if (me?.user_status) this.myUserStatus = me.user_status;
-                    } catch (e) {
-                        console.warn("[presence] sync handler failed", e);
+            this._connectPromise = (async () => {
+                try {
+                    // cleanup old channel
+                    if (this.channel) {
+                        try { await this.channel.unsubscribe(); } catch (_) { }
+                        try { await supabase.removeChannel(this.channel); } catch (_) { }
                     }
-                });
 
-                const ok = await new Promise((resolve) => {
-                    let done = false;
-                    const finish = (v) => {
-                        if (done) return;
-                        done = true;
-                        resolve(v);
-                    };
+                    this.channel = null;
+                    this.channelTopic = null;
+                    this.presenceState = {};
+                    this._connected = false;
 
-                    const timer = setTimeout(() => finish(false), 9000);
+                    this.houseId = houseId;
+                    this.userId = userId;
+                    this.roomName = initialRoom || this.roomName || "living";
+                    this.lastRoom = this.roomName;
 
-                    ch.subscribe(async (status) => {
-                        console.log("[presence.connect] status", status);
+                    const topic = `realtime:presence:house:${houseId}`;
+                    this.channelTopic = topic;
 
-                        if (status === "SUBSCRIBED") {
-                            clearTimeout(timer);
+                    const ch = supabase.channel(topic, {
+                        config: { presence: { key: userId } },
+                    });
 
-                            try {
-                                await ch.track(
-                                    buildPayload({
-                                        user_status: "online",
-                                        room_name: safeInitial,
-                                        last_room: safeInitial,
-                                        typing: false,
-                                        typing_ts: null,
-                                    })
-                                );
-                            } catch (e) {
-                                console.warn("[presence.connect] track failed", e);
-                            }
+                    this.channel = ch;
+                    console.log("[presence.connect] channel created", { houseId, topic });
 
-                            finish(true);
-                            return;
-                        }
-
-                        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-                            clearTimeout(timer);
-                            finish(false);
+                    // presence event wiring
+                    ch.on("presence", { event: "sync" }, () => {
+                        try {
+                            this.presenceState = ch.presenceState() || {};
+                        } catch (e) {
+                            console.warn("[presence] presenceState read failed", e?.message || e);
                         }
                     });
-                });
 
-                if (seq !== this.connectSeq) {
-                    try {
-                        await ch.unsubscribe();
-                    } catch (_) { }
-                    try {
-                        await supabase.removeChannel(ch);
-                    } catch (_) { }
-                    return { ok: false, ch: null };
+                    ch.on("presence", { event: "join" }, () => {
+                        try {
+                            this.presenceState = ch.presenceState() || {};
+                        } catch (_) { }
+                    });
+
+                    ch.on("presence", { event: "leave" }, () => {
+                        try {
+                            this.presenceState = ch.presenceState() || {};
+                        } catch (_) { }
+                    });
+
+                    const trackSelf = async () => {
+                        if (!this.channel) return;
+                        await this.channel.track({
+                            user_id: userId,
+                            status: this.status === "offline" ? "online" : (this.status || "online"),
+                            room: this.roomName || "living",
+                            t: Date.now(),
+                        });
+                    };
+
+                    await new Promise((resolve, reject) => {
+                        ch.subscribe(async (st) => {
+                            console.log("[presence.connect] status", st);
+
+                            if (st === "SUBSCRIBED") {
+                                this._connected = true;
+                                this.status = this.status === "offline" ? "online" : this.status;
+                                try { await trackSelf(); } catch (_) { }
+                                resolve();
+                                return;
+                            }
+
+                            if (st === "CHANNEL_ERROR" || st === "TIMED_OUT" || st === "CLOSED") {
+                                this._connected = false;
+                                reject(new Error(`presence subscribe failed: ${st}`));
+                            }
+                        });
+                    });
+
+                    await trackSelf();
+                } finally {
+                    this._connecting = false;
+                    this._connectPromise = null;
                 }
-
-                if (!ok) {
-                    try {
-                        await ch.unsubscribe();
-                    } catch (_) { }
-                    try {
-                        await supabase.removeChannel(ch);
-                    } catch (_) { }
-                    return { ok: false, ch: null };
-                }
-
-                this.channel = ch;
-                this.channelHouseId = houseId;
-
-                const payload = buildPayload({
-                    user_status: "online",
-                    room_name: safeInitial,
-                    last_room: safeInitial,
-                    typing: false,
-                    typing_ts: null,
-                });
-
-                this.users = { ...(this.users || {}), [userId]: payload };
-                this.myUserStatus = payload.user_status;
-
-                this.ready = true;
-                this.status = "ready";
-                return { ok: true, ch };
-            };
-
-            this.connectPromiseHouseId = houseId;
-            this.connectPromise = (async () => {
-                const delays = [0, 500, 1200, 2500];
-
-                for (let i = 0; i < delays.length; i++) {
-                    if (seq !== this.connectSeq) return false;
-                    if (delays[i]) await new Promise((r) => setTimeout(r, delays[i]));
-
-                    try {
-                        const res = await attemptOnce();
-                        if (res.ok) return true;
-                    } catch (e) {
-                        console.warn("[presence.connect] attempt crashed", e);
-                    }
-                }
-
-                this.status = "failed";
-                this.ready = false;
-                this.users = {};
-                console.warn("[presence.connect] failed after retries", { houseId, channelName });
-                return false;
             })();
 
-            const ok = await this.connectPromise;
-
-            this.connectPromise = null;
-            this.connectPromiseHouseId = null;
-
-            if (ok && initialRoom && this.channel && this.channelHouseId === houseId) {
-                const me = this.users?.[userId];
-                const cur = me?.room_name ?? me?.last_room ?? "living";
-                if (initialRoom !== cur) await this.setRoom(initialRoom);
+            // If it fails, we don't want unhandled rejections up the tree
+            try {
+                return await this._connectPromise;
+            } catch (e) {
+                console.warn("[presence.connect] failed", e?.message || e);
+                return;
             }
-
-            return ok;
         },
 
+        /**
+         * Update room without reconnecting
+         */
         async setRoom(roomName) {
-            if (!this.channel) return false;
+            const clean = roomName || "living";
+            const prev = this.roomName;
 
-            const userId = session.value?.user?.id;
-            if (!userId) return false;
+            this.lastRoom = prev || this.lastRoom || "living";
+            this.roomName = clean;
 
-            if (roomName === "afk") roomName = "living";
+            console.log("[presence.setRoom]", { roomName: clean, lastRoom: this.lastRoom, status: this.status });
 
-            const me = this.users?.[userId];
-            const lastRoom = roomName || me?.last_room || me?.room_name || "living";
-
-            const nextStatus = this.myUserStatus === "offline" ? "offline" : "online";
-            this.myUserStatus = nextStatus;
-
-            console.log("[presence.setRoom]", { roomName, lastRoom, status: nextStatus });
+            if (!this.channel || !this._connected) return;
 
             try {
                 await this.channel.track({
-                    user_id: userId,
-                    house_id: this.channelHouseId,
-                    nickname: profile.value?.nickname ?? "User",
-                    avatar_url: profile.value?.avatar_url ?? null,
-                    room_name: roomName,
-                    last_room: lastRoom,
-                    user_status: nextStatus,
-
-                    // ✅ typing reset on room change (אופציונלי אבל מומלץ)
-                    typing: false,
-                    typing_ts: null,
-
-                    ts: Date.now(),
+                    user_id: this.userId,
+                    status: this.status || "online",
+                    room: this.roomName,
+                    t: Date.now(),
                 });
-                return true;
             } catch (e) {
-                console.warn("[presence.setRoom] failed", e);
-                return false;
+                console.warn("[presence.setRoom] track failed", e?.message || e);
             }
         },
 
-        async setUserStatus(user_status) {
-            if (!this.channel) return false;
-
-            const userId = session.value?.user?.id;
-            if (!userId) return false;
-
-            if (!["online", "afk", "offline"].includes(user_status)) {
-                console.warn("[presence.setUserStatus] invalid status:", user_status);
-                return false;
-            }
-
-            const me = this.users?.[userId];
-            const lastRoom = me?.last_room || me?.room_name || "living";
-
-            this.myUserStatus = user_status;
-
-            console.log("[presence.setUserStatus]", { user_status, lastRoom, houseId: this.channelHouseId });
+        async setStatus(status) {
+            this.status = status || "online";
+            if (!this.channel || !this._connected) return;
 
             try {
                 await this.channel.track({
-                    user_id: userId,
-                    house_id: this.channelHouseId,
-                    nickname: profile.value?.nickname ?? "User",
-                    avatar_url: profile.value?.avatar_url ?? null,
-
-                    room_name: lastRoom,
-                    last_room: lastRoom,
-
-                    user_status,
-
-                    // ✅ אם עברת offline/afk – לא “מקליד”
-                    typing: false,
-                    typing_ts: null,
-
-                    ts: Date.now(),
+                    user_id: this.userId,
+                    status: this.status,
+                    room: this.roomName || "living",
+                    t: Date.now(),
                 });
-                return true;
             } catch (e) {
-                console.warn("[presence.setUserStatus] failed", e);
-                return false;
-            }
-        },
-
-        // ✅ NEW: typing state
-        async setTyping(isTyping) {
-            if (!this.channel) return false;
-
-            const userId = session.value?.user?.id;
-            if (!userId) return false;
-
-            const me = this.users?.[userId];
-            const lastRoom = me?.last_room || me?.room_name || "living";
-
-            // אם אני offline – אין typing
-            if (this.myUserStatus === "offline") isTyping = false;
-
-            try {
-                await this.channel.track({
-                    user_id: userId,
-                    house_id: this.channelHouseId,
-                    nickname: profile.value?.nickname ?? "User",
-                    avatar_url: profile.value?.avatar_url ?? null,
-
-                    room_name: lastRoom,
-                    last_room: lastRoom,
-
-                    user_status: this.myUserStatus ?? "online",
-
-                    typing: !!isTyping,
-                    typing_ts: isTyping ? Date.now() : null,
-
-                    ts: Date.now(),
-                });
-
-                // optimistic
-                this.users = {
-                    ...(this.users || {}),
-                    [userId]: {
-                        ...(this.users?.[userId] || {}),
-                        typing: !!isTyping,
-                        typing_ts: isTyping ? Date.now() : null,
-                    },
-                };
-
-                return true;
-            } catch (e) {
-                console.warn("[presence.setTyping] failed", e);
-                return false;
+                console.warn("[presence.setStatus] track failed", e?.message || e);
             }
         },
 
         async disconnect() {
-            await this._hardDisconnect();
-            this.status = "idle";
+            this._connected = false;
+            this._connecting = false;
+            this._connectPromise = null;
+            this.presenceState = {};
+
+            if (this.channel) {
+                try { await this.channel.unsubscribe(); } catch (_) { }
+                try { await supabase.removeChannel(this.channel); } catch (_) { }
+            }
+
+            this.channel = null;
+            this.channelTopic = null;
+            this.status = "offline";
         },
     },
 });
