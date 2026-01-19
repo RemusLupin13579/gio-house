@@ -16,7 +16,7 @@ export const supabase: SupabaseClient =
             persistSession: true,
             autoRefreshToken: true,
             detectSessionInUrl: true,
-            storageKey: "gio-auth", // מפתח ייחודי לאפליקציה שלך
+            storageKey: "gio-auth",
         },
         realtime: { params: { eventsPerSecond: 20 } },
     }));

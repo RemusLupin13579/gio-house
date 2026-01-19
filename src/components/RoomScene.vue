@@ -64,14 +64,47 @@
                 </div>
             </div>
 
-            <!-- Bottom stage -->
-            <div class="absolute inset-x-0 bottom-0 h-[28%] pointer-events-none">
-                <div class="absolute inset-0 bg-gradient-to-t from-black/70 via-black/25 to-transparent"></div>
-                <div class="absolute left-1/2 bottom-6 -translate-x-1/2 w-[min(720px,92vw)]">
-                    <div class="flex items-center justify-center gap-2 opacity-70">
+            <!-- ✅ Characters layer (bottom stage) -->
+            <div class="absolute inset-x-0 bottom-0 h-[34%] pointer-events-none">
+                <!-- stage gradient -->
+                <div class="absolute inset-0 bg-gradient-to-t from-black/75 via-black/25 to-transparent"></div>
+
+                <!-- characters row -->
+                <div class="absolute left-1/2 bottom-5 -translate-x-1/2 w-[min(980px,96vw)]">
+                    <div class="flex items-end justify-center gap-3 md:gap-4 flex-wrap">
+                        <div v-for="u in usersHere"
+                             :key="u.user_id"
+                             class="gio-char"
+                             :class="{ 'is-full': !!u?.avatar_full_url, 'is-profile': !u?.avatar_full_url }"
+                             :style="{ '--gio-name': normalizeColor(u.color || '#22c55e') }"
+                             :title="u.nickname || 'User'">
+                            <div class="gio-char__imgwrap">
+                                <img v-if="pickAvatar(u)"
+                                     :src="pickAvatar(u)"
+                                     class="gio-char__img"
+                                     :class="{ 'img-full': !!u?.avatar_full_url, 'img-profile': !u?.avatar_full_url }"
+                                     alt=""
+                                     draggable="false" />
+                                <div v-else class="gio-char__fallback">
+                                    {{ (u.nickname?.[0] || "•").toUpperCase() }}
+                                </div>
+                            </div>
+
+                            <!-- אם אתה עוד מתלבט לגבי השם: אפשר להחביא ולהראות רק בהובר / טאץ' -->
+                            <div class="gio-char__name">
+                                {{ u.nickname || "User" }}
+                            </div>
+                        </div>
+
+                    </div>
+
+                    <!-- hint -->
+                    <div class="mt-3 flex items-center justify-center gap-2 opacity-70">
                         <div class="h-1.5 w-1.5 rounded-full bg-white/60"></div>
                         <div class="h-[1px] w-16 bg-white/25"></div>
-                        <div class="text-[11px] text-white/55">בקרוב: אוואטרים בסצנה + אינטראקציות</div>
+                        <div class="text-[11px] text-white/55">
+                            כרגע זה “שורה יפה”. אחר כך נזרוק אותם לסצנה אמיתית עם מיקומים.
+                        </div>
                         <div class="h-[1px] w-16 bg-white/25"></div>
                         <div class="h-1.5 w-1.5 rounded-full bg-white/60"></div>
                     </div>
@@ -85,11 +118,13 @@
     import { computed } from "vue";
     import { useRoute } from "vue-router";
     import { useRoomsStore } from "../stores/rooms";
+    import { usePresenceStore } from "../stores/presence";
 
     const route = useRoute();
     const roomsStore = useRoomsStore();
+    const presence = usePresenceStore();
 
-    // ✅ FIX: תומך גם ב /room/:id וגם ב /room/:roomKey / :key
+    // ✅ supports /room/:id and /room/:roomKey / :key
     const roomKey = computed(() =>
         String(route.params.id || route.params.roomKey || route.params.key || "living")
     );
@@ -127,4 +162,145 @@
         if (!room.value) return "טוען חדר…";
         return bgUrl.value ? "רקע מותאם לחדר" : "רקע דיפולט עדין";
     });
+
+    // ✅ users in this room (online only)
+    const usersHere = computed(() => {
+        const list = presence.usersInRoom(roomKey.value) || [];
+        return list.filter((u) => (u.user_status ?? "online") === "online");
+    });
+
+    // ✅ pick avatar: full first, fallback to profile avatar
+    function pickAvatar(u) {
+        // אם מאוחר יותר תוסיף presence meta ל-avatar_full_url זה יתחיל לעבוד מיד
+        return u?.avatar_full_url || u?.avatar_url || null;
+    }
+
+    // ✅ normalize color to HEX if needed (supports hsl(...) stored earlier)
+    function normalizeColor(input) {
+        const v = String(input || "").trim();
+        if (!v) return "#22c55e";
+        if (/^#[0-9a-fA-F]{6}$/.test(v)) return v.toLowerCase();
+        if (/^#[0-9a-fA-F]{3}$/.test(v)) {
+            const r = v[1], g = v[2], b = v[3];
+            return (`#${r}${r}${g}${g}${b}${b}`).toLowerCase();
+        }
+        const m = v.match(/^hsl\(\s*([0-9.]+)\s*,\s*([0-9.]+)%\s*,\s*([0-9.]+)%\s*\)$/i);
+        if (m) return "#22c55e";
+        return "#22c55e";
+    }
 </script>
+
+<style scoped>
+    .gio-char {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
+        user-select: none;
+    }
+
+    /* ====== BASE WRAP ====== */
+    .gio-char__imgwrap {
+        display: flex;
+        align-items: flex-end;
+        justify-content: center;
+        overflow: visible; /* חשוב כדי שהדמות "תנשום" בלי להיחתך */
+    }
+
+    /* ====== FULL AVATAR (PNG transparent) ====== */
+    .gio-char.is-full .gio-char__imgwrap {
+        width: clamp(78px, 8.5vw, 108px);
+        height: clamp(92px, 10vw, 128px);
+        border: none;
+        background: transparent;
+        box-shadow: none;
+        border-radius: 0;
+    }
+
+    .gio-char.is-full .gio-char__img {
+        width: 100%;
+        height: 100%;
+        object-fit: contain; /* לא לחתוך – זה דמות */
+        filter: drop-shadow(0 14px 26px rgba(0,0,0,0.55)) saturate(1.02) contrast(1.02);
+        transform: translateY(2px);
+    }
+
+    /* ====== PROFILE FALLBACK (tile) ====== */
+    .gio-char.is-profile .gio-char__imgwrap {
+        width: 66px;
+        height: 66px;
+        border-radius: 22px;
+        border: 1px solid rgba(255,255,255,0.10);
+        background: rgba(0,0,0,0.35);
+        box-shadow: 0 14px 40px rgba(0,0,0,0.40);
+        overflow: hidden;
+    }
+
+    .gio-char.is-profile .gio-char__img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        filter: saturate(1.05) contrast(1.02);
+    }
+
+    /* ====== fallback letter ====== */
+    .gio-char__fallback {
+        width: 66px;
+        height: 66px;
+        border-radius: 22px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 900;
+        color: rgba(255,255,255,0.85);
+        background: rgba(255,255,255,0.06);
+        border: 1px solid rgba(255,255,255,0.10);
+    }
+
+    /* ====== name pill (אופציונלי) ====== */
+    .gio-char__name {
+        font-size: 12px;
+        font-weight: 900;
+        padding: 6px 10px;
+        border-radius: 999px;
+        border: 1px solid rgba(255,255,255,0.10);
+        background: rgba(0,0,0,0.35);
+        color: rgba(255,255,255,0.85);
+        box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+        max-width: 140px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        position: relative;
+        padding-left: 24px;
+        opacity: 0.95;
+    }
+
+        .gio-char__name::before {
+            content: "";
+            position: absolute;
+            left: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 8px;
+            height: 8px;
+            border-radius: 999px;
+            background: var(--gio-name, #22c55e);
+            box-shadow: 0 0 14px rgba(34,197,94,0.35);
+        }
+
+    /* אם אתה רוצה “טבעי” יותר: השם יופיע רק בהובר/טאץ' */
+    @media (hover: hover) {
+        .gio-char.is-full .gio-char__name {
+            opacity: 0;
+            transform: translateY(-2px);
+            transition: 160ms ease;
+        }
+
+        .gio-char.is-full:hover .gio-char__name {
+            opacity: 0.95;
+            transform: translateY(0);
+        }
+    }
+
+</style>

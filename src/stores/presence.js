@@ -51,9 +51,10 @@ export const usePresenceStore = defineStore("presence", {
                 room_name: this.roomName || "living",
                 user_status: "online",
 
-                // ✅ קודם כל profile אמיתי, אחר כך existing, ואז דיפולט
+                // ✅ profile -> existing -> defaults
                 nickname: p?.nickname || existing.nickname || "User",
                 avatar_url: p?.avatar_url || existing.avatar_url || null,
+                avatar_full_url: p?.avatar_full_url || existing.avatar_full_url || null, // ✅ NEW
                 color: p?.color || existing.color || "#22c55e",
 
                 ts: nowTs(),
@@ -118,6 +119,7 @@ export const usePresenceStore = defineStore("presence", {
                         user_id: uid,
                         nickname: meta?.nickname || "User",
                         avatar_url: meta?.avatar_url || null,
+                        avatar_full_url: meta?.avatar_full_url || null, // ✅ NEW
                         color: meta?.color || "#22c55e",
                         room_name: meta?.room_name || "living",
                         user_status: meta?.user_status || "online",
@@ -140,6 +142,7 @@ export const usePresenceStore = defineStore("presence", {
                     user_id: uid,
                     nickname: meta?.nickname || "User",
                     avatar_url: meta?.avatar_url || null,
+                    avatar_full_url: meta?.avatar_full_url || null, // ✅ NEW
                     color: meta?.color || "#22c55e",
                     room_name: meta?.room_name || "living",
                     user_status: meta?.user_status || "online",
@@ -163,7 +166,7 @@ export const usePresenceStore = defineStore("presence", {
                         await ch.track(this._selfMeta(userId));
                         this.status = "ready";
 
-                        // ✅ שני ניסיונות re-track כדי לתפוס פרופיל שהגיע אחרי החיבור
+                        // ✅ re-track to catch profile arriving after connect
                         setTimeout(() => void this.refreshSelf(), 250);
                         setTimeout(() => void this.refreshSelf(), 1200);
                     } catch (e) {
@@ -246,7 +249,6 @@ export const usePresenceStore = defineStore("presence", {
             }
         },
 
-        // alias to match AppShell
         async setUserStatus(s) {
             return this.setStatus(s);
         },

@@ -24,7 +24,8 @@ export async function fetchMyProfile() {
     try {
         const { data, error } = await supabase
             .from("profiles")
-            .select("id, nickname, avatar_url, color")
+            // ✅ כולל avatar_full_url כדי שהסצנה תוכל להציג דמות מלאה
+            .select("id, nickname, avatar_url, avatar_full_url, color")
             .eq("id", userId)
             .maybeSingle();
 
@@ -35,11 +36,20 @@ export async function fetchMyProfile() {
             id: userId,
             nickname: "User",
             avatar_url: null,
+            avatar_full_url: null,
             color: "#22c55e",
         };
 
-        profile.value = row;
-        return row;
+        // ✅ לנרמל/להבטיח שדות קיימים (כדי שלא יפלו consumers)
+        profile.value = {
+            id: row.id,
+            nickname: row.nickname || "User",
+            avatar_url: row.avatar_url || null,
+            avatar_full_url: row.avatar_full_url || null,
+            color: row.color || "#22c55e",
+        };
+
+        return profile.value;
     } catch {
         profile.value =
             profile.value ||
@@ -47,8 +57,15 @@ export async function fetchMyProfile() {
                 id: userId,
                 nickname: "User",
                 avatar_url: null,
+                avatar_full_url: null,
                 color: "#22c55e",
             });
+
+        // אם היה פרופיל חלקי מלפני כן, נדאג שלא חסר avatar_full_url
+        if (profile.value && profile.value.avatar_full_url === undefined) {
+            profile.value.avatar_full_url = null;
+        }
+
         return profile.value;
     }
 }
@@ -87,8 +104,12 @@ export const useAuthStore = defineStore("auth", {
                     id: this.userId,
                     nickname: "User",
                     avatar_url: null,
+                    avatar_full_url: null,
                     color: "#22c55e",
                 };
+            } else if (this.userId && profile.value) {
+                // לוודא שהשדה קיים תמיד
+                if (profile.value.avatar_full_url === undefined) profile.value.avatar_full_url = null;
             }
 
             // ניסיון להביא פרופיל אמיתי (לא חוסם)
@@ -110,8 +131,11 @@ export const useAuthStore = defineStore("auth", {
                                 id: this.userId,
                                 nickname: "User",
                                 avatar_url: null,
+                                avatar_full_url: null,
                                 color: "#22c55e",
                             };
+                        } else {
+                            if (profile.value.avatar_full_url === undefined) profile.value.avatar_full_url = null;
                         }
                         void fetchMyProfile();
                     }
@@ -130,7 +154,18 @@ export const useAuthStore = defineStore("auth", {
         },
 
         setProfile(nextProfile) {
-            profile.value = nextProfile || null;
+            // ✅ לייצב גם פה
+            if (!nextProfile) {
+                profile.value = null;
+                return;
+            }
+            profile.value = {
+                id: nextProfile.id,
+                nickname: nextProfile.nickname || "User",
+                avatar_url: nextProfile.avatar_url || null,
+                avatar_full_url: nextProfile.avatar_full_url || null,
+                color: nextProfile.color || "#22c55e",
+            };
         },
     },
 });

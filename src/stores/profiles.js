@@ -3,7 +3,7 @@ import { defineStore } from "pinia";
 import { supabase } from "../services/supabase";
 import { useAuthStore } from "./auth";
 
-const PROFILE_SELECT = "id, nickname, avatar_url, color";
+const PROFILE_SELECT = "id, nickname, avatar_url, avatar_full_url, color";
 
 function normalizeToHexColor(input) {
     const v = String(input || "").trim();
@@ -30,6 +30,7 @@ function normalizeToHexColor(input) {
         else if (hp < 4) [r1, g1, b1] = [0, x, c];
         else if (hp < 5) [r1, g1, b1] = [x, 0, c];
         else[r1, g1, b1] = [c, 0, x];
+
         const m2 = l - c / 2;
         const r = Math.round((r1 + m2) * 255);
         const g = Math.round((g1 + m2) * 255);
@@ -61,7 +62,6 @@ export const useProfilesStore = defineStore("profiles", {
         _upsertOne(row) {
             if (!row?.id) return;
             const prev = this.byId[row.id] || {};
-            // ✅ ננרמל צבע לתצוגה אחידה בכל האפליקציה
             const color = normalizeToHexColor(row.color ?? prev.color);
             this.byId[row.id] = { ...prev, ...row, color };
             this.lastLoadedAt = this._now();
@@ -106,11 +106,14 @@ export const useProfilesStore = defineStore("profiles", {
             }
 
             const cached = this.byId?.[uid];
-            if (cached?.nickname || cached?.avatar_url || cached?.color) {
+
+            // ✅ אם יש cached כלשהו, נשתמש בו (כולל avatar_full_url)
+            if (cached && (cached.nickname || cached.avatar_url || cached.avatar_full_url || cached.color)) {
                 auth.setProfile?.({
                     id: uid,
                     nickname: cached.nickname || "User",
                     avatar_url: cached.avatar_url || null,
+                    avatar_full_url: cached.avatar_full_url || null,
                     color: normalizeToHexColor(cached.color),
                 });
                 return cached;
@@ -133,6 +136,7 @@ export const useProfilesStore = defineStore("profiles", {
                     id: uid,
                     nickname: "User",
                     avatar_url: null,
+                    avatar_full_url: null,
                     color: "#22c55e",
                 };
 
@@ -142,6 +146,7 @@ export const useProfilesStore = defineStore("profiles", {
                     id: uid,
                     nickname: row.nickname || "User",
                     avatar_url: row.avatar_url || null,
+                    avatar_full_url: row.avatar_full_url || null,
                     color: normalizeToHexColor(row.color),
                 });
 
@@ -154,6 +159,7 @@ export const useProfilesStore = defineStore("profiles", {
                     id: uid,
                     nickname: "User",
                     avatar_url: null,
+                    avatar_full_url: null,
                     color: "#22c55e",
                 });
 
@@ -174,6 +180,7 @@ export const useProfilesStore = defineStore("profiles", {
                 nickname: patch.nickname ?? undefined,
                 color: patch.color ? normalizeToHexColor(patch.color) : undefined,
                 avatar_url: patch.avatar_url ?? undefined,
+                avatar_full_url: patch.avatar_full_url ?? undefined, // ✅ allow updating full url too
                 updated_at: new Date().toISOString(),
             };
             Object.keys(next).forEach((k) => next[k] === undefined && delete next[k]);
@@ -181,13 +188,20 @@ export const useProfilesStore = defineStore("profiles", {
             this.lastError = null;
 
             const prev = this.byId?.[uid] || {};
-            const optimistic = { ...prev, id: uid, ...next, color: normalizeToHexColor(next.color ?? prev.color) };
+
+            const optimistic = {
+                ...prev,
+                id: uid,
+                ...next,
+                color: normalizeToHexColor(next.color ?? prev.color),
+            };
 
             this._upsertOne(optimistic);
             auth.setProfile?.({
                 id: uid,
                 nickname: optimistic.nickname || "User",
                 avatar_url: optimistic.avatar_url || null,
+                avatar_full_url: optimistic.avatar_full_url || null,
                 color: normalizeToHexColor(optimistic.color),
             });
 
@@ -207,17 +221,20 @@ export const useProfilesStore = defineStore("profiles", {
                         id: uid,
                         nickname: data.nickname || "User",
                         avatar_url: data.avatar_url || null,
+                        avatar_full_url: data.avatar_full_url || null,
                         color: normalizeToHexColor(data.color),
                     });
                 }
 
                 return data || optimistic;
             } catch (e) {
+                // rollback
                 this._upsertOne(prev);
                 auth.setProfile?.({
                     id: uid,
                     nickname: prev.nickname || "User",
                     avatar_url: prev.avatar_url || null,
+                    avatar_full_url: prev.avatar_full_url || null,
                     color: normalizeToHexColor(prev.color),
                 });
 
