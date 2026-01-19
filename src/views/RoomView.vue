@@ -1,8 +1,8 @@
 <template>
     <div class="h-[100dvh] w-full bg-black text-white overflow-hidden flex flex-col">
         <div class="flex-1 min-h-0 grid" :style="gridStyle">
-            <div class="flex-1 min-h-0 grid overflow-hidden" :style="gridStyle">
-                <RoomScene class="h-full w-full" />
+            <div class="min-h-0 overflow-hidden flex">
+                <RoomScene class="flex-1 min-h-0 w-full" />
             </div>
 
             <div class="min-h-0 overflow-hidden border-t border-white/10 bg-black/40 backdrop-blur" :style="chatWrapStyle">
