@@ -77,7 +77,7 @@
     });
 
     const chatWrapStyle = computed(() => ({
-        paddingBottom: `calc(env(safe-area-inset-bottom) + ${keyboardPx.value}px)`,
+        paddingBottom: `${keyboardPx.value}px`,
     }));
 
     const roomKeyFromRoute = computed(() => String(route.params.id || "living"));
