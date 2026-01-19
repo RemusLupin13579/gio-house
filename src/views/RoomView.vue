@@ -1,6 +1,6 @@
 <template>
     <div class="h-[100dvh] w-full bg-black text-white overflow-hidden flex flex-col">
-        <div class="flex-1 min-h-0 grid" :style="gridStyle">
+        <div class="flex-1 min-h-0 grid overflow-hidden" :style="gridStyle">
             <div class="min-h-0 overflow-hidden flex">
                 <RoomScene class="flex-1 min-h-0 w-full" />
             </div>
