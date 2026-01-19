@@ -1,7 +1,7 @@
 <template>
-    <div class="h-full min-h-0 bg-black text-white flex flex-col overflow-hidden">
+    <div class="h-[100dvh] w-full bg-black text-white overflow-hidden flex flex-col">
         <div class="flex-1 min-h-0 grid" :style="gridStyle">
-            <div class="min-h-0 overflow-hidden">
+            <div class="flex-1 min-h-0 grid overflow-hidden" :style="gridStyle">
                 <RoomScene class="h-full w-full" />
             </div>
 
@@ -34,13 +34,18 @@
 
     function updateKeyboard() {
         const vv = window.visualViewport;
-        if (!vv) {
+        if (!vv) { keyboardPx.value = 0; return; }
+
+        // ✅ אם יש zoom (scale != 1) – לא נוגעים בלייאאוט
+        if (vv.scale && Math.abs(vv.scale - 1) > 0.01) {
             keyboardPx.value = 0;
             return;
         }
+
         const px = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop));
         keyboardPx.value = px;
     }
+
 
     onMounted(() => {
         updateKeyboard();
@@ -79,6 +84,7 @@
 
     // debounce-ish: לא להריץ syncRoom במקביל
     let syncing = false;
+
 
     async function syncRoom(reason) {
         if (syncing) return;

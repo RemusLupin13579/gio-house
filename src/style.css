@@ -5,8 +5,16 @@
 /* ✅ App-like sizing */
 html, body, #app {
     height: 100%;
-    width: 100%;
+    margin: 0;
 }
+
+@media (max-width: 768px) {
+    body {
+        overflow: hidden;
+        overscroll-behavior: none;
+    }
+}
+
 
 /* ✅ stop sideways pan/overflow on iOS (keyboard + 100vw quirks) */
 html, body {

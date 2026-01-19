@@ -65,7 +65,8 @@
             </div>
 
             <!-- ✅ Characters layer (bottom stage) -->
-            <div class="absolute inset-x-0 bottom-0 h-[34%] pointer-events-none">
+            <div class="absolute inset-x-0 bottom-0 pointer-events-none"
+                 style="height: clamp(140px, 34%, 240px);">
                 <!-- stage gradient -->
                 <div class="absolute inset-0 bg-gradient-to-t from-black/75 via-black/25 to-transparent"></div>
 
