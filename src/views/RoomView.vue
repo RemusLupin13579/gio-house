@@ -1,13 +1,11 @@
 <template>
     <div class="h-full min-h-0 bg-black text-white flex flex-col overflow-hidden">
-
         <div class="flex-1 min-h-0 grid" :style="gridStyle">
             <div class="min-h-0 overflow-hidden">
                 <RoomScene class="h-full w-full" />
             </div>
 
-            <div class="min-h-0 overflow-hidden border-t border-white/10 bg-black/40 backdrop-blur"
-                 :style="chatWrapStyle">
+            <div class="min-h-0 overflow-hidden border-t border-white/10 bg-black/40 backdrop-blur" :style="chatWrapStyle">
                 <ChatPanel class="h-full" />
             </div>
         </div>
@@ -31,14 +29,15 @@
     const route = useRoute();
     const house = useHouseStore();
 
-    const safeTopStyle = computed(() => ({ paddingTop: "env(safe-area-inset-top)" }));
-
     /* ✅ Keyboard using VisualViewport */
     const keyboardPx = ref(0);
 
     function updateKeyboard() {
         const vv = window.visualViewport;
-        if (!vv) { keyboardPx.value = 0; return; }
+        if (!vv) {
+            keyboardPx.value = 0;
+            return;
+        }
         const px = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop));
         keyboardPx.value = px;
     }
@@ -61,7 +60,6 @@
         chatExpanded,
         toggle: () => (chatExpanded.value = !chatExpanded.value),
         collapse: () => (chatExpanded.value = false),
-
         expandForTyping: () => (chatExpanded.value = true),
         collapseAfterTyping: () => {
             if (keyboardPx.value === 0) chatExpanded.value = false;
@@ -77,51 +75,46 @@
         paddingBottom: `calc(env(safe-area-inset-bottom) + ${keyboardPx.value}px)`,
     }));
 
-    const roomParam = computed(() =>
-        route.params.key ?? route.params.roomKey ?? route.params.id ?? null
-    );
+    const roomKeyFromRoute = computed(() => String(route.params.id || "living"));
 
-    const activeRoomKeys = computed(() => new Set((roomsStore.activeRooms ?? []).map(r => r.key)));
+    // debounce-ish: לא להריץ syncRoom במקביל
+    let syncing = false;
 
-    const roomUuid = computed(() =>
-        house.currentRoom ? roomsStore.getRoomUuidByKey(house.currentRoom) : null
-    );
+    async function syncRoom(reason) {
+        if (syncing) return;
+        syncing = true;
+        try {
+            const houseId = house.currentHouseId;
+            if (!houseId) return;
 
-    async function syncRoom() {
-        const houseId = house.currentHouseId;
-        if (!houseId) return;
+            await roomsStore.loadForHouse(houseId);
 
-        // ✅ 1) תמיד לטעון rooms של הבית לפני שמנסים roomUuid/צ'אט
-        await roomsStore.loadForHouse(houseId);
+            const roomKey = roomKeyFromRoute.value || "living";
 
-        const roomKey = String(route.params.id || "living");
+            // presence store יכול להיכשל אם session רגע נופל — אבל לא להפיל UI
+            try {
+                await presence.setRoom(roomKey);
+            } catch (e) {
+                console.warn("[RoomView] presence.setRoom failed", reason, e);
+            }
 
-        // connect מתבצע רק ב-AppShell כשהבית מוכן
-        const ok = await presence.setRoom(roomKey);
-
-
-        if (ok) {
             house.enterRoom?.(roomKey);
-            await presence.setRoom(roomKey);
+        } finally {
+            syncing = false;
         }
     }
 
-
-
     watch(
-        [() => house.currentHouseId, () => house.currentRoom, () => roomUuid.value, () => roomsStore.loadedForHouseId],
-        ([hid, rkey, uuid, loaded]) => {
-            console.log("[ChatPanel] room wiring", {
-                houseId: hid,
-                roomKey: rkey,
-                roomUuid: uuid,
-                roomsLoadedFor: loaded,
-                roomsCount: roomsStore.rooms?.length ?? 0,
-            });
-        },
+        () => route.params.id,
+        () => void syncRoom("route"),
         { immediate: true }
     );
 
+    watch(
+        () => house.currentHouseId,
+        () => void syncRoom("house"),
+        { immediate: true }
+    );
 
     async function goBack() {
         await router.push({ name: "home" });
@@ -131,16 +124,4 @@
         await router.push({ name: "home" });
         await presence.setRoom("living");
     }
-    watch(
-        () => route.params.id,
-        () => void syncRoom(),
-        { immediate: true }
-    );
-
-    watch(
-        () => house.currentHouseId,
-        () => void syncRoom(),
-        { immediate: true }
-    );
-
 </script>

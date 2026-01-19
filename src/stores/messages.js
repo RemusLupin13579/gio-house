@@ -1,399 +1,384 @@
+// /src/stores/messages.js
 import { defineStore } from "pinia";
 import { supabase } from "../services/supabase";
-import { session, profile } from "../stores/auth";
-import { useProfilesStore } from "../stores/profiles";
+import { useAuthStore } from "./auth";
+import { isPaused } from "../lifecycle/resume";
 
-function colorFromUserId(userId) {
-    const s = String(userId || "anon");
-    let hash = 0;
-    for (let i = 0; i < s.length; i++) hash = (hash * 31 + s.charCodeAt(i)) >>> 0;
-    const hue = hash % 360;
-    return `hsl(${hue} 85% 65%)`;
+const OUTBOX_KEY = "gio-outbox-v2";
+const WORKER_MS = 1200;
+const MAX_ATTEMPTS = 6;
+
+function uuid() {
+    return crypto.randomUUID();
 }
 
-function initialFromName(name) {
-    const n = String(name || "").trim();
-    return n ? n[0].toUpperCase() : "🙂";
+function nowIso() {
+    return new Date().toISOString();
 }
 
-function formatTime(ts) {
-    if (!ts) return "";
-    const d = new Date(ts);
-    if (Number.isNaN(d.getTime())) return "";
-    return d.toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" });
-}
-
-function normalizeMessage(row) {
-    const profColor = row?.profiles?.color;
-    const userColor = profColor || colorFromUserId(row?.user_id);
-
-    const userName =
-        row?.profiles?.nickname ||
-        row?.nickname ||
-        (row?.user_id === session.value?.user?.id ? (profile.value?.nickname ?? "Me") : "User");
-
-    return {
-        id: row?.id ?? `${row?.user_id ?? "u"}:${row?.created_at ?? Date.now()}`,
-        room_id: row?.room_id ?? null,
-        user_id: row?.user_id ?? null,
-        text: String(row?.text ?? ""),
-        created_at: row?.created_at ?? null,
-        userName,
-        userInitial: initialFromName(userName),
-        userColor,
-        time: formatTime(row?.created_at),
-        avatarUrl: row?.profiles?.avatar_url ?? null,
-        reply_to_id: row?.reply_to_id ?? null,
-        client_id: row?.client_id ?? null,
-    };
-}
-
-function uuidish() {
-    return `${Date.now()}-${Math.random().toString(16).slice(2)}${Math.random().toString(16).slice(2)}`;
-}
-
-function isAbortLike(e) {
-    const msg = String(e?.message || "");
-    return e?.name === "AbortError" || msg.includes("AbortError") || msg.includes("aborted");
-}
-
-/**
- * ✅ Direct REST call (PostgREST) with true AbortController timeout.
- */
-async function restRequest(pathWithQuery, { method = "GET", body = null, signal, headers = {} } = {}) {
-    const baseUrl = import.meta.env.VITE_SUPABASE_URL;
-    const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-    const { data: sessData } = await supabase.auth.getSession();
-    const accessToken = sessData?.session?.access_token;
-
-    if (!baseUrl || !anonKey) throw new Error("Missing VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY");
-    if (!accessToken) throw new Error("No access token (not authenticated)");
-
-    const url = `${baseUrl}/rest/v1/${pathWithQuery}`;
-
-    const res = await fetch(url, {
-        method,
-        signal,
-        headers: {
-            apikey: anonKey,
-            Authorization: `Bearer ${accessToken}`,
-            "Content-Type": "application/json",
-            ...headers,
-        },
-        body: body ? JSON.stringify(body) : null,
-    });
-
-    const text = await res.text();
-    let json = null;
-    try {
-        json = text ? JSON.parse(text) : null;
-    } catch (_) {
-        // keep json null
-    }
-
-    if (!res.ok) {
-        const msg = json?.message || json?.hint || text || `HTTP ${res.status}`;
-        const err = new Error(msg);
-        err.status = res.status;
-        err.payload = json;
-        throw err;
-    }
-
-    return json;
+function sleep(ms) {
+    return new Promise((r) => setTimeout(r, ms));
 }
 
 export const useMessagesStore = defineStore("messages", {
     state: () => ({
-        byRoom: {},
-        subs: {},
-        lastReadTimestamps: JSON.parse(localStorage.getItem("chat_last_read") || "{}"),
-        lastSeenCreatedAt: {},
+        byRoom: {}, // { [roomId]: Message[] }
+        subs: {}, // { [roomId]: RealtimeChannel }
+        outbox: [], // OutboxItem[]
+        _worker: null,
         _guardsInstalled: false,
-        _reconnectLock: false,
+        _runLock: false,
     }),
 
     getters: {
-        messagesInRoom: (state) => (roomId) => state.byRoom[roomId] ?? [],
+        messagesInRoom: (s) => (roomId) => s.byRoom?.[roomId] || [],
     },
 
     actions: {
-        markAsRead(roomId) {
-            if (!roomId) return;
-            this.lastReadTimestamps[roomId] = Date.now();
-            localStorage.setItem("chat_last_read", JSON.stringify(this.lastReadTimestamps));
-        },
-
-        _upsert(roomId, normalized) {
-            if (!roomId || !normalized) return;
-            if (!this.byRoom[roomId]) this.byRoom[roomId] = [];
-            const list = this.byRoom[roomId];
-
-            const idx = list.findIndex((m) => m.id === normalized.id);
-            if (idx === -1) list.push(normalized);
-            else list[idx] = normalized;
-
-            list.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-
-            const last = list[list.length - 1];
-            if (last?.created_at) this.lastSeenCreatedAt[roomId] = last.created_at;
-        },
-
-        installRealtimeGuards() {
-            if (this._guardsInstalled) return;
-            this._guardsInstalled = true;
-
-            const kick = (why) => setTimeout(() => void this.ensureRealtime(why), 120);
-
-            document.addEventListener("visibilitychange", () => {
-                if (document.visibilityState === "visible") kick("visibility-visible");
-            });
-            window.addEventListener("focus", () => kick("window-focus"));
-            window.addEventListener("online", () => kick("online"));
-            window.addEventListener("pageshow", () => kick("pageshow"));
-        },
-
-        async ensureRealtime(reason = "manual") {
-            if (this._reconnectLock) return;
-            this._reconnectLock = true;
-
+        // ---------- outbox persistence ----------
+        _saveOutbox() {
             try {
-                try {
-                    await supabase.auth.refreshSession();
-                } catch (e) {
-                    console.warn("[messages.ensureRealtime] refreshSession failed", e?.message || e);
-                }
+                localStorage.setItem(OUTBOX_KEY, JSON.stringify(this.outbox));
+            } catch { }
+        },
 
-                // reconnect realtime (helps when tab was backgrounded / laptop sleep)
-                try { supabase.realtime?.disconnect?.(); } catch (_) { }
-                try { supabase.realtime?.connect?.(); } catch (_) { }
-
-                // rebuild room channels
-                const rooms = Object.keys(this.subs || {});
-                for (const roomId of rooms) {
-                    console.warn("[messages.ensureRealtime] rebuild channel", { reason, roomId });
-                    await this.unsubscribe(roomId);
-                    this.subscribe(roomId);
-                }
-            } finally {
-                this._reconnectLock = false;
+        _loadOutbox() {
+            try {
+                const raw = localStorage.getItem(OUTBOX_KEY);
+                this.outbox = raw ? JSON.parse(raw) : [];
+            } catch {
+                this.outbox = [];
             }
         },
 
-        async load(roomId, limit = 100) {
-            console.log("[messages.load] called", { roomId, limit });
+        // ---------- room helpers ----------
+        _ensureRoom(roomId) {
+            if (!this.byRoom[roomId]) this.byRoom[roomId] = [];
+        },
+
+        _sortRoom(roomId) {
+            this.byRoom[roomId].sort(
+                (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+            );
+        },
+
+        _upsertMessage(roomId, msg) {
+            this._ensureRoom(roomId);
+            const arr = this.byRoom[roomId];
+
+            // 1) client_id dedupe (best)
+            if (msg.client_id) {
+                const i = arr.findIndex((m) => m.client_id && m.client_id === msg.client_id);
+                if (i >= 0) {
+                    arr[i] = { ...arr[i], ...msg };
+                    this._sortRoom(roomId);
+                    return;
+                }
+            }
+
+            // 2) id dedupe
+            if (msg.id) {
+                const j = arr.findIndex((m) => m.id && m.id === msg.id);
+                if (j >= 0) {
+                    arr[j] = { ...arr[j], ...msg };
+                    this._sortRoom(roomId);
+                    return;
+                }
+            }
+
+            arr.push(msg);
+            this._sortRoom(roomId);
+        },
+
+        _markClient(roomId, clientId, patch) {
+            this._ensureRoom(roomId);
+            const arr = this.byRoom[roomId];
+            const i = arr.findIndex((m) => (m.client_id || m.id) === clientId);
+            if (i >= 0) arr[i] = { ...arr[i], ...patch };
+        },
+
+        _ackOutbox(clientId, serverRow) {
+            if (!clientId) return;
+            const ob = this.outbox.find((x) => x.clientId === clientId);
+            if (!ob) return;
+
+            ob.status = "sent";
+            ob.serverId = serverRow?.id || ob.serverId || null;
+            ob.error = null;
+            this._saveOutbox();
+        },
+
+        // ---------- public API ----------
+        installGuards() {
+            if (this._guardsInstalled) return;
+            this._guardsInstalled = true;
+
+            this._loadOutbox();
+            this.hydrateOutboxToUI();
+            this.startWorker();
+
+            const kick = () => {
+                this.hydrateOutboxToUI();
+                void this.runWorker("guard");
+            };
+
+            document.addEventListener("visibilitychange", () => {
+                if (document.visibilityState === "visible") kick();
+            });
+            window.addEventListener("online", kick);
+            window.addEventListener("focus", kick);
+            window.addEventListener("pageshow", kick);
+        },
+
+        async load(roomId, limit = 200) {
+            if (!roomId) return;
+            this._ensureRoom(roomId);
 
             const { data, error } = await supabase
                 .from("messages")
-                .select("id, room_id, user_id, text, created_at, reply_to_id, client_id")
+                .select("id,client_id,room_id,user_id,text,created_at,reply_to_id")
                 .eq("room_id", roomId)
-                .order("created_at", { ascending: false })
+                .order("created_at", { ascending: true })
                 .limit(limit);
 
-            console.log("[messages.load] result", { roomId, count: data?.length ?? 0, error: error ?? null });
             if (error) throw error;
 
-            const rows = (data ?? []).slice().reverse();
-            const profilesStore = useProfilesStore();
-            const userIds = rows.map((r) => r.user_id).filter(Boolean);
-            await profilesStore.ensureLoaded(userIds);
+            const rows = (data || []).map((r) => ({
+                id: r.id,
+                client_id: r.client_id,
+                room_id: r.room_id,
+                user_id: r.user_id,
+                text: r.text ?? "", // ✅ נכון
+                created_at: r.created_at,
+                reply_to_id: r.reply_to_id || null,
+                _status: null,
+                _error: null,
+            }));
 
-            const normalizedList = rows.map((row) =>
-                normalizeMessage({ ...row, profiles: profilesStore.byId[row.user_id] })
-            );
+            this.byRoom[roomId] = rows;
 
-            this.byRoom[roomId] = normalizedList;
-
-            const last = this.byRoom[roomId]?.[this.byRoom[roomId].length - 1];
-            if (last?.created_at) this.lastSeenCreatedAt[roomId] = last.created_at;
-
-            console.log("[messages.load] stored", {
-                roomId,
-                storedCount: this.byRoom[roomId]?.length,
-                lastSeenCreatedAt: this.lastSeenCreatedAt[roomId],
-            });
-
-            this.markAsRead(roomId);
+            // bring back pending/failed on top of loaded data
+            this.hydrateOutboxToUI();
         },
 
         subscribe(roomId) {
             if (!roomId) return;
-            this.installRealtimeGuards();
-
-            const existing = this.subs[roomId];
-            if (existing && (existing.state === "joined" || existing.state === "joining")) return;
-
-            const profilesStore = useProfilesStore();
+            if (this.subs[roomId]) return;
 
             const ch = supabase
-                .channel(`messages:${roomId}`)
+                .channel(`room_msgs_${roomId}`)
                 .on(
                     "postgres_changes",
                     { event: "INSERT", schema: "public", table: "messages", filter: `room_id=eq.${roomId}` },
-                    async (payload) => {
-                        const raw = payload?.new;
-                        if (!raw) return;
+                    (payload) => {
+                        const r = payload.new;
+                        if (!r) return;
 
-                        await profilesStore.ensureLoaded([raw.user_id]);
-                        const normalized = normalizeMessage({ ...raw, profiles: profilesStore.byId[raw.user_id] });
-                        this._upsert(roomId, normalized);
+                        const msg = {
+                            id: r.id,
+                            client_id: r.client_id,
+                            room_id: r.room_id,
+                            user_id: r.user_id,
+                            text: r.text ?? "", // ✅ נכון
+                            created_at: r.created_at,
+                            reply_to_id: r.reply_to_id || null,
+                            _status: null,
+                            _error: null,
+                        };
+
+                        this._upsertMessage(roomId, msg);
+
+                        // ACK outbox if it's ours
+                        if (r.client_id) this._ackOutbox(r.client_id, r);
                     }
-                );
+                )
+                .subscribe();
 
             this.subs[roomId] = ch;
-
-            ch.subscribe((status) => {
-                console.log("[messages.subscribe]", roomId, status, "state:", ch.state);
-                if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
-                    setTimeout(() => {
-                        if (this.subs[roomId] === ch) {
-                            this.unsubscribe(roomId).finally(() => this.subscribe(roomId));
-                        }
-                    }, 700);
-                }
-            });
         },
 
         async unsubscribe(roomId) {
             const ch = this.subs[roomId];
             if (!ch) return;
-            try { await ch.unsubscribe(); } catch (_) { }
-            try { await supabase.removeChannel(ch); } catch (_) { }
+            try {
+                await supabase.removeChannel(ch);
+            } catch { }
             delete this.subs[roomId];
         },
 
-        async _fetchByClientId(roomId, clientId) {
-            // REST select by client_id (so we stay consistent with the send path)
-            const q = `messages?select=id,room_id,user_id,text,created_at,reply_to_id,client_id&room_id=eq.${encodeURIComponent(
-                roomId
-            )}&client_id=eq.${encodeURIComponent(clientId)}&order=created_at.desc&limit=1`;
+        // deterministic worker (no parallel runs)
+        async runWorker(reason = "manual") {
+            if (this._runLock) return;
+            if (isPaused()) return;
 
-            const rows = await restRequest(q, { method: "GET" });
-            return Array.isArray(rows) && rows.length ? rows[0] : null;
+            this._runLock = true;
+            try {
+                const auth = useAuthStore();
+                await auth.init();
+
+                let userId = null;
+                try {
+                    userId = await auth.waitUntilReady(5000);
+                } catch {
+                    return; // no auth -> keep queued
+                }
+
+                // send only queued
+                for (const item of this.outbox) {
+                    if (item.status !== "queued") continue;
+                    if (item.attempts >= MAX_ATTEMPTS) continue;
+
+                    // optimistic UI should exist; ensure it stays visible
+                    this._markClient(item.roomId, item.clientId, { _status: "pending", _error: null });
+
+                    item.status = "sending";
+                    item.attempts += 1;
+                    item.lastAttemptAt = Date.now();
+                    item.error = null;
+                    this._saveOutbox();
+
+                    try {
+                        const { data, error } = await supabase
+                            .from("messages")
+                            .insert({
+                                client_id: item.clientId,
+                                room_id: item.roomId,
+                                user_id: userId,
+                                text: item.content,
+                                reply_to_id: item.replyToId || null,
+                            })
+                            .select("id,client_id,room_id,user_id,text,created_at,reply_to_id")
+                            .single();
+
+                        if (error) throw error;
+
+                        // immediate ACK (even if realtime is slow)
+                        this._upsertMessage(item.roomId, {
+                            id: data.id,
+                            client_id: data.client_id,
+                            room_id: data.room_id,
+                            user_id: data.user_id,
+                            text: data.text ?? "",
+                            created_at: data.created_at,
+                            reply_to_id: data.reply_to_id || null,
+                            _status: null,
+                            _error: null,
+                        });
+
+                        item.status = "sent";
+                        item.serverId = data.id;
+                        item.error = null;
+                        this._saveOutbox();
+                    } catch (e) {
+                        // never stuck on "sending"
+                        item.status = "queued";
+                        item.error = e?.message || "SEND_FAILED";
+                        this._saveOutbox();
+
+                        // after a few attempts, show failed (tap to retry)
+                        if (item.attempts >= 3) {
+                            this._markClient(item.roomId, item.clientId, { _status: "failed", _error: item.error });
+                        } else {
+                            this._markClient(item.roomId, item.clientId, { _status: "pending", _error: null });
+                        }
+
+                        // tiny backoff so we don't hammer
+                        await sleep(Math.min(250 * item.attempts, 900));
+                    }
+                }
+            } finally {
+                this._runLock = false;
+            }
         },
 
-        /**
-         * ✅ Stable send (no supabase-js insert):
-         * - attempt 1: REST insert with AbortController timeout
-         * - recover: ensureRealtime + REST upsert (merge duplicates) + fetch by client_id
-         *
-         * Requires unique index on (room_id, client_id).
-         */
-        async send(roomId, text, replyToId = null) {
-            console.log("[messages.send] start", {
-                roomId,
-                hasUser: !!session.value?.user?.id,
-                vis: document.visibilityState,
-                online: navigator.onLine,
-                t: Date.now(),
+        startWorker() {
+            if (this._worker) return;
+            this._worker = setInterval(() => {
+                if (document.visibilityState !== "visible") return;
+                if (!navigator.onLine) return;
+                void this.runWorker("tick");
+            }, WORKER_MS);
+        },
+
+        cancelWorker() {
+            if (this._worker) clearInterval(this._worker);
+            this._worker = null;
+        },
+
+        // ChatPanel: enqueueSend(roomId, text, replyToId)
+        enqueueSend(roomId, text, replyToId = null) {
+            if (!roomId) throw new Error("NO_ROOM");
+            const content = String(text || "").trim();
+            if (!content) throw new Error("EMPTY_MESSAGE");
+
+            const clientId = uuid();
+            const created_at = nowIso();
+
+            // optimistic message (Discord style)
+            this._upsertMessage(roomId, {
+                id: clientId, // temp id
+                client_id: clientId,
+                room_id: roomId,
+                user_id: null,
+                text: content,
+                created_at,
+                reply_to_id: replyToId,
+                _status: "pending",
+                _error: null,
             });
 
-            const userId = session.value?.user?.id;
-            if (!userId || !roomId) throw new Error("Missing auth or roomId");
+            this.outbox.push({
+                clientId,
+                roomId,
+                content,
+                replyToId,
+                createdAt: Date.now(),
+                status: "queued", // queued | sending | sent
+                attempts: 0,
+                lastAttemptAt: 0,
+                error: null,
+                serverId: null,
+            });
 
-            const clean = String(text ?? "").trim();
-            if (!clean) return;
+            this._saveOutbox();
+            void this.runWorker("enqueue");
+            return clientId;
+        },
 
-            const profilesStore = useProfilesStore();
-            const clientId = uuidish();
+        async send(roomId, text, replyToId = null) {
+            return this.enqueueSend(roomId, text, replyToId);
+        },
 
-            const timeoutMs = 7000;
+        hydrateOutboxToUI() {
+            for (const item of this.outbox) {
+                if (!item.roomId) continue;
 
-            const insertOnce = async () => {
-                const ac = new AbortController();
-                const timer = setTimeout(() => {
-                    console.warn("[messages.send] ABORT (timeout)", { timeoutMs });
-                    ac.abort();
-                }, timeoutMs);
-
-                try {
-                    const q = `messages?select=id,room_id,user_id,text,created_at,reply_to_id,client_id`;
-                    const rows = await restRequest(q, {
-                        method: "POST",
-                        body: {
-                            room_id: roomId,
-                            user_id: userId,
-                            text: clean,
-                            reply_to_id: replyToId,
-                            client_id: clientId,
-                        },
-                        signal: ac.signal,
-                        headers: {
-                            Prefer: "return=representation",
-                        },
-                    });
-
-                    const row = Array.isArray(rows) ? rows[0] : rows;
-                    console.log("[messages.send] insert returned", { attempt: "first", hasRow: !!row });
-                    if (!row) throw new Error("Insert returned no row");
-                    return row;
-                } finally {
-                    clearTimeout(timer);
-                }
-            };
-
-            const upsertAndFetch = async (why) => {
-                console.warn("[messages.send] recover => upsert+fetch", { why });
-                await this.ensureRealtime(`send-recover-${why}`);
-
-                // PostgREST upsert: use on_conflict and Prefer resolution=merge-duplicates
-                // NOTE: requires unique index on (room_id, client_id)
-                const qUpsert = `messages?on_conflict=room_id,client_id&select=id,room_id,user_id,text,created_at,reply_to_id,client_id`;
-
-                try {
-                    await restRequest(qUpsert, {
-                        method: "POST",
-                        body: {
-                            room_id: roomId,
-                            user_id: userId,
-                            text: clean,
-                            reply_to_id: replyToId,
-                            client_id: clientId,
-                        },
-                        headers: {
-                            Prefer: "resolution=merge-duplicates,return=representation",
-                        },
-                    });
-                } catch (e) {
-                    console.warn("[messages.send] upsert error (continue)", e?.message || e);
+                if (item.status === "sent") {
+                    this._markClient(item.roomId, item.clientId, { _status: null, _error: null });
+                    continue;
                 }
 
-                const row = await this._fetchByClientId(roomId, clientId);
-                if (!row) throw new Error("Recover failed: message not found after upsert");
-                return row;
-            };
-
-            try {
-                const row = await insertOnce();
-
-                await profilesStore.ensureLoaded([userId]);
-                const normalized = normalizeMessage({ ...row, profiles: profilesStore.byId[userId] });
-                this._upsert(roomId, normalized);
-                this.markAsRead(roomId);
-
-                console.log("[messages.send] ok", { attempt: "first", roomId, textLen: clean.length });
-                return normalized;
-            } catch (e1) {
-                if (isAbortLike(e1)) {
-                    const row = await upsertAndFetch("abort");
-                    await profilesStore.ensureLoaded([userId]);
-                    const normalized = normalizeMessage({ ...row, profiles: profilesStore.byId[userId] });
-                    this._upsert(roomId, normalized);
-                    this.markAsRead(roomId);
-
-                    console.log("[messages.send] ok", { attempt: "recover", roomId, textLen: clean.length });
-                    return normalized;
-                }
-
-                const row = await upsertAndFetch(e1?.message || "error");
-                await profilesStore.ensureLoaded([userId]);
-                const normalized = normalizeMessage({ ...row, profiles: profilesStore.byId[userId] });
-                this._upsert(roomId, normalized);
-                this.markAsRead(roomId);
-
-                console.log("[messages.send] ok", { attempt: "recover", roomId, textLen: clean.length });
-                return normalized;
+                const isFailedUI = item.attempts >= 3 && item.error;
+                this._markClient(item.roomId, item.clientId, {
+                    _status: isFailedUI ? "failed" : "pending",
+                    _error: isFailedUI ? item.error : null,
+                });
             }
+        },
+
+        retryClient(roomId, clientId) {
+            const ob = this.outbox.find((x) => x.clientId === clientId && x.roomId === roomId);
+            if (!ob) return false;
+
+            ob.status = "queued";
+            ob.error = null;
+            ob.attempts = 0;
+            ob.lastAttemptAt = 0;
+            this._saveOutbox();
+
+            this._markClient(roomId, clientId, { _status: "pending", _error: null });
+            void this.runWorker("retryClient");
+            return true;
         },
     },
 });

@@ -519,16 +519,17 @@
     }
 
     async function goLobby(options = {}) {
-        // סגירת מגירה במובייל ASAP
         if (options.closeDrawer && mobileNavOpen.value) closeMobileNav({ skipHistoryBack: true });
 
-        // ניווט ללובי
         if (route.name !== "home") await router.push({ name: "home" });
 
-        // נוכחות: מי שבבית נחשב living
-        if (house.currentHouseId) await presence.connect(house.currentHouseId, "living");
+        if (house.currentHouseId && presence.status !== "ready") {
+            await presence.connect({ houseId: house.currentHouseId, initialRoom: "living" });
+        }
         await presence.setRoom("living");
+
     }
+
 
     async function signOut() {
         try {
@@ -591,9 +592,9 @@
        ✅ LOAD rooms + presence connect when house changes
        ========================= */
     watch(
-        () => houseStore.activeHouseId,   // או whatever אצלך
+        () => house.currentHouseId,
         async (houseId) => {
-            if (!houseId) return;           // ✅ זה הדבר שחסר לך
+            if (!houseId) return; // ✅ MUST
             await presence.connect({ houseId, initialRoom: presence.roomName || "living" });
         },
         { immediate: true }
@@ -892,23 +893,22 @@
     const activeRooms = computed(() => roomsStore.activeRooms ?? []);
 
     async function enterRoom(roomKey, options = {}) {
-        if (inlineEdit.value.id) return; // בזמן עריכה לא נכנסים לחדר
+        if (inlineEdit.value.id) return;
 
-        // ✅ close drawer ASAP (UX)
         if (options.closeDrawer && mobileNavOpen.value) closeMobileNav({ skipHistoryBack: true });
 
         house.enterRoom?.(roomKey);
         await router.push({ name: "room", params: { id: roomKey } });
 
-        // ensure connected (idempotent)
-        if (house.currentHouseId) {
-            await presence.connect(house.currentHouseId, roomKey);
+        if (house.currentHouseId && presence.status !== "ready") {
+            await presence.connect({ houseId: house.currentHouseId, initialRoom: roomKey });
         }
         await presence.setRoom(roomKey);
 
-        // ✅ close drawer even if caller forgot
+
         if (mobileNavOpen.value) closeMobileNav({ skipHistoryBack: true });
     }
+
 
     function switchHouse(houseId) {
         if (!houseId) return;
@@ -922,7 +922,8 @@
         }
     }
 
-    const retryPresence = () => house.currentHouseId && presence.connect(house.currentHouseId);
+    const retryPresence = () =>
+        house.currentHouseId && presence.connect({ houseId: house.currentHouseId });
 
     /* =========================
        ✅ Drawer close on ANY navigation (airtight)
@@ -979,20 +980,12 @@
         window.addEventListener("touchend", onTouchEndGlobal, { capture: true, passive: true });
         window.addEventListener("pointerdown", onGlobalPointerDown, { capture: true });
 
-        window.addEventListener("pageshow", (e) => {
-            if (e?.persisted) {
-                console.warn("[BFCache] restored -> reloading");
-                window.location.reload();
-            }
-        });
-        document.addEventListener("visibilitychange", () => {
-            if (document.visibilityState === "visible") {
-                // אם אתה רואה שהבאג חוזר גם בלי persisted – תפעיל גם את זה
-                // window.location.reload();
-            }
-        });
-
+        // ✅ guards once
+        const messages = useMessagesStore();
+        messages.installGuards?.();
+        presence.installGuards?.();
     });
+
 
     onBeforeUnmount(() => {
         detachAfkListeners();

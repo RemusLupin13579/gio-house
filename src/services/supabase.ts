@@ -1,14 +1,22 @@
-import { createClient } from "@supabase/supabase-js";
+// src/services/supabase.ts
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const url = import.meta.env.VITE_SUPABASE_URL!;
+const key = import.meta.env.VITE_SUPABASE_ANON_KEY!;
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-    auth: {
-        persistSession: true,
-        autoRefreshToken: true,
-        detectSessionInUrl: true, // 👈 חשוב
-        flowType: "pkce",
-        storage: window.localStorage,
-    },
-});
+declare global {
+    // eslint-disable-next-line no-var
+    var __gio_supabase__: SupabaseClient | undefined;
+}
+
+export const supabase: SupabaseClient =
+    globalThis.__gio_supabase__ ??
+    (globalThis.__gio_supabase__ = createClient(url, key, {
+        auth: {
+            persistSession: true,
+            autoRefreshToken: true,
+            detectSessionInUrl: true,
+            storageKey: "gio-auth", // מפתח ייחודי לאפליקציה שלך
+        },
+        realtime: { params: { eventsPerSecond: 20 } },
+    }));
