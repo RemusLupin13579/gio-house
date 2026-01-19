@@ -1,5 +1,5 @@
 <template>
-    <div class="h-[100dvh] w-full bg-black text-white overflow-hidden flex flex-col md:flex-row">
+    <div class="fixed inset-0 bg-black text-white overflow-hidden flex flex-col md:flex-row">
         <div v-if="showMobileTopBar"
              class="md:hidden h-12 px-3 flex items-center justify-between border-b border-white/5">
             <button class="w-10 h-10 rounded-xl bg-white/5 border border-white/10 hover:border-green-500/50 transition active:scale-[0.98]"
