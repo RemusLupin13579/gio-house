@@ -192,6 +192,10 @@
 </script>
 
 <style scoped>
+    .gio-roomscene {
+        overscroll-behavior: contain;
+    }
+
     .gio-char {
         display: flex;
         flex-direction: column;

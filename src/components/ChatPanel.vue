@@ -1,5 +1,5 @@
 <template>
-    <div class="h-full flex flex-col bg-[#0b0f12] text-white overflow-hidden relative">
+    <div class="h-full min-h-0 flex flex-col bg-[#0b0f12] text-white overflow-hidden relative">
         <!-- Toasts -->
         <Transition name="copied-pop">
             <div v-if="copiedToast.show"
