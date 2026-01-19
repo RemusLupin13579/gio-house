@@ -628,6 +628,7 @@
 
     function onTouchStartGlobal(e) {
         if (!isMobile()) return;
+        if (window.visualViewport?.scale && Math.abs(window.visualViewport.scale - 1) > 0.01) return;
         if (mobileNavOpen.value) return;
         const t = e.touches?.[0];
         if (!t) return;
@@ -655,6 +656,7 @@
 
     function onTouchMoveGlobal(e) {
         if (!swipeActive.value) return;
+        if (window.visualViewport?.scale && Math.abs(window.visualViewport.scale - 1) > 0.01) return;
         const t = e.touches?.[0];
         if (!t) return;
 
