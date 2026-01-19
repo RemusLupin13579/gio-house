@@ -185,13 +185,11 @@
                         </div>
                     </div>
                     <button class="w-9 h-9 rounded-xl bg-white/5 border border-white/10 hover:border-green-500/50 transition"
-                            @click="signOut">
-                        ➜]
-                    </button>
-
-                    <button class="w-9 h-9 rounded-xl bg-white/5 border border-white/10 hover:border-green-500/50 transition" title="Settings">
+                            @click="openProfileModal = true"
+                            title="Settings">
                         ⚙️
                     </button>
+
                 </div>
             </section>
 
@@ -203,194 +201,194 @@
             </main>
         </div>
 
-    <div v-if="mobileNavOpen" class="md:hidden fixed inset-0 z-[9999]">
-        <div class="absolute inset-0 bg-black/50 backdrop-blur-[2px] transition-opacity"
-             :style="{ opacity: overlayOpacity }"
-             @click="closeMobileNav()"></div>
+        <div v-if="mobileNavOpen" class="md:hidden fixed inset-0 z-[9999]">
+            <div class="absolute inset-0 bg-black/50 backdrop-blur-[2px] transition-opacity"
+                 :style="{ opacity: overlayOpacity }"
+                 @click="closeMobileNav()"></div>
 
-        <div class="absolute left-0 top-0 h-full w-full bg-[#0b0f12]/95 shadow-2xl will-change-transform"
-             :style="{ transform: `translateX(${drawerTranslateX}px)` }"
-             @touchstart.passive="onDrawerTouchStart"
-             @touchmove.passive="onDrawerTouchMove"
-             @touchend="onDrawerTouchEnd">
-            <div class="flex h-full">
-                <div class="w-16 bg-[#0b0f12] border-r border-white/10">
-                    <HousesSidebar :houses="houseRail"
-                                   :current-house-id="house.currentHouseId"
-                                   @select-house="switchHouse"
-                                   @open-add="openHouseModal = true" />
-                </div>
-
-                <div class="flex-1 bg-[#0c1116] flex flex-col">
-                    <div class="h-16 px-4 flex items-center justify-between border-b border-white/10">
-                        <div class="flex items-center gap-2">
-                            <div class="font-bold text-green-300 truncate">{{ headerTitle }}</div>
-
-                            <div class="relative inline-block shrink-0" data-house-menu="1">
-                                <button class="w-9 h-9 rounded-xl bg-white/5 border border-white/10 hover:border-green-500/50 transition"
-                                        @click.stop="houseMenuOpen = !houseMenuOpen"
-                                        title="House menu">
-                                    ⋯
-                                </button>
-
-                                <div v-if="houseMenuOpen"
-                                     class="absolute right-0 mt-2 w-48 bg-[#0b0f12] border border-white/10 rounded-xl shadow-xl overflow-hidden z-50">
-                                    <button class="w-full px-3 py-2 text-right hover:bg-white/5" @click="openInviteModal = true; houseMenuOpen=false">
-                                        הזמן חברים
-                                    </button>
-                                    <!-- ✅ placeholder לשלב הבא -->
-                                    <div class="h-px bg-white/10 my-1"></div>
-                                    <button class="w-full px-3 py-2 text-right hover:bg-white/5"
-                                            @click="openRoomsModal = true; houseMenuOpen=false">
-                                        ניהול בית
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-
-                        <button class="w-9 h-9 rounded-xl bg-white/5 border border-white/10 hover:border-green-500/50 transition active:scale-[0.98]"
-                                @click="closeMobileNav()"
-                                title="Close">
-                            ✕
-                        </button>
+            <div class="absolute left-0 top-0 h-full w-full bg-[#0b0f12]/95 shadow-2xl will-change-transform"
+                 :style="{ transform: `translateX(${drawerTranslateX}px)` }"
+                 @touchstart.passive="onDrawerTouchStart"
+                 @touchmove.passive="onDrawerTouchMove"
+                 @touchend="onDrawerTouchEnd">
+                <div class="flex h-full">
+                    <div class="w-16 bg-[#0b0f12] border-r border-white/10">
+                        <HousesSidebar :houses="houseRail"
+                                       :current-house-id="house.currentHouseId"
+                                       @select-house="switchHouse"
+                                       @open-add="openHouseModal = true" />
                     </div>
 
-                    <!-- מגירת מובייל -->
-                    <div class="flex-1 overflow-auto p-3">
-                        <div class="text-xs text-white/40 mb-2">חדרים</div>
+                    <div class="flex-1 bg-[#0c1116] flex flex-col">
+                        <div class="h-16 px-4 flex items-center justify-between border-b border-white/10">
+                            <div class="flex items-center gap-2">
+                                <div class="font-bold text-green-300 truncate">{{ headerTitle }}</div>
 
-                        <div class="space-y-1">
-                            <button class="w-full px-3 py-2 rounded-xl flex items-center justify-between hover:bg-white/5 transition border border-transparent"
-                                    :class="route.name === 'home' ? 'bg-white/5 border border-green-500/30' : ''"
-                                    @click="goLobby({ closeDrawer: true })">
-                                <div class="flex items-center gap-2 min-w-0">
-                                    <span class="text-lg">🏛️</span>
-                                    <span class="font-semibold truncate">לובי</span>
+                                <div class="relative inline-block shrink-0" data-house-menu="1">
+                                    <button class="w-9 h-9 rounded-xl bg-white/5 border border-white/10 hover:border-green-500/50 transition"
+                                            @click.stop="houseMenuOpen = !houseMenuOpen"
+                                            title="House menu">
+                                        ⋯
+                                    </button>
+
+                                    <div v-if="houseMenuOpen"
+                                         class="absolute right-0 mt-2 w-48 bg-[#0b0f12] border border-white/10 rounded-xl shadow-xl overflow-hidden z-50">
+                                        <button class="w-full px-3 py-2 text-right hover:bg-white/5" @click="openInviteModal = true; houseMenuOpen=false">
+                                            הזמן חברים
+                                        </button>
+                                        <!-- ✅ placeholder לשלב הבא -->
+                                        <div class="h-px bg-white/10 my-1"></div>
+                                        <button class="w-full px-3 py-2 text-right hover:bg-white/5"
+                                                @click="openRoomsModal = true; houseMenuOpen=false">
+                                            ניהול בית
+                                        </button>
+                                    </div>
                                 </div>
+                            </div>
 
-                                <span class="text-xs text-white/50">⌂</span>
+                            <button class="w-9 h-9 rounded-xl bg-white/5 border border-white/10 hover:border-green-500/50 transition active:scale-[0.98]"
+                                    @click="closeMobileNav()"
+                                    title="Close">
+                                ✕
                             </button>
+                        </div>
 
-                            <div class="h-px bg-white/10 my-2"></div>
+                        <!-- מגירת מובייל -->
+                        <div class="flex-1 overflow-auto p-3">
+                            <div class="text-xs text-white/40 mb-2">חדרים</div>
 
-                            <button v-for="r in activeRooms"
-                                    :key="r.id"
-                                    class="w-full px-3 py-2 rounded-xl hover:bg-white/5 transition"
-                                    :class="isActiveRoom(r.key) ? 'bg-white/5 border border-green-500/30' : 'border border-transparent'"
-                                    @click="enterRoom(r.key, { closeDrawer: true })">
-
-                                <div class="gio-room-row">
-                                    <div class="gio-room-left">
-                                        <span class="text-lg shrink-0">{{ r.icon || "🚪" }}</span>
-
-                                        <div class="min-w-0 gio-room-title">
-                                            <input v-if="inlineEdit.id === r.id"
-                                                   ref="inlineEditInput"
-                                                   v-model="inlineEdit.draft"
-                                                   class="w-full max-w-[180px] bg-black/40 border border-green-500/25 rounded-lg px-2 py-1 text-sm outline-none
-                      focus:border-green-500/40 focus:ring-2 focus:ring-green-500/10"
-                                                   @keydown.enter.prevent="commitInlineEdit(r)"
-                                                   @keydown.esc.prevent="cancelInlineEdit"
-                                                   @blur="cancelInlineEdit"
-                                                   @click.stop />
-                                            <span v-else
-                                                  class="font-semibold truncate block max-w-[180px]"
-                                                  @dblclick.stop.prevent="beginInlineEdit(r)"
-                                                  title="Double click to rename">
-                                                {{ r.name || r.key }}
-                                            </span>
-                                        </div>
+                            <div class="space-y-1">
+                                <button class="w-full px-3 py-2 rounded-xl flex items-center justify-between hover:bg-white/5 transition border border-transparent"
+                                        :class="route.name === 'home' ? 'bg-white/5 border border-green-500/30' : ''"
+                                        @click="goLobby({ closeDrawer: true })">
+                                    <div class="flex items-center gap-2 min-w-0">
+                                        <span class="text-lg">🏛️</span>
+                                        <span class="font-semibold truncate">לובי</span>
                                     </div>
 
-                                    <div class="gio-room-right" dir="ltr">
-                                        <div class="gio-room-avatars" dir="ltr">
-                                            <template v-for="(u, i) in roomUsers(r.key).slice(0, AVATARS_MAX)" :key="u.user_id || u.id || i">
-                                                <div class="gio-room-avatar" :style="{ zIndex: 10 + i }" :title="u.nickname || 'User'">
-                                                    <img v-if="u.avatar_url" :src="u.avatar_url" alt="" />
-                                                    <span v-else>{{ (u.nickname?.[0] ?? "•") }}</span>
-                                                </div>
-                                            </template>
+                                    <span class="text-xs text-white/50">⌂</span>
+                                </button>
 
-                                            <div v-if="roomUsers(r.key).length > AVATARS_MAX"
-                                                 class="gio-room-avatar gio-room-more">
-                                                +{{ roomUsers(r.key).length - AVATARS_MAX }}
+                                <div class="h-px bg-white/10 my-2"></div>
+
+                                <button v-for="r in activeRooms"
+                                        :key="r.id"
+                                        class="w-full px-3 py-2 rounded-xl hover:bg-white/5 transition"
+                                        :class="isActiveRoom(r.key) ? 'bg-white/5 border border-green-500/30' : 'border border-transparent'"
+                                        @click="enterRoom(r.key, { closeDrawer: true })">
+
+                                    <div class="gio-room-row">
+                                        <div class="gio-room-left">
+                                            <span class="text-lg shrink-0">{{ r.icon || "🚪" }}</span>
+
+                                            <div class="min-w-0 gio-room-title">
+                                                <input v-if="inlineEdit.id === r.id"
+                                                       ref="inlineEditInput"
+                                                       v-model="inlineEdit.draft"
+                                                       class="w-full max-w-[180px] bg-black/40 border border-green-500/25 rounded-lg px-2 py-1 text-sm outline-none
+                      focus:border-green-500/40 focus:ring-2 focus:ring-green-500/10"
+                                                       @keydown.enter.prevent="commitInlineEdit(r)"
+                                                       @keydown.esc.prevent="cancelInlineEdit"
+                                                       @blur="cancelInlineEdit"
+                                                       @click.stop />
+                                                <span v-else
+                                                      class="font-semibold truncate block max-w-[180px]"
+                                                      @dblclick.stop.prevent="beginInlineEdit(r)"
+                                                      title="Double click to rename">
+                                                    {{ r.name || r.key }}
+                                                </span>
                                             </div>
                                         </div>
 
-                                        <span class="gio-room-count">
-                                            <span v-if="presence.status==='connecting'" class="gio-skel-count"></span>
-                                            <span v-else>{{ roomUsers(r.key).length }}</span>
-                                        </span>
+                                        <div class="gio-room-right" dir="ltr">
+                                            <div class="gio-room-avatars" dir="ltr">
+                                                <template v-for="(u, i) in roomUsers(r.key).slice(0, AVATARS_MAX)" :key="u.user_id || u.id || i">
+                                                    <div class="gio-room-avatar" :style="{ zIndex: 10 + i }" :title="u.nickname || 'User'">
+                                                        <img v-if="u.avatar_url" :src="u.avatar_url" alt="" />
+                                                        <span v-else>{{ (u.nickname?.[0] ?? "•") }}</span>
+                                                    </div>
+                                                </template>
+
+                                                <div v-if="roomUsers(r.key).length > AVATARS_MAX"
+                                                     class="gio-room-avatar gio-room-more">
+                                                    +{{ roomUsers(r.key).length - AVATARS_MAX }}
+                                                </div>
+                                            </div>
+
+                                            <span class="gio-room-count">
+                                                <span v-if="presence.status==='connecting'" class="gio-skel-count"></span>
+                                                <span v-else>{{ roomUsers(r.key).length }}</span>
+                                            </span>
+                                        </div>
+                                    </div>
+                                </button>
+
+
+                                <div v-if="roomsStore.loading" class="text-xs text-white/50 px-2 py-3">
+                                    טוען חדרים...
+                                </div>
+
+                                <div v-else-if="activeRooms.length === 0" class="text-xs text-white/50 px-2 py-3">
+                                    אין חדרים פעילים בבית הזה
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="h-14 px-3 border-t border-white/10 flex items-center justify-between">
+                            <div class="flex items-center gap-2">
+                                <div class="w-9 h-9 rounded-xl bg-white/5 border border-white/10 overflow-hidden flex items-center justify-center">
+                                    <img v-if="avatarUrl" :src="avatarUrl" class="w-full h-full object-cover" alt="" />
+                                    <span v-else>🙂</span>
+                                </div>
+
+                                <div class="leading-tight">
+                                    <div class="font-bold">{{ nickname }}</div>
+
+                                    <div class="mt-1">
+                                        <div class="h-5 gio-presence-chip cursor-pointer select-none inline-flex"
+                                             :data-state="presence.status"
+                                             :data-user="myUserStatus"
+                                             @click="presence.status === 'ready' ? cycleMyStatus() : null"
+                                             title="Change status">
+                                            <span class="gio-dot" />
+                                            <span v-if="presence.status === 'connecting'" class="gio-sync">
+                                                Syncing
+                                                <span class="gio-dots"><i></i><i></i><i></i></span>
+                                            </span>
+                                            <span v-else-if="presence.status === 'failed'">Offline</span>
+                                            <span v-else-if="presence.status === 'ready'">{{ myStatusLabel }}</span>
+                                            <span v-else>Idle</span>
+                                        </div>
                                     </div>
                                 </div>
+                            </div>
+                            <button class="w-9 h-9 rounded-xl bg-white/5 border border-white/10 hover:border-green-500/50 transition"
+                                    @click="openProfileModal = true"
+                                    title="Settings">
+                                ⚙️
                             </button>
 
-
-                            <div v-if="roomsStore.loading" class="text-xs text-white/50 px-2 py-3">
-                                טוען חדרים...
-                            </div>
-
-                            <div v-else-if="activeRooms.length === 0" class="text-xs text-white/50 px-2 py-3">
-                                אין חדרים פעילים בבית הזה
-                            </div>
                         </div>
-                    </div>
-
-                    <div class="h-14 px-3 border-t border-white/10 flex items-center justify-between">
-                        <div class="flex items-center gap-2">
-                            <div class="w-9 h-9 rounded-xl bg-white/5 border border-white/10 overflow-hidden flex items-center justify-center">
-                                <img v-if="avatarUrl" :src="avatarUrl" class="w-full h-full object-cover" alt="" />
-                                <span v-else>🙂</span>
-                            </div>
-
-                            <div class="leading-tight">
-                                <div class="font-bold">{{ nickname }}</div>
-
-                                <div class="mt-1">
-                                    <div class="h-5 gio-presence-chip cursor-pointer select-none inline-flex"
-                                         :data-state="presence.status"
-                                         :data-user="myUserStatus"
-                                         @click="presence.status === 'ready' ? cycleMyStatus() : null"
-                                         title="Change status">
-                                        <span class="gio-dot" />
-                                        <span v-if="presence.status === 'connecting'" class="gio-sync">
-                                            Syncing
-                                            <span class="gio-dots"><i></i><i></i><i></i></span>
-                                        </span>
-                                        <span v-else-if="presence.status === 'failed'">Offline</span>
-                                        <span v-else-if="presence.status === 'ready'">{{ myStatusLabel }}</span>
-                                        <span v-else>Idle</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        <button class="w-9 h-9 rounded-xl bg-white/5 border border-white/10 hover:border-green-500/50 transition"
-                                @click="signOut">
-                            ➜]
-                        </button>
-                        <button class="w-9 h-9 rounded-xl bg-white/5 border border-white/10 hover:border-green-500/50 transition" title="Settings">
-                            ⚙️
-                        </button>
                     </div>
                 </div>
             </div>
         </div>
-    </div>
 
-    <!-- ✅ Toasts -->
-    <div class="fixed bottom-4 left-1/2 -translate-x-1/2 z-[10050] flex flex-col gap-2 pointer-events-none md:hidden">
-        <div v-for="t in ui.toasts"
-             :key="t.id"
-             class="px-4 py-2 rounded-2xl border border-white/10 bg-black/80 backdrop-blur text-white/90 text-sm font-bold shadow-xl">
-            {{ t.text }}
+        <!-- ✅ Toasts -->
+        <div class="fixed bottom-4 left-1/2 -translate-x-1/2 z-[10050] flex flex-col gap-2 pointer-events-none md:hidden">
+            <div v-for="t in ui.toasts"
+                 :key="t.id"
+                 class="px-4 py-2 rounded-2xl border border-white/10 bg-black/80 backdrop-blur text-white/90 text-sm font-bold shadow-xl">
+                {{ t.text }}
+            </div>
         </div>
-    </div>
 
-    <HouseSwitcherModal v-if="openHouseModal" @close="openHouseModal=false" />
-    <HouseInviteModal v-if="openInviteModal && currentHouse"
-                      :house="currentHouse"
-                      @close="openInviteModal=false" />
-    <RoomManagerModal v-if="openRoomsModal" @close="openRoomsModal=false" />
+        <HouseSwitcherModal v-if="openHouseModal" @close="openHouseModal=false" />
+        <HouseInviteModal v-if="openInviteModal && currentHouse"
+                          :house="currentHouse"
+                          @close="openInviteModal=false" />
+        <RoomManagerModal v-if="openRoomsModal" @close="openRoomsModal=false" />
+        <ProfileSettingsModal v-if="openProfileModal" @close="openProfileModal=false" />
     </div>
 </template>
 
@@ -408,6 +406,7 @@
     import { useUIStore } from "../stores/ui";
     import { useMessagesStore } from "../stores/messages";
     import { supabase } from "../services/supabase";
+    import ProfileSettingsModal from "../components/ProfileSettingsModal.vue";
 
 
     const inlineEdit = ref({ id: null, draft: "" });
@@ -424,6 +423,7 @@
     const house = useHouseStore();
     const presence = usePresenceStore();
 
+    const openProfileModal = ref(false);
     const openRoomsModal = ref(false);
     const openHouseModal = ref(false);
     const houseMenuOpen = ref(false);
