@@ -49,22 +49,26 @@
                              :key="u.id"
                              class="absolute inset-0"
                              :style="{ transform: `rotate(${angleFor(u.roomKey) - 90}deg)` }">
+                            <!-- ✅ keep skeleton hand consistent with real hand limits -->
                             <div class="absolute left-1/2 top-1/2 origin-left animate-pulse"
                                  :style="{
-                  width: `${baseHandLen}px`,
-                  height: `${handThickness}px`,
-                  transform: 'translateY(-50%)',
-                  borderRadius: '999px',
-                  background: 'rgba(34,197,94,0.20)',
-                }"></div>
+                                    width: `${Math.min(baseHandLen, maxHandLen)}px`,
+                                    height: `${handThickness}px`,
+                                    transform: 'translateY(-50%)',
+                                    borderRadius: '999px',
+                                    background: 'rgba(34,197,94,0.20)',
+                                  }"></div>
 
                             <div class="absolute left-1/2 top-1/2"
-                                 :style="{ transform: `translate(-50%, -50%) translateX(${baseHandLen}px)` }">
+                                 :style="{
+                                    transform: `translate(-50%, -50%) translateX(${Math.min(baseHandLen, maxHandLen)}px)`,
+                                  }">
                                 <div class="rounded-full border-4 animate-pulse border-green-500/30 bg-green-500/10 shadow-[0_0_20px_rgba(34,197,94,0.25)]"
                                      :style="{ width: `${ghostAvatar}px`, height: `${ghostAvatar}px` }"></div>
                             </div>
                         </div>
                     </div>
+
 
                     <!-- Real users -->
                     <div v-for="user in clockUsers"
@@ -220,15 +224,19 @@
     const isPresenceLoading = computed(() => presence.status === "connecting" || warmup.value);
     const isPresenceFailed = computed(() => presence.status === "failed");
 
-    const skeletonUsers = computed(() => [
-        { id: "s1", roomKey: "lobby" },
-        { id: "s2", roomKey: "living" },
-        { id: "s3", roomKey: "gaming" },
-        { id: "s4", roomKey: "cinema" },
-        { id: "s5", roomKey: "bathroom" },
-        { id: "s6", roomKey: "study" },
-        { id: "s7", roomKey: "afk" },
-    ]);
+    const skeletonUsers = computed(() => {
+        // משתמשים בפועל מה-roomPositions (שכבר כולל lobby/living/afk/…)
+        const keys = (roomPositions.value || [])
+            .map(r => r.id)
+            .filter(Boolean);
+
+        // אם אין עדיין (בזמן טעינה מוזרה) – fallback מינימלי
+        const base = keys.length ? keys : ["lobby", "living", "bathroom", "afk"];
+
+        // מייצר “רוחות” לפי כמה חדרים יש, בלי hardcode
+        return base.map((rk, i) => ({ id: `s${i + 1}`, roomKey: rk }));
+    });
+
 
     const currentHouse = computed(() => {
         const list = house.myHouses ?? [];

@@ -527,6 +527,12 @@
         const list = presence.usersInRoom(roomKey) || [];
         return list.filter(u => (u.user_status ?? "online") === "online");
     }
+    function isRoomRoute() {
+        return route.name === "room" || String(route.path || "").startsWith("/room/");
+    }
+    function isHomeRoute() {
+        return route.name === "home" || String(route.path || "") === "/";
+    }
 
 
     /* =========================
@@ -681,39 +687,44 @@
             return;
         }
 
-        // ✅ אם drawer פתוח — back סוגר רק את המגירה
+        // 1) אם המגירה פתוחה — back סוגר רק אותה
         if (mobileNavOpen.value) {
             closeMobileNav({ skipHistoryBack: true });
             drawerHistoryPushed.value = false;
             return;
         }
 
-        // ✅ אם אנחנו בחדר — back צריך להחזיר ללובי
-        if (route.name === "room") {
+        // 2) אם אנחנו בתוך חדר — back חייב להחזיר ללובי (בלי double-exit)
+        if (isRoomRoute()) {
+            exitArmed.value = false;
+            if (exitTimer) clearTimeout(exitTimer);
+
             router.replace({ name: "home" });
             return;
         }
 
-        // ✅ אם אנחנו בלובי:
-        // דסקטופ: לא יוצאים מהדף -> "בולעים" את ה-back
-        if (!isMobile() && route.name === "home") {
-            history.pushState({ ...(history.state || {}), gioStay: true }, "");
-            return;
-        }
-
-        // מובייל: double back to exit
-        if (isMobile() && route.name === "home") {
-            if (!exitArmed.value) {
+        // 3) אם אנחנו בלובי:
+        if (isHomeRoute()) {
+            // דסקטופ: לא יוצאים מהדף — "בולעים" את ה-back
+            if (!isMobile()) {
                 history.pushState({ ...(history.state || {}), gioStay: true }, "");
-                armExit(); // מציג toast ומפעיל טיימר
                 return;
             }
-            // לחיצה שנייה: נותנים ל-back להתנהג רגיל (יציאה/חזרה בדפדפן)
+
+            // מובייל: double back to exit
+            if (!exitArmed.value) {
+                history.pushState({ ...(history.state || {}), gioStay: true }, "");
+                armExit(); // מציג toast "לחץ שוב ליציאה" + טיימר שמאפס
+                return;
+            }
+
+            // לחיצה שנייה: נותנים לדפדפן לעשות back אמיתי (יציאה מה-PWA/חזרה אחורה)
             exitArmed.value = false;
             if (exitTimer) clearTimeout(exitTimer);
             return;
         }
     }
+
 
 
     watch(mobileNavOpen, (open) => {
@@ -738,6 +749,15 @@
         { immediate: true }
     );
 
+    watch(
+        () => route.fullPath,
+        () => {
+            if (!isHomeRoute()) {
+                exitArmed.value = false;
+                if (exitTimer) clearTimeout(exitTimer);
+            }
+        }
+    );
 
     /* =========================
         ✅ Press Back again to exit app (mobile)
