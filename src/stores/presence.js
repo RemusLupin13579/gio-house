@@ -199,7 +199,7 @@ export const usePresenceStore = defineStore("presence", {
             const userId = await this._getUserId();
             if (!userId) return false;
 
-            this.roomName = roomName || "living";
+            this.roomName = roomName || "lobby";
 
             if (!this._channel) {
                 if (!this.houseId) return false;
@@ -259,7 +259,7 @@ export const usePresenceStore = defineStore("presence", {
 
             if (!this._channel) {
                 if (!this.houseId) return false;
-                const ok = await this.connect({ houseId: this.houseId, initialRoom: this.roomName || "living" });
+                const ok = await this.connect({ houseId: this.houseId, initialRoom: this.roomName || "lobby" });
                 if (!ok || !this._channel) return false;
             }
 
@@ -283,11 +283,12 @@ export const usePresenceStore = defineStore("presence", {
             this._guardsInstalled = true;
 
             const kick = async () => {
+                if (this.status === "connecting") return;
                 if (!this.houseId) return;
                 if (!this._channel || this.status === "failed") {
-                    await this.connect({ houseId: this.houseId, initialRoom: this.roomName || "living" });
+                    await this.connect({ houseId: this.houseId, initialRoom: this.roomName || "lobby" });
                 } else {
-                    await this.setRoom(this.roomName || "living");
+                    await this.setRoom(this.roomName || "lobby");
                 }
             };
 

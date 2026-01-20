@@ -503,6 +503,25 @@
     const showMobileTopBar = computed(() => route.name !== "room");
     const AVATARS_MAX = 5;
 
+    /* =========================
+   ✅ BACK/FOWARD ROUTING HANDLING
+   ========================= */
+    const lastRoomByHouse = ref({}); // { [houseId]: "roomKey" }
+    const popNavLock = ref(false);
+
+    function setLastRoomForHouse(roomKey) {
+        const hid = house.currentHouseId;
+        if (!hid || !roomKey) return;
+        lastRoomByHouse.value = { ...lastRoomByHouse.value, [hid]: String(roomKey) };
+    }
+
+    function getLastRoomForHouse() {
+        const hid = house.currentHouseId;
+        if (!hid) return null;
+        return lastRoomByHouse.value?.[hid] ?? null;
+    }
+
+
     // ✅ קאש קטן כדי לא לקרוא getter פעמיים לכל חדר בתוך template
     function roomUsers(roomKey) {
         const list = presence.usersInRoom(roomKey) || [];
@@ -556,7 +575,7 @@
 
     async function openMobileNav() {
         if (mobileNavOpen.value) return;
-
+        stampHistoryState();
         houseMenuOpen.value = false;
         mobileNavOpen.value = true;
         await nextTick();
@@ -567,7 +586,7 @@
         animateDrawer(0, 1, 160);
 
         if (!drawerHistoryPushed.value) {
-            history.pushState({ gioDrawer: true }, "");
+            history.pushState({ gioDrawer: true, gioHouseId: house.currentHouseId ?? null }, "");
             drawerHistoryPushed.value = true;
         }
     }
@@ -608,14 +627,21 @@
     async function goLobby(options = {}) {
         if (options.closeDrawer && mobileNavOpen.value) closeMobileNav({ skipHistoryBack: true });
 
-        if (route.name !== "home") await router.push({ name: "home" });
-
-        if (house.currentHouseId && presence.status !== "ready") {
-            await presence.connect({ houseId: house.currentHouseId, initialRoom: "lobby" });
+        if (route.name !== "home") {
+            // ✅ Room -> Home = replace (לא מוסיפים עוד רשומה)
+            await router.replace({ name: "home" });
         }
-        await presence.setRoom("lobby");
 
+        const hid = house.currentHouseId;
+        if (hid) {
+            const needsConnect = presence.status !== "ready" || presence.houseId !== hid;
+            if (needsConnect) await presence.connect({ houseId: hid, initialRoom: "lobby" });
+            await presence.setRoom("lobby");
+        }
+
+        house.enterRoom?.("lobby");
     }
+
 
 
     async function signOut() {
@@ -649,21 +675,46 @@
         }
     }
 
-
     function onPopState() {
         if (suppressNextPop) {
             suppressNextPop = false;
             return;
         }
+
+        // ✅ אם drawer פתוח — back סוגר רק את המגירה
         if (mobileNavOpen.value) {
-            const w = drawerWidth();
-            animateDrawer(-w, 0, 140);
-            window.setTimeout(() => {
-                mobileNavOpen.value = false;
-            }, 155);
+            closeMobileNav({ skipHistoryBack: true });
             drawerHistoryPushed.value = false;
+            return;
+        }
+
+        // ✅ אם אנחנו בחדר — back צריך להחזיר ללובי
+        if (route.name === "room") {
+            router.replace({ name: "home" });
+            return;
+        }
+
+        // ✅ אם אנחנו בלובי:
+        // דסקטופ: לא יוצאים מהדף -> "בולעים" את ה-back
+        if (!isMobile() && route.name === "home") {
+            history.pushState({ ...(history.state || {}), gioStay: true }, "");
+            return;
+        }
+
+        // מובייל: double back to exit
+        if (isMobile() && route.name === "home") {
+            if (!exitArmed.value) {
+                history.pushState({ ...(history.state || {}), gioStay: true }, "");
+                armExit(); // מציג toast ומפעיל טיימר
+                return;
+            }
+            // לחיצה שנייה: נותנים ל-back להתנהג רגיל (יציאה/חזרה בדפדפן)
+            exitArmed.value = false;
+            if (exitTimer) clearTimeout(exitTimer);
+            return;
         }
     }
+
 
     watch(mobileNavOpen, (open) => {
         if (open) {
@@ -688,7 +739,18 @@
     );
 
 
+    /* =========================
+        ✅ Press Back again to exit app (mobile)
+       ========================= */
+    const exitArmed = ref(false);
+    let exitTimer = null;
 
+    function armExit() {
+        exitArmed.value = true;
+        ui?.toast?.("לחץ שוב ליציאה");
+        if (exitTimer) clearTimeout(exitTimer);
+        exitTimer = setTimeout(() => (exitArmed.value = false), 1600);
+    }
 
 
 
@@ -990,46 +1052,113 @@
     async function enterRoom(roomKey, options = {}) {
         if (inlineEdit.value.id) return;
 
-        if (options.closeDrawer && mobileNavOpen.value) closeMobileNav({ skipHistoryBack: true });
+        if (options.closeDrawer && mobileNavOpen.value) {
+            closeMobileNav({ skipHistoryBack: true });
+        }
 
         house.enterRoom?.(roomKey);
-        await router.push({ name: "room", params: { id: roomKey } });
 
-        if (house.currentHouseId && presence.status !== "ready") {
-            await presence.connect({ houseId: house.currentHouseId, initialRoom: roomKey });
+        // ✅ Home -> Room = push (כדי ש-back יחזור ללובי)
+        // ✅ Room -> Room = replace (כדי ש-back לא יסתובב בחדרים)
+        const nav = route.name === "room" ? router.replace : router.push;
+        await nav({ name: "room", params: { id: roomKey } });
+
+        const hid = house.currentHouseId;
+        if (hid) {
+            const needsConnect = presence.status !== "ready" || presence.houseId !== hid;
+            if (needsConnect) await presence.connect({ houseId: hid, initialRoom: roomKey });
+            await presence.setRoom(roomKey);
         }
-        await presence.setRoom(roomKey);
-
 
         if (mobileNavOpen.value) closeMobileNav({ skipHistoryBack: true });
     }
+
+
 
 
     function switchHouse(houseId) {
         if (!houseId) return;
-        house.setCurrentHouse(houseId);
 
-        // ✅ סוגר מגירה במובייל
+        house.setCurrentHouse(houseId);
+        exitArmed.value = false;
+        if (exitTimer) clearTimeout(exitTimer);
+
+        exitArmed.value = false;
+        if (exitTimer) clearTimeout(exitTimer);
+
         if (mobileNavOpen.value) closeMobileNav({ skipHistoryBack: true });
 
-        if (route.name !== "home" && route.name !== "members") {
-            router.push({ name: "home" });
-        }
+        router.replace({ name: "home" });
+
+        nextTick(() => {
+            stampHistoryState({ gioHouseReset: Date.now() });
+            history.pushState({ ...(history.state || {}), gioHouseId: houseId, gioStay: true }, "");
+        });
     }
+
 
     const retryPresence = () =>
         house.currentHouseId && presence.connect({ houseId: house.currentHouseId });
 
+    watch(
+        () => house.currentHouseId,
+        () => {
+            exitArmed.value = false;
+            if (exitTimer) clearTimeout(exitTimer);
+        },
+        { immediate: true }
+    );
+
+
     /* =========================
        ✅ Drawer close on ANY navigation (airtight)
        ========================= */
+    // ✅ sync presence with current route (source of truth)
+    // ✅ sync presence + stamp history with current route (source of truth)
     watch(
         () => route.fullPath,
-        () => {
-            if (mobileNavOpen.value) closeMobileNav({ skipHistoryBack: true });
-            houseMenuOpen.value = false;
-        }
+        async () => {
+            // תמיד חותמים את ה-state של ההיסטוריה לבית הנוכחי
+            stampHistoryState();
+
+            // ✅ אם חזרנו ללובי (home) — נוכחות ללובי
+            if (route.name === "home") {
+                const hid = house.currentHouseId;
+                if (hid) {
+                    const needsConnect = presence.status !== "ready" || presence.houseId !== hid;
+                    if (needsConnect) {
+                        await presence.connect({ houseId: hid, initialRoom: "lobby" });
+                    }
+                    await presence.setRoom("lobby");
+                }
+                house.enterRoom?.("lobby");
+                return;
+            }
+
+            // ✅ אם אנחנו בחדר — נוכחות לחדר לפי ה-route
+            if (route.name === "room") {
+                const p = route.params || {};
+                const roomKey = String(p.id ?? p.key ?? p.roomKey ?? "");
+                if (!roomKey) return;
+
+                setLastRoomForHouse?.(roomKey); // ✅ קריטי ל-toggle
+
+                const hid = house.currentHouseId;
+                if (hid) {
+                    const needsConnect = presence.status !== "ready" || presence.houseId !== hid;
+                    if (needsConnect) {
+                        await presence.connect({ houseId: hid, initialRoom: roomKey });
+                    }
+                    await presence.setRoom(roomKey);
+                }
+                house.enterRoom?.(roomKey);
+            }
+
+        },
+        { immediate: true }
     );
+
+
     function resetHorizontalScroll() {
         // iOS sometimes leaves the page panned horizontally
         window.scrollTo({ left: 0, top: window.scrollY, behavior: "instant" });
@@ -1073,11 +1202,16 @@
         recalcDrawerW();
         resetHorizontalScroll();
 
+        if (isMobile()) {
+            // שכבת הגנה כדי שה-back הראשון בלובי לא יזרוק את המשתמש מיד החוצה
+            history.replaceState({ gioBase: true }, "");
+            history.pushState({ gioStay: true }, "");
+        }
+
         document.addEventListener("visibilitychange", onVis, { passive: true });
         window.addEventListener("pageshow", onPageShow, { passive: true });
         window.addEventListener("orientationchange", resetHorizontalScroll, { passive: true });
         window.addEventListener("resize", resetHorizontalScroll, { passive: true });
-
         window.addEventListener("resize", recalcDrawerW);
         window.addEventListener("popstate", onPopState);
         window.addEventListener("touchstart", onTouchStartGlobal, { capture: true, passive: true });
@@ -1144,6 +1278,12 @@
         } finally {
             cancelInlineEdit();
         }
+    }
+
+    function stampHistoryState(extra = {}) {
+        const hid = house.currentHouseId ?? null;
+        const cur = history.state || {};
+        history.replaceState({ ...cur, gioHouseId: hid, ...extra }, "");
     }
 
     function closeKeyboard() {

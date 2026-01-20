@@ -360,6 +360,7 @@
     }
 
     onMounted(() => {
+        if (presence.status === "ready") presence.setRoom("lobby");
         const t = setTimeout(() => (warmup.value = false), 1200);
         watch(
             () => Object.keys(presence.users || {}).length,
