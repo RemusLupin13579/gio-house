@@ -510,13 +510,27 @@
             mobileNavOpen.value = false;
         }, 155);
 
-        // ✅ אם סוגרים בגלל ניווט/סנכרון UI, אל תיגע בהיסטוריה
-        if (drawerHistoryPushed.value && !options.skipHistoryBack) {
-            suppressNextPop = true;
-            history.back();
-            drawerHistoryPushed.value = false;
+        // ✅ אם יש מצב שהכנסנו state של drawer — חייבים לנקות אותו נכון
+        if (drawerHistoryPushed.value) {
+            if (options.skipHistoryBack) {
+                // ✅ לא עושים back (כי זה היה יפיל אותך למסך קודם),
+                // במקום זה מוחקים את הדגל מה-entry הנוכחי
+                try {
+                    const st = history.state || {};
+                    const next = { ...st };
+                    delete next.gioDrawer;
+                    history.replaceState(next, "", location.href);
+                } catch (_) { }
+                drawerHistoryPushed.value = false;
+                suppressNextPop = false;
+            } else {
+                suppressNextPop = true;
+                history.back();
+                drawerHistoryPushed.value = false;
+            }
         }
     }
+
 
     async function goLobby(options = {}) {
         if (options.closeDrawer && mobileNavOpen.value) closeMobileNav({ skipHistoryBack: true });
@@ -941,6 +955,7 @@
         // iOS sometimes leaves the page panned horizontally
         window.scrollTo({ left: 0, top: window.scrollY, behavior: "instant" });
     }
+
     function resetGestures(reason) {
         console.log("[AppShell] resetGestures", reason);
 
@@ -948,11 +963,20 @@
         swipeLockedHorizontal.value = false;
         touchDragging.value = false;
 
-        // סגור drawer אם איכשהו הוא נשאר “פתוח-שקוף”
         if (mobileNavOpen.value) {
             mobileNavOpen.value = false;
             drawerTranslateX.value = -drawerWidth();
             overlayOpacity.value = 0;
+        }
+
+        // ✅ נקה גם את הדגל מה-history.state אם נשאר
+        if (drawerHistoryPushed.value) {
+            try {
+                const st = history.state || {};
+                const next = { ...st };
+                delete next.gioDrawer;
+                history.replaceState(next, "", location.href);
+            } catch (_) { }
             drawerHistoryPushed.value = false;
         }
     }
