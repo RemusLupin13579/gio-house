@@ -24,7 +24,7 @@ app.mount("#app");
     const messages = useMessagesStore(pinia);
     const profiles = useProfilesStore(pinia);
     await profiles.fetchMyProfile();
-    await presence.refreshSelf?.(); // אם הוספת את זה כמו שאמרתי
+    await presence.refreshSelf?.();
 
     house.hydrateCurrentHouse?.();
 

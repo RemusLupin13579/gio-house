@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from "vue-router";
-
+import DMsView from "../views/DMsView.vue";
+import DMChatView from "../views/DMChatView.vue";
 import AppShell from "../layouts/AppShell.vue";
 import HomeView from "../views/HomeView.vue";
 import RoomView from "../views/RoomView.vue";
@@ -22,7 +23,10 @@ const routes = [
             { path: "", name: "home", component: HomeView },
             { path: "members", name: "members", component: MembersView },
             { path: "room/:id", name: "room", component: RoomView, props: true },
-        ],
+            // ✅ DMs
+            { path: "dms", name: "dms", component: DMsView },
+            { path: "dm/:threadId", name: "dm", component: DMChatView, props: true },
+        ]
     },
 ];
 

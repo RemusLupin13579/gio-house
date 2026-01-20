@@ -128,19 +128,32 @@ export const useRoomsStore = defineStore("rooms", {
         // ---------- CRUD ----------
         async createRoom({ houseId, name, key, icon }) {
             if (!houseId) throw new Error("createRoom: missing houseId");
-            const cleanKey = String(key || "").trim().toLowerCase();
 
-            const active = (this.rooms ?? []).filter((r) => r.house_id === houseId && r.is_archived === false);
+            const cleanKey = String(key || "")
+                .trim()
+                .toLowerCase();
+
+            if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(cleanKey)) {
+                throw new Error("Invalid key format");
+            }
+            if (cleanKey === "afk") throw new Error("afk is reserved");
+            if (cleanKey === "lobby") throw new Error("lobby is not a room");
+            if (cleanKey === "living") throw new Error("living already exists");
+
+            const active = (this.rooms ?? []).filter(
+                (r) => r.house_id === houseId && r.is_archived === false
+            );
             const maxSort = active.reduce((m, r) => Math.max(m, Number(r.sort_order ?? 0)), -1);
             const sort_order = maxSort + 1;
 
             const payload = {
                 house_id: houseId,
                 key: cleanKey,
-                name: name ?? cleanKey,
+                name: String(name ?? cleanKey).trim(),
                 icon: icon ?? null,
                 sort_order,
                 is_archived: false,
+                type: "chat",
             };
 
             const { data, error } = await supabase
@@ -155,13 +168,26 @@ export const useRoomsStore = defineStore("rooms", {
             return data;
         },
 
+
         async updateRoom(roomId, patch) {
             if (!roomId) throw new Error("updateRoom: missing roomId");
 
+            const existing = (this.rooms ?? []).find((r) => r.id === roomId);
+            if (!existing) throw new Error("updateRoom: room not found");
+
+            // 🔒 לא מאפשרים לשנות key בשום מצב
             const safePatch = { ...patch };
             if ("key" in safePatch) delete safePatch.key;
 
-            // מחזירים את הרשומה המעודכנת מהשרת כדי למנוע "שמרתי אבל לא רואים"
+            // 🔒 living: לא מאפשרים archive דרך updateRoom בטעות
+            if (existing.key === "living" && safePatch.is_archived === true) {
+                throw new Error("living cannot be archived");
+            }
+
+            // 🧼 ניקוי
+            if ("name" in safePatch) safePatch.name = String(safePatch.name || "").trim();
+            if ("icon" in safePatch) safePatch.icon = String(safePatch.icon || "").trim() || null;
+
             const { data, error } = await supabase
                 .from("rooms")
                 .update(safePatch)
@@ -171,13 +197,10 @@ export const useRoomsStore = defineStore("rooms", {
 
             if (error) throw error;
 
-            // local update לפי מה שחזר
+            // local update
             const idx = (this.rooms ?? []).findIndex((r) => r.id === roomId);
-            if (idx >= 0) {
-                this.rooms[idx] = data;
-            } else {
-                this.rooms = [...(this.rooms ?? []), data];
-            }
+            if (idx >= 0) this.rooms[idx] = data;
+            else this.rooms = [...(this.rooms ?? []), data];
 
             this.byKey = Object.fromEntries((this.rooms ?? []).map((r) => [r.key, r]));
             return true;
@@ -188,13 +211,34 @@ export const useRoomsStore = defineStore("rooms", {
             if (!r) throw new Error("archiveRoom: room not found");
             if (r.key === "living") throw new Error("living cannot be archived");
 
-            const { error } = await supabase.from("rooms").update({ is_archived: true }).eq("id", roomId);
+            const { error } = await supabase
+                .from("rooms")
+                .update({ is_archived: true })
+                .eq("id", roomId);
+
             if (error) throw error;
 
             const houseId = r.house_id ?? this.loadedForHouseId;
             if (houseId) await this.loadForHouse(houseId, { force: true });
             return true;
         },
+
+        async restoreRoom(roomId) {
+            const r = (this.rooms ?? []).find((x) => x.id === roomId);
+            if (!r) throw new Error("restoreRoom: room not found");
+
+            const { error } = await supabase
+                .from("rooms")
+                .update({ is_archived: false })
+                .eq("id", roomId);
+
+            if (error) throw error;
+
+            const houseId = r.house_id ?? this.loadedForHouseId;
+            if (houseId) await this.loadForHouse(houseId, { force: true });
+            return true;
+        },
+
 
         async reorderRooms(pairs) {
             if (!Array.isArray(pairs) || pairs.length === 0) return false;

@@ -324,7 +324,20 @@
         return [...orderedActiveRooms.value, ...archivedRooms.value];
     });
 
-    const selectedRoom = computed(() => (roomsStore.rooms ?? []).find((r) => r.id === selectedId.value) ?? null);
+    const selectedRoom = computed(() => {
+        if (selectedId.value === "__new__") {
+            // "חדר מדומה" בשביל UI בלבד
+            return {
+                id: null,
+                house_id: house.currentHouseId,
+                key: edit.value.key,
+                name: edit.value.name,
+                icon: edit.value.icon,
+                is_archived: false,
+            };
+        }
+        return (roomsStore.rooms ?? []).find((r) => r.id === selectedId.value) ?? null;
+    });
 
     // Tabs
     const activeTab = ref("general"); // "general" | "scene"
@@ -340,6 +353,7 @@
             backgroundPosition: "center",
         };
     });
+    const isNewSelected = computed(() => selectedId.value === "__new__");
 
     function cleanupScenePreview() {
         try {
@@ -376,12 +390,13 @@
     }
 
     function isLiving(r) {
-        return (r?.key ?? "") === "lobby";
+        return (r?.key ?? "") === "living";
     }
     function isArchived(r) {
         return !!r?.is_archived;
     }
     function isDraggable(r) {
+        // לא גוררים ארכיון ולא גוררים living (נעול)
         return !isArchived(r) && !isLiving(r);
     }
 
@@ -402,10 +417,12 @@
     }
 
     function selectRoom(id, e) {
-        // אם לחצו על input/בתוך input – לא לשנות בחירה ולא לבטל rename
-        if (e?.target?.closest?.("input, textarea, label")) return;
+        if (selectedId.value === "__new__" && isCreating.value) {
+            // אם היינו באמצע יצירה ועברנו לחדר אחר - זה בסדר, אבל ננקה draft
+            // (לא חובה, אבל מונע “שמור” שיוצר בטעות)
+        }
 
-        // אם כרגע עורכים את אותו חדר – לא לסגור את העריכה
+        if (e?.target?.closest?.("input, textarea, label")) return;
         if (renamingId.value === id) return;
 
         cancelRename();
@@ -416,7 +433,9 @@
         hydrateEditFromSelected();
     }
 
+
     function hydrateEditFromSelected() {
+        if (selectedId.value === "__new__") return;
         const r = selectedRoom.value;
         if (!r) return;
         edit.value = {
@@ -427,6 +446,7 @@
             key: r.key ?? "",
         };
     }
+
 
     // ---------- Inline rename ----------
     function beginRename(r) {
@@ -482,18 +502,34 @@
     }
 
     // ---------- Create ----------
-    function normalizeKey(k) {
-        return String(k || "")
-            .trim()
-            .toLowerCase()
-            .replace(/\s+/g, "-")
-            .replace(/[^a-z0-9-_]/g, "");
+    function normalizeKey(input) {
+        // מייצר key שתואם rooms_key_format
+        let s = String(input || "").trim().toLowerCase();
+
+        // רווחים -> מקף
+        s = s.replace(/\s+/g, "-");
+
+        // להשאיר רק a-z 0-9 ומקפים
+        s = s.replace(/[^a-z0-9-]/g, "");
+
+        // לא לאפשר רצף מקפים
+        s = s.replace(/-+/g, "-");
+
+        // להוריד מקפים מהקצוות
+        s = s.replace(/^-+/, "").replace(/-+$/, "");
+
+        return s;
     }
 
     function suggestKeyFromName(name) {
         const base = normalizeKey(name) || "room";
-        const keys = new Set((roomsStore.rooms ?? []).map((r) => r.key));
+
+        const keys = new Set((roomsStore.rooms ?? []).map((r) => r.key).filter(Boolean));
+
+        // אם פנוי — קח
         if (!keys.has(base)) return base;
+
+        // אם תפוס — תוסיף -2 -3 ...
         let i = 2;
         while (keys.has(`${base}-${i}`)) i++;
         return `${base}-${i}`;
@@ -501,13 +537,22 @@
 
     function startCreate() {
         cancelRename();
+        cleanupScenePreview();
+
         isCreating.value = true;
-        const key = suggestKeyFromName("room");
         selectedId.value = "__new__";
         activeTab.value = "general";
-        cleanupScenePreview();
-        edit.value = { id: null, house_id: house.currentHouseId, name: "חדר חדש", icon: "🚪", key };
+
+        // draft חדש
+        edit.value = {
+            id: null,
+            house_id: house.currentHouseId,
+            name: "חדר חדש",
+            icon: "🚪",
+            key: suggestKeyFromName("room"),
+        };
     }
+
 
     function cancelCreate() {
         isCreating.value = false;
@@ -530,20 +575,37 @@
             const name = String(edit.value.name || "").trim();
             const icon = String(edit.value.icon || "").trim() || null;
 
-            if (isCreating.value) {
+            const creating = isCreating.value || selectedId.value === "__new__";
+            const KEY_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+            if (creating) {
                 const key = suggestKeyFromName(name);
-                await roomsStore.createRoom({ houseId: house.currentHouseId, name, key, icon });
+
+                await roomsStore.createRoom({
+                    houseId: house.currentHouseId,
+                    name,
+                    key,
+                    icon,
+                });
+
                 ui.toast("✅ חדר נוצר");
+                if (!KEY_RE.test(key)) {
+                    ui.toast(`❌ Key לא תקין: ${key}`);
+                    return;
+                }
+
+                // אחרי יצירה נטען מחדש ונבחר את החדר שנוצר
+                await roomsStore.loadForHouse(house.currentHouseId, { force: true });
+                const created = (roomsStore.rooms ?? []).find((r) => r.key === key);
 
                 isCreating.value = false;
-
-                const created = (roomsStore.rooms ?? []).find((r) => r.key === key);
-                selectedId.value = created?.id ?? activeRooms.value[0]?.id ?? null;
+                selectedId.value = created?.id ?? null;
                 hydrateEditFromSelected();
                 initLocalOrder();
                 return;
             }
 
+            // update
             if (!selectedRoom.value) return;
             await roomsStore.updateRoom(selectedRoom.value.id, { name, icon });
             ui.toast("💾 נשמר");
@@ -556,19 +618,27 @@
         }
     }
 
+
+
     async function archiveSelected() {
         if (!selectedRoom.value) return;
+
         if (isLiving(selectedRoom.value)) {
-            ui.toast("🛋️ living לא נכנס לארכיון");
+            ui.toast("🛋️ סלון (living) הוא קבוע ולא נכנס לארכיון");
             return;
         }
+
         saving.value = true;
         try {
             await roomsStore.archiveRoom(selectedRoom.value.id);
             ui.toast("🗃️ אורכב");
-            selectedId.value = activeRooms.value.find((r) => r.id !== selectedRoom.value.id)?.id ?? null;
-            hydrateEditFromSelected();
+
+            // לבחור חדר אחר פעיל
+            await roomsStore.loadForHouse(house.currentHouseId, { force: true });
             initLocalOrder();
+
+            selectedId.value = activeRooms.value[0]?.id ?? null;
+            hydrateEditFromSelected();
         } catch (e) {
             console.error(e);
             ui.toast("💥 ארכוב נכשל");
@@ -579,10 +649,13 @@
 
     async function restoreSelected() {
         if (!selectedRoom.value) return;
+
         saving.value = true;
         try {
-            await roomsStore.updateRoom(selectedRoom.value.id, { is_archived: false });
+            await roomsStore.restoreRoom(selectedRoom.value.id);
             ui.toast("♻️ הוחזר");
+
+            await roomsStore.loadForHouse(house.currentHouseId, { force: true });
             initLocalOrder();
             hydrateEditFromSelected();
         } catch (e) {
@@ -592,6 +665,7 @@
             saving.value = false;
         }
     }
+
 
     // ---------- Reorder ----------
     const dragState = ref({ draggingId: null, overId: null });
