@@ -8,7 +8,7 @@ export const useHouseStore = defineStore('house', {
         myHouses: [],
 
         // ✅ קיים אצלך: חדר נוכחי + חדרים (עד שנעבור ל-rooms מה-DB)
-        currentRoom: 'living',
+        currentRoom: 'lobby',
         rooms: {
             living: {
                 name: 'הסלון',

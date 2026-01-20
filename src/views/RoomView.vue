@@ -80,7 +80,7 @@
         paddingBottom: `${keyboardPx.value}px`,
     }));
 
-    const roomKeyFromRoute = computed(() => String(route.params.id || "living"));
+    const roomKeyFromRoute = computed(() => String(route.params.id || "lobby"));
 
     // debounce-ish: לא להריץ syncRoom במקביל
     let syncing = false;
@@ -95,7 +95,7 @@
 
             await roomsStore.loadForHouse(houseId);
 
-            const roomKey = roomKeyFromRoute.value || "living";
+            const roomKey = roomKeyFromRoute.value || "lobby";
 
             // presence store יכול להיכשל אם session רגע נופל — אבל לא להפיל UI
             try {
@@ -124,10 +124,10 @@
 
     async function goBack() {
         await router.push({ name: "home" });
-        await presence.setRoom("living");
+        await presence.setRoom("lobby");
     }
     async function goLobby() {
         await router.push({ name: "home" });
-        await presence.setRoom("living");
+        await presence.setRoom("lobby");
     }
 </script>

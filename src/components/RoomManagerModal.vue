@@ -376,7 +376,7 @@
     }
 
     function isLiving(r) {
-        return (r?.key ?? "") === "living";
+        return (r?.key ?? "") === "lobby";
     }
     function isArchived(r) {
         return !!r?.is_archived;

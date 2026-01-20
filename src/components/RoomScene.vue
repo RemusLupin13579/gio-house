@@ -127,7 +127,7 @@
 
     // ✅ supports /room/:id and /room/:roomKey / :key
     const roomKey = computed(() =>
-        String(route.params.id || route.params.roomKey || route.params.key || "living")
+        String(route.params.id || route.params.roomKey || route.params.key || "lobby")
     );
 
     const room = computed(() => {

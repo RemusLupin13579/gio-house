@@ -10,7 +10,7 @@ export const usePresenceStore = defineStore("presence", {
     state: () => ({
         status: "idle", // idle | connecting | ready | failed
         houseId: null,
-        roomName: "living",
+        roomName: "lobby",
         users: {},
         _channel: null,
         _guardsInstalled: false,
@@ -23,7 +23,7 @@ export const usePresenceStore = defineStore("presence", {
     actions: {
         usersInRoom(roomKey) {
             const arr = Object.values(this.users || {});
-            return arr.filter((u) => (u.room_name || "living") === (roomKey || "living"));
+            return arr.filter((u) => (u.room_name || "lobby") === (roomKey || "lobby"));
         },
 
         typingUsersInRoom(roomKey) {
@@ -48,7 +48,7 @@ export const usePresenceStore = defineStore("presence", {
 
             return {
                 user_id: userId,
-                room_name: this.roomName || "living",
+                room_name: this.roomName || "lobby",
                 user_status: "online",
 
                 // ✅ profile -> existing -> defaults
@@ -72,7 +72,7 @@ export const usePresenceStore = defineStore("presence", {
 
                 await this._channel.track(
                     this._selfMeta(userId, {
-                        room_name: this.roomName || "living",
+                        room_name: this.roomName || "lobby",
                         user_status: this.users?.[userId]?.user_status || "online",
                         typing: prevTyping,
                         typing_ts: prevTyping ? (prevTypingTs || nowTs()) : prevTypingTs,
@@ -85,13 +85,13 @@ export const usePresenceStore = defineStore("presence", {
             }
         },
 
-        async connect({ houseId, initialRoom = "living" }) {
+        async connect({ houseId, initialRoom = "lobby" }) {
             const userId = await this._getUserId();
             if (!userId || !houseId) return false;
 
             if (this._channel && this.houseId === houseId) {
                 this.houseId = houseId;
-                this.roomName = initialRoom || this.roomName || "living";
+                this.roomName = initialRoom || this.roomName || "lobby";
                 await this.setRoom(this.roomName);
                 return true;
             }
@@ -100,7 +100,7 @@ export const usePresenceStore = defineStore("presence", {
 
             this.status = "connecting";
             this.houseId = houseId;
-            this.roomName = initialRoom || "living";
+            this.roomName = initialRoom || "lobby";
 
             const ch = supabase.channel(`presence_house_${houseId}`, {
                 config: { presence: { key: String(userId) } },
@@ -121,7 +121,7 @@ export const usePresenceStore = defineStore("presence", {
                         avatar_url: meta?.avatar_url || null,
                         avatar_full_url: meta?.avatar_full_url || null, // ✅ NEW
                         color: meta?.color || "#22c55e",
-                        room_name: meta?.room_name || "living",
+                        room_name: meta?.room_name || "lobby",
                         user_status: meta?.user_status || "online",
                         ts: meta?.ts || nowTs(),
                         typing: !!meta?.typing,
@@ -144,7 +144,7 @@ export const usePresenceStore = defineStore("presence", {
                     avatar_url: meta?.avatar_url || null,
                     avatar_full_url: meta?.avatar_full_url || null, // ✅ NEW
                     color: meta?.color || "#22c55e",
-                    room_name: meta?.room_name || "living",
+                    room_name: meta?.room_name || "lobby",
                     user_status: meta?.user_status || "online",
                     ts: meta?.ts || nowTs(),
                     typing: !!meta?.typing,

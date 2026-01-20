@@ -8,11 +8,38 @@
                 ☰
             </button>
 
-            <button class="absolute left-1/2 -translate-x-1/2 w-[70%] max-w-[420px] text-center font-bold text-green-300 truncate"
-                    @click="goLobby({ closeDrawer: false })"
-                    title="לובי">
-                {{ headerTitle }}
+            <button class="w-full px-3 py-2 rounded-xl flex items-center justify-between hover:bg-white/5 transition border border-transparent"
+                    :class="route.name === 'home' ? 'bg-white/5 border border-green-500/30' : ''"
+                    @click="goLobby({ closeDrawer: true })">
+                <div class="flex items-center gap-2">
+                    <span class="text-lg">🏛️</span>
+                    <span class="font-semibold truncate block max-w-[180px]">לובי</span>
+                </div>
+
+                <!-- ✅ RIGHT: avatars + count (לובי) -->
+                <div class="gio-room-right" dir="ltr">
+                    <div class="gio-room-avatars" dir="ltr">
+                        <template v-for="(u, i) in roomUsers('lobby').slice(0, AVATARS_MAX)" :key="u.user_id || u.id || i">
+                            <div class="gio-room-avatar" :style="{ zIndex: 10 + i }" :title="u.nickname || 'User'">
+                                <img v-if="u.avatar_url" :src="u.avatar_url" alt="" />
+                                <span v-else>{{ (u.nickname?.[0] ?? "•") }}</span>
+                            </div>
+                        </template>
+
+                        <div v-if="roomUsers('lobby').length > AVATARS_MAX"
+                             class="gio-room-avatar gio-room-more"
+                             :title="`+${roomUsers('lobby').length - AVATARS_MAX}`">
+                            +{{ roomUsers('lobby').length - AVATARS_MAX }}
+                        </div>
+                    </div>
+
+                    <span class="gio-room-count">
+                        <span v-if="presence.status === 'connecting'" class="gio-skel-count"></span>
+                        <span v-else>{{ roomUsers('lobby').length }}</span>
+                    </span>
+                </div>
             </button>
+
 
         </div>
 
@@ -81,7 +108,31 @@
                                 <span class="text-lg">🏛️</span>
                                 <span class="font-semibold truncate block max-w-[180px]">לובי</span>
                             </div>
+
+                            <!-- ✅ RIGHT: avatars + count (לובי) -->
+                            <div class="gio-room-right" dir="ltr">
+                                <div class="gio-room-avatars" dir="ltr">
+                                    <template v-for="(u, i) in roomUsers('lobby').slice(0, AVATARS_MAX)" :key="u.user_id || u.id || i">
+                                        <div class="gio-room-avatar" :style="{ zIndex: 10 + i }" :title="u.nickname || 'User'">
+                                            <img v-if="u.avatar_url" :src="u.avatar_url" alt="" />
+                                            <span v-else>{{ (u.nickname?.[0] ?? "•") }}</span>
+                                        </div>
+                                    </template>
+
+                                    <div v-if="roomUsers('lobby').length > AVATARS_MAX"
+                                         class="gio-room-avatar gio-room-more"
+                                         :title="`+${roomUsers('lobby').length - AVATARS_MAX}`">
+                                        +{{ roomUsers('lobby').length - AVATARS_MAX }}
+                                    </div>
+                                </div>
+
+                                <span class="gio-room-count">
+                                    <span v-if="presence.status === 'connecting'" class="gio-skel-count"></span>
+                                    <span v-else>{{ roomUsers('lobby').length }}</span>
+                                </span>
+                            </div>
                         </button>
+
 
                         <div class="h-px bg-white/10 my-2"></div>
 
@@ -261,13 +312,35 @@
                                 <button class="w-full px-3 py-2 rounded-xl flex items-center justify-between hover:bg-white/5 transition border border-transparent"
                                         :class="route.name === 'home' ? 'bg-white/5 border border-green-500/30' : ''"
                                         @click="goLobby({ closeDrawer: true })">
-                                    <div class="flex items-center gap-2 min-w-0">
+                                    <div class="flex items-center gap-2">
                                         <span class="text-lg">🏛️</span>
-                                        <span class="font-semibold truncate">לובי</span>
+                                        <span class="font-semibold truncate block max-w-[180px]">לובי</span>
                                     </div>
 
-                                    <span class="text-xs text-white/50">⌂</span>
+                                    <!-- ✅ RIGHT: avatars + count (לובי) -->
+                                    <div class="gio-room-right" dir="ltr">
+                                        <div class="gio-room-avatars" dir="ltr">
+                                            <template v-for="(u, i) in roomUsers('lobby').slice(0, AVATARS_MAX)" :key="u.user_id || u.id || i">
+                                                <div class="gio-room-avatar" :style="{ zIndex: 10 + i }" :title="u.nickname || 'User'">
+                                                    <img v-if="u.avatar_url" :src="u.avatar_url" alt="" />
+                                                    <span v-else>{{ (u.nickname?.[0] ?? "•") }}</span>
+                                                </div>
+                                            </template>
+
+                                            <div v-if="roomUsers('lobby').length > AVATARS_MAX"
+                                                 class="gio-room-avatar gio-room-more"
+                                                 :title="`+${roomUsers('lobby').length - AVATARS_MAX}`">
+                                                +{{ roomUsers('lobby').length - AVATARS_MAX }}
+                                            </div>
+                                        </div>
+
+                                        <span class="gio-room-count">
+                                            <span v-if="presence.status === 'connecting'" class="gio-skel-count"></span>
+                                            <span v-else>{{ roomUsers('lobby').length }}</span>
+                                        </span>
+                                    </div>
                                 </button>
+
 
                                 <div class="h-px bg-white/10 my-2"></div>
 
@@ -538,9 +611,9 @@
         if (route.name !== "home") await router.push({ name: "home" });
 
         if (house.currentHouseId && presence.status !== "ready") {
-            await presence.connect({ houseId: house.currentHouseId, initialRoom: "living" });
+            await presence.connect({ houseId: house.currentHouseId, initialRoom: "lobby" });
         }
-        await presence.setRoom("living");
+        await presence.setRoom("lobby");
 
     }
 
@@ -609,7 +682,7 @@
         () => house.currentHouseId,
         async (houseId) => {
             if (!houseId) return; // ✅ MUST
-            await presence.connect({ houseId, initialRoom: presence.roomName || "living" });
+            await presence.connect({ houseId, initialRoom: presence.roomName || "lobby" });
         },
         { immediate: true }
     );
@@ -901,10 +974,16 @@
     });
 
     function isActiveRoom(roomKey) {
-        return route.name === "room"
-            ? String(routeRoomKey.value) === roomKey
-            : house.currentRoom === roomKey;
+        // ✅ בלובי לא מסמנים חדרים בכלל
+        if (route.name === "home") return false;
+
+        // במסך חדר — מסמן לפי ה-route
+        if (route.name === "room") return String(routeRoomKey.value) === roomKey;
+
+        // מסכים אחרים (אם יש) — ברירת מחדל לפי ה-store
+        return house.currentRoom === roomKey;
     }
+
 
     const activeRooms = computed(() => roomsStore.activeRooms ?? []);
 

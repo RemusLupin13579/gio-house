@@ -44,7 +44,7 @@ app.mount("#app");
 
     const hid = house.currentHouseId;
     if (hid) {
-        await presence.connect({ houseId: hid, initialRoom: presence.roomName || "living" });
-        await presence.setRoom(presence.roomName || "living");
+        await presence.connect({ houseId: hid, initialRoom: presence.roomName || "lobby" });
+        await presence.setRoom(presence.roomName || "lobby");
     }
 })();

@@ -48,7 +48,7 @@
                         <div v-for="u in skeletonUsers"
                              :key="u.id"
                              class="absolute inset-0"
-                             :style="{ transform: `rotate(${(ROOM_ANGLE[u.roomKey] ?? ROOM_ANGLE.afk) - 90}deg)` }">
+                             :style="{ transform: `rotate(${angleFor(u.roomKey) - 90}deg)` }">
                             <div class="absolute left-1/2 top-1/2 origin-left animate-pulse"
                                  :style="{
                   width: `${baseHandLen}px`,
@@ -221,12 +221,13 @@
     const isPresenceFailed = computed(() => presence.status === "failed");
 
     const skeletonUsers = computed(() => [
-        { id: "s1", roomKey: "living" },
-        { id: "s2", roomKey: "gaming" },
-        { id: "s3", roomKey: "cinema" },
-        { id: "s4", roomKey: "bathroom" },
-        { id: "s5", roomKey: "study" },
-        { id: "s6", roomKey: "afk" },
+        { id: "s1", roomKey: "lobby" },
+        { id: "s2", roomKey: "living" },
+        { id: "s3", roomKey: "gaming" },
+        { id: "s4", roomKey: "cinema" },
+        { id: "s5", roomKey: "bathroom" },
+        { id: "s6", roomKey: "study" },
+        { id: "s7", roomKey: "afk" },
     ]);
 
     const currentHouse = computed(() => {
@@ -255,7 +256,7 @@
         return list
             .map((u) => {
                 const id = u.user_id ?? u.id;
-                const baseRoom = u.room_name ?? u.last_room ?? "living";
+                const baseRoom = u.room_name ?? u.last_room ?? "lobby";
                 const st = u.user_status ?? "online";
                 const ts = Number(u.ts || 0);
                 const roomKeyForClock = (st === "afk" || st === "offline") ? "afk" : baseRoom;
@@ -270,7 +271,7 @@
                     ts,
                 };
             })
-            .filter((u) => !!u.id)
+            .filter((u) => u && u.id && u.roomKey)
             .sort((a, b) => String(a.id).localeCompare(String(b.id)));
     });
 
@@ -375,9 +376,8 @@
         return () => clearTimeout(t);
     });
     function getRoomLabelStyle(roomId) {
-        const angleDeg = (ROOM_ANGLE[roomId] ?? ROOM_ANGLE.afk) - 90;
+        const angleDeg = ((angleMap.value[roomId] ?? angleMap.value.afk ?? 180) - 90);
         const rad = (angleDeg * Math.PI) / 180;
-
         const x = Math.cos(rad) * radius.value;
         const y = Math.sin(rad) * radius.value;
 
@@ -402,14 +402,27 @@
     const ghostAvatar = computed(() => Math.max(44, Math.min(54, Math.floor(clockSize.value * 0.14))));
     const statusDot = computed(() => Math.max(14, Math.min(20, Math.floor(clockSize.value * 0.05))));
 
-    const roomPositions = computed(() => [
-        { id: "living", name: "סלון", icon: "🛋️" },
-        { id: "gaming", name: "גיימינג", icon: "🎮" },
-        { id: "study", name: "לימוד", icon: "📚" },
-        { id: "bathroom", name: "שירותים", icon: "🚿" },
-        { id: "cinema", name: "קולנוע", icon: "🎬" },
-        { id: "afk", name: "afk", icon: "😴" },
-    ]);
+    const roomPositions = computed(() => {
+        const fromDb = (roomsStore.rooms ?? roomsStore.activeRooms ?? []).map(r => ({
+            id: r.key,
+            name: r.name || r.key,
+            icon: r.icon || "🚪",
+        }));
+
+        // נוודא שיש living גם אם הוא DB, ונוסיף fixed במידה ואין
+        const byId = new Map(fromDb.map(x => [x.id, x]));
+
+        byId.set("lobby", { id: "lobby", name: "לובי", icon: "🏛️" });
+        byId.set("living", { id: "living", name: "סלון", icon: "🛋️" });
+        byId.set("bathroom", byId.get("bathroom") ?? { id: "bathroom", name: "שירותים", icon: "🚿" });
+        byId.set("afk", { id: "afk", name: "AFK", icon: "😴" });
+
+        // סדר תצוגה: לפי הזווית המחושבת (נראה “עגול”)
+        return [...byId.values()]
+            .filter(x => !!x?.id)
+            .sort((a, b) => (angleMap.value[a.id] ?? 999) - (angleMap.value[b.id] ?? 999));
+    });
+
     function hexToRgba(hex, a) {
         if (typeof hex !== "string" || !hex.startsWith("#")) return `rgba(34,197,94,${a})`;
         const h = hex.replace("#", "");
@@ -463,16 +476,79 @@
         };
     }
 
-    const ROOM_ANGLE = {
-        living: 0,
-        gaming: 60,
-        cinema: 120,
-        afk: 180,
-        bathroom: 240,
-        study: 300,
-    };
+    const FIXED = [
+        { key: "lobby", desired: 0 },       // top
+        { key: "living", desired: 30 },     // high-ish
+        { key: "afk", desired: 180 },       // bottom
+        { key: "bathroom", desired: 240 },  // low-left-ish
+    ];
+
+    function wrapDeg(d) {
+        d = d % 360;
+        return d < 0 ? d + 360 : d;
+    }
+
+    function closestIndex(angles, desired, taken) {
+        let best = -1;
+        let bestDist = Infinity;
+        for (let i = 0; i < angles.length; i++) {
+            if (taken.has(i)) continue;
+            const a = angles[i];
+            let dist = Math.abs(a - desired);
+            dist = Math.min(dist, 360 - dist);
+            if (dist < bestDist) {
+                bestDist = dist;
+                best = i;
+            }
+        }
+        return best;
+    }
+
+    const angleMap = computed(() => {
+        // ✅ החדרים הדינאמיים (מה-DB)
+        const dbKeys = (roomsStore.rooms ?? roomsStore.activeRooms ?? [])
+            .map(r => r.key)
+            .filter(Boolean);
+
+        // ✅ תוודא שאין כפילויות ושלא נכפיל fixed
+        const fixedKeys = new Set(FIXED.map(x => x.key));
+        const otherKeys = [...new Set(dbKeys)].filter(k => !fixedKeys.has(k));
+
+        // ✅ כמה סלוטים? fixed + אחרים
+        const total = FIXED.length + otherKeys.length;
+        const step = 360 / Math.max(1, total);
+        const slots = Array.from({ length: total }, (_, i) => wrapDeg(i * step));
+
+        // ✅ משבצים את העוגנים לסלוטים הכי קרובים ל-desired
+        const taken = new Set();
+        const map = {};
+
+        for (const f of FIXED) {
+            const idx = closestIndex(slots, f.desired, taken);
+            if (idx !== -1) {
+                taken.add(idx);
+                map[f.key] = slots[idx];
+            }
+        }
+
+        // ✅ שאר הסלוטים הפנויים לפי סדר יציב (אלפביתי כדי שלא יקפוץ)
+        const freeIdx = slots
+            .map((a, i) => ({ a, i }))
+            .filter(x => !taken.has(x.i))
+            .sort((x, y) => x.a - y.a);
+
+        const stableOthers = otherKeys.slice().sort((a, b) => a.localeCompare(b));
+
+        stableOthers.forEach((k, n) => {
+            map[k] = freeIdx[n]?.a ?? wrapDeg((n + 1) * step);
+        });
+
+        return map;
+    });
+
 
     function getHandLen(user) {
+        if (!user || !user.roomKey) return baseHandLen.value;
         const sameRoom = clockUsers.value
             .filter((u) => u.roomKey === user.roomKey)
             .sort((a, b) => String(a.id).localeCompare(String(b.id)));
@@ -487,10 +563,14 @@
         return Math.min(proposed, maxHandLen.value);
     }
 
+    function angleFor(roomKey) {
+        return (angleMap.value?.[roomKey] ?? angleMap.value?.afk ?? 180);
+    }
+
 
     function getUserRotation(user) {
-        const base = (ROOM_ANGLE[user.roomKey] ?? ROOM_ANGLE.afk) - 90;
-
+        if (!user || !user.roomKey) return ((angleMap.value.afk ?? 180) - 90);
+        const base = (angleMap.value[user.roomKey] ?? angleMap.value.afk ?? 180) - 90;
         const sameRoom = clockUsers.value
             .filter((u) => u.roomKey === user.roomKey)
             .sort((a, b) => String(a.id).localeCompare(String(b.id)));
