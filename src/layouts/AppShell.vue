@@ -617,7 +617,7 @@
                     const st = history.state || {};
                     const next = { ...st };
                     delete next.gioDrawer;
-                    history.replaceState(next, "", location.href);
+                    history.replaceState(next, "", window.location.pathname + window.location.search + window.location.hash);
                 } catch (_) { }
                 drawerHistoryPushed.value = false;
                 suppressNextPop = false;
@@ -629,6 +629,11 @@
         }
     }
 
+    function safeReplaceState(stateObj) {
+        try {
+            history.replaceState(stateObj, "", window.location.pathname + window.location.search + window.location.hash);
+        } catch (_) { }
+    }
 
     async function goLobby(options = {}) {
         if (options.closeDrawer && mobileNavOpen.value) closeMobileNav({ skipHistoryBack: true });
@@ -1194,7 +1199,7 @@
                 const st = history.state || {};
                 const next = { ...st };
                 delete next.gioDrawer;
-                history.replaceState(next, "", location.href);
+                history.replaceState(next, "", window.location.pathname + window.location.search + window.location.hash);
             } catch (_) { }
             drawerHistoryPushed.value = false;
         }
