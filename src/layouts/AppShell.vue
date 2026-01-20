@@ -749,15 +749,6 @@
         { immediate: true }
     );
 
-    watch(
-        () => route.fullPath,
-        () => {
-            if (!isHomeRoute()) {
-                exitArmed.value = false;
-                if (exitTimer) clearTimeout(exitTimer);
-            }
-        }
-    );
 
     /* =========================
         ✅ Press Back again to exit app (mobile)
@@ -767,7 +758,7 @@
 
     function armExit() {
         exitArmed.value = true;
-        ui?.toast?.("לחץ שוב ליציאה");
+        //ui?.toast?.("לחץ שוב ליציאה");
         if (exitTimer) clearTimeout(exitTimer);
         exitTimer = setTimeout(() => (exitArmed.value = false), 1600);
     }
