@@ -125,21 +125,21 @@
                     </div>
                 </div>
 
-                <!-- ✅ BODY: Rooms OR DMs -->
-                <div class="p-3 flex-1 min-h-0 overflow-auto">
+                <div class="h-[100dvh] min-h-0 w-full overflow-hidden flex flex-col p-3">
+
                     <template v-if="isDMMode">
-                        <!-- ✅ DM MODE: show DMs sidebar -->
-                        <DMSidebar />
+                        <DMSidebar @openAddFriends="addFriendsOpen = true" />
                     </template>
 
                     <template v-else>
-                        <!-- ✅ ROOMS MODE: exact same rooms list -->
-                        <div class="text-xs text-white/40 mb-2">חדרים</div>
+                        <div class="text-xs text-white/40 mb-3 px-1 uppercase tracking-wider font-medium">חדרים</div>
 
-                        <div class="space-y-1">
+                        <div class="space-y-1 overflow-y-auto custom-scrollbar">
+
                             <button class="w-full px-3 py-2 rounded-xl flex items-center justify-between hover:bg-white/5 transition border border-transparent"
                                     :class="route.name === 'home' ? 'bg-white/5 border border-green-500/30' : ''"
                                     @click="goLobby({ closeDrawer: true })">
+
                                 <div class="flex items-center gap-2">
                                     <span class="text-lg">🏛️</span>
                                     <span class="font-semibold truncate block max-w-[180px]">לובי</span>
@@ -168,7 +168,7 @@
                                 </div>
                             </button>
 
-                            <div class="h-px bg-white/10 my-2"></div>
+                            <div class="h-px bg-white/10 my-2 mx-2"></div>
 
                             <button v-for="r in activeRooms"
                                     :key="r.id"
@@ -185,7 +185,7 @@
                                                    ref="inlineEditInput"
                                                    v-model="inlineEdit.draft"
                                                    class="w-full max-w-[180px] bg-black/40 border border-green-500/25 rounded-lg px-2 py-1 text-sm outline-none
-                                                    focus:border-green-500/40 focus:ring-2 focus:ring-green-500/10"
+                                    focus:border-green-500/40 focus:ring-2 focus:ring-green-500/10"
                                                    @keydown.enter.prevent="commitInlineEdit(r)"
                                                    @keydown.esc.prevent="cancelInlineEdit"
                                                    @blur="cancelInlineEdit"
@@ -503,6 +503,8 @@
                           @close="openInviteModal=false" />
         <RoomManagerModal v-if="openRoomsModal" @close="openRoomsModal=false" />
         <ProfileSettingsModal v-if="openProfileModal" @close="openProfileModal=false" />
+        <AddFriendsModal v-if="addFriendsOpen" @close="addFriendsOpen=false" />
+
     </div>
 </template>
 
@@ -521,10 +523,11 @@
         import { useMessagesStore } from "../stores/messages";
         import { supabase } from "../services/supabase";
         import ProfileSettingsModal from "../components/ProfileSettingsModal.vue";
-
         // ✅ DM MODE sidebar
         import DMSidebar from "../components/DMsSidebar.vue";
+        import AddFriendsModal from "../components/AddFriendsModal.vue";
 
+        const addFriendsOpen = ref(false);
         const inlineEdit = ref({ id: null, draft: "" });
         const inlineEditInput = ref(null);
 

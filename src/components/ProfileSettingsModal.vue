@@ -1,7 +1,6 @@
 <template>
     <div class="fixed inset-0 z-[10060]">
-        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm"
-             @click="$emit('close')"></div>
+        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" @click="$emit('close')"></div>
 
         <div class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[min(92vw,420px)]
              bg-[#0b0f12] border border-white/10 rounded-2xl shadow-2xl overflow-hidden">
@@ -18,10 +17,7 @@
                 <!-- Preview -->
                 <div class="flex items-center gap-3">
                     <div class="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 overflow-hidden flex items-center justify-center">
-                        <img v-if="draft.avatar_url"
-                             :src="draft.avatar_url"
-                             class="w-full h-full object-cover"
-                             alt="" />
+                        <img v-if="draft.avatar_url" :src="draft.avatar_url" class="w-full h-full object-cover" alt="" />
                         <span v-else class="text-lg">🙂</span>
                     </div>
 
@@ -38,22 +34,16 @@
                     <div class="text-xs text-white/50 mb-1">תמונת פרופיל</div>
 
                     <div class="flex items-center gap-2">
-                        <input ref="fileEl"
-                               type="file"
-                               accept="image/*"
-                               class="hidden"
-                               @change="onPickAvatar" />
+                        <input ref="fileEl" type="file" accept="image/*" class="hidden" @change="onPickAvatar" />
 
-                        <button class="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:border-green-500/40 transition text-xs
-                                       disabled:opacity-40"
+                        <button class="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:border-green-500/40 transition text-xs disabled:opacity-40"
                                 :disabled="uploading"
                                 @click="fileEl?.click()">
                             {{ uploading ? "מעלה..." : "העלה תמונה" }}
                         </button>
 
                         <button v-if="draft.avatar_url"
-                                class="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:border-white/20 transition text-xs
-                                       disabled:opacity-40"
+                                class="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:border-white/20 transition text-xs disabled:opacity-40"
                                 :disabled="uploading"
                                 @click="clearAvatar">
                             הסר
@@ -61,8 +51,7 @@
                     </div>
 
                     <div class="mt-1 text-[11px] text-white/40">
-                        טיפ: סלפי/פלג גוף עליון עובד הכי טוב ל־ 
-                        character בהמשך.
+                        טיפ: סלפי/פלג גוף עליון עובד הכי טוב ל־ character בהמשך.
                     </div>
                 </div>
 
@@ -70,8 +59,7 @@
                 <div>
                     <div class="text-xs text-white/50 mb-1">שם משתמש</div>
                     <input v-model="draft.nickname"
-                           class="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm outline-none
-                                  focus:border-green-500/30"
+                           class="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm outline-none focus:border-green-500/30"
                            placeholder="Nickname" />
                     <div v-if="err" class="mt-1 text-[11px] text-red-300/90">{{ err }}</div>
                 </div>
@@ -96,6 +84,47 @@
                     </div>
                 </div>
 
+                <!-- DM scene background -->
+                <div class="mt-4 p-3 rounded-2xl bg-white/5 border border-white/10">
+                    <div class="font-extrabold text-white/80 mb-2">DM Scene</div>
+
+                    <div class="flex items-center gap-3">
+                        <div class="w-20 h-14 rounded-xl border border-white/10 overflow-hidden bg-black/40 flex items-center justify-center">
+                            <img v-if="dmBgUrl" :src="dmBgUrl" class="w-full h-full object-cover" />
+                            <span v-else class="text-white/30 text-xs">No BG</span>
+                        </div>
+
+                        <div class="flex items-center gap-2">
+                            <label class="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:border-green-500/30 transition cursor-pointer">
+                                Upload
+                                <input ref="dmFileEl"
+                                       type="file"
+                                       accept="image/*"
+                                       class="hidden"
+                                       :disabled="savingDMScene"
+                                       @change="(e) => uploadDmScene(e.target.files?.[0])" />
+                            </label>
+
+                            <button class="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:border-red-400/30 transition"
+                                    :disabled="savingDMScene || !dmBgUrl"
+                                    @click="removeDmScene">
+                                Remove
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="mt-3">
+                        <input v-model="dmCaption"
+                               placeholder="Caption קצר שיופיע בסצנה…"
+                               class="w-full h-10 rounded-2xl bg-white/5 border border-white/10 px-4 text-sm outline-none focus:border-green-500/30" />
+                        <button class="mt-2 px-4 py-2 rounded-2xl bg-green-500 text-black font-extrabold disabled:opacity-30"
+                                :disabled="savingDMScene"
+                                @click="saveDmCaption">
+                            Save Caption
+                        </button>
+                    </div>
+                </div>
+
                 <!-- Actions -->
                 <div class="flex items-center justify-between gap-2 pt-2">
                     <button class="px-3 py-2 rounded-xl bg-red-500/10 border border-red-500/20 hover:bg-red-500/15 transition text-red-200 text-xs"
@@ -111,14 +140,13 @@
                         </button>
 
                         <button class="px-4 py-2 rounded-xl bg-green-500 text-black font-bold text-xs hover:scale-[1.02] active:scale-[0.99] transition
-                                       disabled:opacity-40 disabled:hover:scale-100"
+                     disabled:opacity-40 disabled:hover:scale-100"
                                 :disabled="saving || uploading"
                                 @click="save">
                             {{ saving ? "שומר..." : "שמור" }}
                         </button>
                     </div>
                 </div>
-
             </div>
         </div>
     </div>
@@ -140,15 +168,98 @@
     const err = ref("");
 
     const fileEl = ref(null);
+    const dmFileEl = ref(null);
 
     const myId = computed(() => auth.userId || null);
     const me = computed(() => (myId.value ? profilesStore.getById(myId.value) : null));
 
     const draft = reactive({
         nickname: "",
-        color: "#22c55e", // ✅ תמיד HEX עבור colorpicker
+        color: "#22c55e",
         avatar_url: null,
     });
+
+    /* =========================
+       ✅ DM SCENE (source of truth: profilesStore)
+       ========================= */
+    const savingDMScene = ref(false);
+    const dmCaption = ref("");
+
+    const dmBgUrl = computed(() => me.value?.dm_scene_background_url || null);
+
+    watch(
+        me,
+        (p) => {
+            draft.nickname = p?.nickname || "User";
+            draft.color = normalizeToHexColor(p?.color || "#22c55e");
+            draft.avatar_url = p?.avatar_url || null;
+
+            dmCaption.value = p?.dm_scene_caption || "";
+        },
+        { immediate: true }
+    );
+
+    function resetDmFileInput() {
+        if (dmFileEl.value) dmFileEl.value.value = "";
+    }
+
+    async function uploadDmScene(file) {
+        if (!file) return;
+        const uid = myId.value;
+        if (!uid) return;
+
+        savingDMScene.value = true;
+        err.value = "";
+
+        try {
+            const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
+            const path = `dms/${uid}/bg.${ext}`;
+
+            const { error: upErr } = await supabase.storage.from("room-scenes").upload(path, file, {
+                upsert: true,
+                contentType: file.type || "image/jpeg",
+                cacheControl: "3600",
+            });
+            if (upErr) throw upErr;
+
+            const { data } = supabase.storage.from("room-scenes").getPublicUrl(path);
+            const publicUrl = data?.publicUrl || null;
+            if (!publicUrl) throw new Error("לא הצלחתי לקבל URL לתמונה");
+
+            // ✅ update via store (keeps UI stable even after Save)
+            await profilesStore.updateMyProfile({ dm_scene_background_url: publicUrl });
+
+            resetDmFileInput();
+        } catch (e) {
+            err.value = e?.message || String(e);
+        } finally {
+            savingDMScene.value = false;
+        }
+    }
+
+    async function removeDmScene() {
+        savingDMScene.value = true;
+        err.value = "";
+        try {
+            await profilesStore.updateMyProfile({ dm_scene_background_url: null });
+        } catch (e) {
+            err.value = e?.message || String(e);
+        } finally {
+            savingDMScene.value = false;
+        }
+    }
+
+    async function saveDmCaption() {
+        savingDMScene.value = true;
+        err.value = "";
+        try {
+            await profilesStore.updateMyProfile({ dm_scene_caption: String(dmCaption.value || "") });
+        } catch (e) {
+            err.value = e?.message || String(e);
+        } finally {
+            savingDMScene.value = false;
+        }
+    }
 
     /* =========================
        ✅ COLOR HELPERS (keep HEX)
@@ -169,7 +280,9 @@
         const hp = h / 60;
         const x = c * (1 - Math.abs((hp % 2) - 1));
 
-        let r1 = 0, g1 = 0, b1 = 0;
+        let r1 = 0,
+            g1 = 0,
+            b1 = 0;
         if (hp >= 0 && hp < 1) [r1, g1, b1] = [c, x, 0];
         else if (hp < 2) [r1, g1, b1] = [x, c, 0];
         else if (hp < 3) [r1, g1, b1] = [0, c, x];
@@ -189,8 +302,10 @@
 
         if (/^#[0-9a-fA-F]{6}$/.test(v)) return v.toLowerCase();
         if (/^#[0-9a-fA-F]{3}$/.test(v)) {
-            const r = v[1], g = v[2], b = v[3];
-            return (`#${r}${r}${g}${g}${b}${b}`).toLowerCase();
+            const r = v[1],
+                g = v[2],
+                b = v[3];
+            return `#${r}${r}${g}${g}${b}${b}`.toLowerCase();
         }
 
         const m = v.match(/^hsl\(\s*([0-9.]+)\s*,\s*([0-9.]+)%\s*,\s*([0-9.]+)%\s*\)$/i);
@@ -204,21 +319,12 @@
 
         return "#22c55e";
     }
-    const safeColor = computed(() => normalizeToHexColor(draft.color));
 
-    watch(
-        me,
-        (p) => {
-            draft.nickname = p?.nickname || "User";
-            draft.color = normalizeToHexColor(p?.color || "#22c55e");
-            draft.avatar_url = p?.avatar_url || null;
-        },
-        { immediate: true }
-    );
+    const safeColor = computed(() => normalizeToHexColor(draft.color));
 
     function randomizeColor() {
         const hue = Math.floor(Math.random() * 360);
-        const [r, g, b] = hslToRgb(hue, 0.85, 0.70);
+        const [r, g, b] = hslToRgb(hue, 0.85, 0.7);
         draft.color = rgbToHex(r, g, b);
     }
 
@@ -246,14 +352,11 @@
             const ext = extFromType(file.type);
             const path = `${uid}/avatar.${ext}`;
 
-            const { error: upErr } = await supabase.storage
-                .from("avatars")
-                .upload(path, file, {
-                    upsert: true,
-                    contentType: file.type || "image/png",
-                    cacheControl: "3600",
-                });
-
+            const { error: upErr } = await supabase.storage.from("avatars").upload(path, file, {
+                upsert: true,
+                contentType: file.type || "image/png",
+                cacheControl: "3600",
+            });
             if (upErr) throw upErr;
 
             const { data } = supabase.storage.from("avatars").getPublicUrl(path);
@@ -261,10 +364,7 @@
             if (!publicUrl) throw new Error("לא הצלחתי לקבל URL לתמונה");
 
             draft.avatar_url = publicUrl;
-
-            await profilesStore.updateMyProfile({
-                avatar_url: publicUrl,
-            });
+            await profilesStore.updateMyProfile({ avatar_url: publicUrl });
 
             if (fileEl.value) fileEl.value.value = "";
         } catch (e2) {
@@ -281,7 +381,6 @@
         try {
             draft.avatar_url = null;
             await profilesStore.updateMyProfile({ avatar_url: null });
-
             if (fileEl.value) fileEl.value.value = "";
         } catch (e2) {
             err.value = e2?.message || String(e2);
@@ -309,6 +408,7 @@
                 nickname,
                 color: normalizeToHexColor(draft.color),
                 avatar_url: draft.avatar_url || null,
+                // ✅ do NOT touch dm_scene_* here
             });
         } catch (e2) {
             const msg = e2?.message || String(e2);
