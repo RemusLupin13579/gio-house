@@ -118,8 +118,10 @@ async function searchNow() {
 async function startDM(otherUserId) {
   try {
     const threadId = await dmThreads.openOrCreateDM(otherUserId);
-    await dmThreads.loadMyThreads(80);
-    router.push({ name: "dm", params: { threadId } });
+      await dmThreads.loadMyThreads(80);
+
+      dmThreads.setLastThreadId(threadId); // ✅ כאן
+      router.push({ name: "dm", params: { threadId } });
     // close modal
     // (emit)
     // eslint-disable-next-line no-undef

@@ -127,12 +127,16 @@ function isActiveThread(id) {
 
 function openThread(id) {
   if (!id) return;
+
+  dmThreads.setLastThreadId(id); // ✅ כאן
+
   emit("openThread", id);
 
   if (route.name !== "dm" || String(route.params.threadId) !== String(id)) {
     router.push({ name: "dm", params: { threadId: id } });
   }
 }
+
 
 function displayTitle(t) {
   if (t?.otherProfile?.nickname) return t.otherProfile.nickname;

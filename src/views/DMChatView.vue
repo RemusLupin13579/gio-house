@@ -203,9 +203,13 @@
 
     watch(
         () => threadId.value,
-        async () => {
+        async (id) => {
             await ensureOtherProfileLoaded();
             await attachTypingChannel();
-        }
+
+            if (id) threadsStore.setLastThreadId(id); // ✅ כאן, עם id שמגיע מה-watch
+        },
+        { immediate: true }
     );
+
 </script>

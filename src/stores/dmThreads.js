@@ -9,6 +9,7 @@ export const useDMThreadsStore = defineStore("dmThreads", {
         loading: false,
         lastError: null,
         selfThreadId: null,
+        lastThreadId: localStorage.getItem("dm:lastThreadId") || null,
     }),
 
     getters: {
@@ -20,6 +21,11 @@ export const useDMThreadsStore = defineStore("dmThreads", {
             const { data, error } = await supabase.auth.getUser();
             if (error) throw error;
             return data?.user?.id || null;
+        },
+
+        setLastThreadId(id) {
+            this.lastThreadId = id ? String(id) : null;
+            if (this.lastThreadId) localStorage.setItem("dm:lastThreadId", this.lastThreadId);
         },
 
         async ensureSelfThread() {
