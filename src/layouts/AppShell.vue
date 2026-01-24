@@ -1039,10 +1039,23 @@
     function onDrawerTouchEnd() {
         if (!touchDragging.value) return;
         touchDragging.value = false;
+
         const currentTranslate = dragFrame ? dragTranslate : drawerTranslateX.value;
-        if (Math.abs(currentTranslate) / drawerWidth() > 0.12) closeMobileNav();
-        else animateDrawer(0, 1, 120);
+        const shouldClose = Math.abs(currentTranslate) / drawerWidth() > 0.12;
+
+        if (!shouldClose) {
+            animateDrawer(0, 1, 120);
+            return;
+        }
+
+        // ✅ אם אנחנו במצב DMS – אל תעשה history.back
+        if (isMobile() && route.name === "dms") {
+            closeMobileNav({ skipHistoryBack: true });
+        } else {
+            closeMobileNav();
+        }
     }
+
 
     function onGlobalPointerDown(e) {
         if (houseMenuOpen.value) {
