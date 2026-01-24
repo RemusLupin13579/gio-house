@@ -356,11 +356,15 @@ export const useDMMessagesStore = defineStore("dmMessages", {
                                 tag: `dm_${item.threadId}`,
                             };
 
+                            console.log("[send-push] calling", getPushApiUrl(), { method: "POST", toUserId });
+
                             const resp = await fetch(getPushApiUrl(), {
                                 method: "POST",
                                 headers: { "Content-Type": "application/json" },
                                 body: JSON.stringify({ toUserId, payload }),
                             });
+
+                            console.log("[send-push] resp status:", resp.status);
 
                             const json = await resp.json().catch(() => ({}));
                             if (!resp.ok) console.warn("[send-push] failed:", resp.status, json);

@@ -2,8 +2,21 @@
 import webpush from "web-push";
 
 export default async function handler(req, res) {
-    if (req.method === "OPTIONS") return res.status(200).end();
-    if (req.method !== "POST") return res.status(405).json({ error: "METHOD_NOT_ALLOWED" });
+    // Allow CORS (גם לפרודקשן זה לא מזיק)
+    res.setHeader("Access-Control-Allow-Origin", "https://gio-home.vercel.app");
+    res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+
+    if (req.method === "OPTIONS") return res.status(200).send("ok");
+
+    // ✅ בדיקת חיות: פתח בדפדפן /api/send-push
+    if (req.method === "GET") {
+        return res.status(200).json({ ok: true, route: "/api/send-push", method: "GET" });
+    }
+
+    if (req.method !== "POST") {
+        return res.status(405).json({ error: "METHOD_NOT_ALLOWED", got: req.method });
+    }
 
     try {
         const { toUserId, payload } = req.body || {};
@@ -18,7 +31,6 @@ export default async function handler(req, res) {
         const VAPID_PUBLIC = process.env.VITE_VAPID_PUBLIC_KEY || process.env.VAPID_PUBLIC_KEY;
         const VAPID_PRIVATE = process.env.VAPID_PRIVATE_KEY;
         const VAPID_SUBJECT = process.env.VAPID_SUBJECT || "mailto:admin@example.com";
-
         if (!VAPID_PUBLIC || !VAPID_PRIVATE) {
             return res.status(500).json({ error: "MISSING_VAPID_KEYS" });
         }
@@ -26,12 +38,15 @@ export default async function handler(req, res) {
         webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC, VAPID_PRIVATE);
 
         // fetch subs with service role (REST)
-        const r = await fetch(`${SUPABASE_URL}/rest/v1/push_subscriptions?user_id=eq.${encodeURIComponent(toUserId)}&select=endpoint,p256dh,auth`, {
-            headers: {
-                apikey: SERVICE_KEY,
-                authorization: `Bearer ${SERVICE_KEY}`,
-            },
-        });
+        const r = await fetch(
+            `${SUPABASE_URL}/rest/v1/push_subscriptions?user_id=eq.${encodeURIComponent(toUserId)}&select=endpoint,p256dh,auth`,
+            {
+                headers: {
+                    apikey: SERVICE_KEY,
+                    authorization: `Bearer ${SERVICE_KEY}`,
+                },
+            }
+        );
 
         if (!r.ok) {
             const txt = await r.text().catch(() => "");
@@ -54,10 +69,7 @@ export default async function handler(req, res) {
         const results = [];
 
         for (const s of subs) {
-            const subscription = {
-                endpoint: s.endpoint,
-                keys: { p256dh: s.p256dh, auth: s.auth },
-            };
+            const subscription = { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } };
 
             try {
                 await webpush.sendNotification(subscription, JSON.stringify(notifPayload));
@@ -68,16 +80,18 @@ export default async function handler(req, res) {
                 const body = e?.body ?? null;
                 results.push({ endpoint: s.endpoint, ok: false, statusCode, body });
 
-                // cleanup dead endpoints
                 if (statusCode === 404 || statusCode === 410) {
                     try {
-                        await fetch(`${SUPABASE_URL}/rest/v1/push_subscriptions?endpoint=eq.${encodeURIComponent(s.endpoint)}`, {
-                            method: "DELETE",
-                            headers: {
-                                apikey: SERVICE_KEY,
-                                authorization: `Bearer ${SERVICE_KEY}`,
-                            },
-                        });
+                        await fetch(
+                            `${SUPABASE_URL}/rest/v1/push_subscriptions?endpoint=eq.${encodeURIComponent(s.endpoint)}`,
+                            {
+                                method: "DELETE",
+                                headers: {
+                                    apikey: SERVICE_KEY,
+                                    authorization: `Bearer ${SERVICE_KEY}`,
+                                },
+                            }
+                        );
                     } catch { }
                 }
             }
