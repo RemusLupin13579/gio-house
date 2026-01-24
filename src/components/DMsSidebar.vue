@@ -84,81 +84,82 @@
 </template>
 
 <script setup>
-import { computed, onMounted } from "vue";
-import { useRoute, useRouter } from "vue-router";
-import { useDMThreadsStore } from "../stores/dmThreads";
-import { useProfilesStore } from "../stores/profiles";
-import { profile, session } from "../stores/auth";
+    import { computed, onMounted } from "vue";
+    import { useRoute, useRouter } from "vue-router";
+    import { useDMThreadsStore } from "../stores/dmThreads";
+    import { useProfilesStore } from "../stores/profiles";
+    import { profile, session } from "../stores/auth";
 
-const emit = defineEmits(["openThread", "openAddFriends"]);
+    const emit = defineEmits(["openThread", "openAddFriends"]);
 
-const route = useRoute();
-const router = useRouter();
+    const route = useRoute();
+    const router = useRouter();
 
-const dmThreads = useDMThreadsStore();
-const profilesStore = useProfilesStore();
+    const dmThreads = useDMThreadsStore();
+    const profilesStore = useProfilesStore();
 
-const myId = computed(() => session.value?.user?.id ?? null);
+    const myId = computed(() => session.value?.user?.id ?? null);
 
-const myProfile = computed(() => {
-  if (profile.value) return profile.value;
-  if (myId.value) return profilesStore.byId?.[myId.value] || null;
-  return null;
-});
+    const myProfile = computed(() => {
+      if (profile.value) return profile.value;
+      if (myId.value) return profilesStore.byId?.[myId.value] || null;
+      return null;
+    });
 
-const myName = computed(() => myProfile.value?.nickname || "You");
-const myAvatar = computed(() => myProfile.value?.avatar_url || null);
+    const myName = computed(() => myProfile.value?.nickname || "You");
+    const myAvatar = computed(() => myProfile.value?.avatar_url || null);
 
-const loading = computed(() => dmThreads.loading);
-const error = computed(() => dmThreads.lastError);
+    const loading = computed(() => dmThreads.loading);
+    const error = computed(() => dmThreads.lastError);
 
-const selfThreadId = computed(() => dmThreads.selfThreadId || null);
-const threads = computed(() => dmThreads.threads || []);
+    const selfThreadId = computed(() => dmThreads.selfThreadId || null);
+    const threads = computed(() => dmThreads.threads || []);
 
-const activeThreadId = computed(() => {
-  if (route.name === "dm") return String(route.params.threadId || "");
-  return "";
-});
+    const activeThreadId = computed(() => {
+      if (route.name === "dm") return String(route.params.threadId || "");
+      return "";
+    });
 
-function isActiveThread(id) {
-  if (!id) return false;
-  return String(id) === String(activeThreadId.value);
-}
+    function isActiveThread(id) {
+      if (!id) return false;
+      return String(id) === String(activeThreadId.value);
+    }
 
-function openThread(id) {
-  if (!id) return;
+    function openThread(id) {
+      if (!id) return;
 
-  dmThreads.setLastThreadId(id); // ✅ כאן
+      dmThreads.setLastThreadId?.(String(id));   // ✅ זוכר מה היה האחרון
 
-  emit("openThread", id);
+      emit("openThread", id);
 
-  if (route.name !== "dm" || String(route.params.threadId) !== String(id)) {
-    router.push({ name: "dm", params: { threadId: id } });
-  }
-}
+      if (route.name !== "dm" || String(route.params.threadId) !== String(id)) {
+        router.push({ name: "dm", params: { threadId: id } });
+      }
+    }
 
 
-function displayTitle(t) {
-  if (t?.otherProfile?.nickname) return t.otherProfile.nickname;
-  if (t?.title) return t.title;
-  return "DM";
-}
 
-const visibleThreads = computed(() => {
-  const selfId = selfThreadId.value;
-  return (threads.value || [])
-    .filter(t => t?.id && String(t.id) !== String(selfId))
-    .filter(t => t?.otherProfile?.nickname || t?.otherProfile?.avatar_url || t?.title || t?.is_group);
-});
+    function displayTitle(t) {
+      if (t?.otherProfile?.nickname) return t.otherProfile.nickname;
+      if (t?.title) return t.title;
+      return "DM";
+    }
 
-onMounted(async () => {
-  try {
-    if (!dmThreads.selfThreadId) await dmThreads.ensureSelfThread();
-    await dmThreads.loadMyThreads(80);
-  } catch (e) {
-    console.error("[DMsSidebar] init failed:", e);
-  }
-});
+    const visibleThreads = computed(() => {
+      const selfId = selfThreadId.value;
+      return (threads.value || [])
+        .filter(t => t?.id && String(t.id) !== String(selfId))
+        .filter(t => t?.otherProfile?.nickname || t?.otherProfile?.avatar_url || t?.title || t?.is_group);
+    });
+
+    onMounted(async () => {
+      try {
+        if (!dmThreads.selfThreadId) await dmThreads.ensureSelfThread();
+        await dmThreads.loadMyThreads(80);
+      } catch (e) {
+        console.error("[DMsSidebar] init failed:", e);
+      }
+    });
 </script>
 
 <style scoped>
