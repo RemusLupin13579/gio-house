@@ -10,10 +10,15 @@ import { usePresenceStore } from "./stores/presence";
 import { useMessagesStore } from "./stores/messages";
 import "./assets/main.css";
 import { useProfilesStore } from "./stores/profiles";
+import { useNotificationsStore } from "./stores/notifications";
+import { useDMMessagesStore } from "./stores/dmMessages";
 
 const pinia = createPinia();
 const app = createApp(App).use(pinia).use(router);
 app.mount("#app");
+
+const notif = useNotificationsStore(pinia);
+notif.load();
 
 (async function bootstrap() {
     await initAuth();
@@ -39,6 +44,8 @@ app.mount("#app");
         house.setCurrentHouse?.(house.myHouses?.length ? house.myHouses[0].id : null);
     }
 
+    const dmMessages = useDMMessagesStore(pinia);
+    dmMessages.installGuards?.();  // זה גם יעשה subscribeInbox()
     messages.installGuards?.();
     presence.installGuards?.();
 

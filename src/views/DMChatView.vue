@@ -31,6 +31,9 @@
 
     import DMChatPanel from "../components/DMChatPanel.vue";
     import DMScene from "../components/DMScene.vue";
+    import { useNotificationsStore } from "../stores/notifications";
+
+    const notifications = useNotificationsStore();
 
     const route = useRoute();
     const profilesStore = useProfilesStore();

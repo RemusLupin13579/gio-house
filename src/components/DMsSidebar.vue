@@ -58,13 +58,24 @@
           </div>
 
           <div class="min-w-0 text-left flex-1">
-            <div class="font-bold truncate">
+            <div class="font-bold truncate flex items-center gap-2">
+            <span :class="notifications.dmHasUnread(t.id) ? 'text-green-300' : ''">
               {{ displayTitle(t) }}
-            </div>
-            <div class="text-[11px] text-white/45 truncate">
-              {{ t.lastText || "Say hello 👋" }}
-            </div>
+            </span>
+
+            <span v-if="notifications.dmUnreadFor(t.id) > 0"
+                  class="shrink-0 min-w-[18px] h-[18px] px-1 rounded-full
+                         bg-green-500 text-black text-[11px] font-extrabold
+                         flex items-center justify-center">
+              {{ Math.min(99, notifications.dmUnreadFor(t.id)) }}
+            </span>
           </div>
+
+          <div class="text-[11px] text-white/45 truncate">
+            {{ t.lastText || "Say hello 👋" }}
+          </div>
+        </div>
+
         </button>
 
         <div v-if="loading" class="text-xs text-white/50 px-2 py-3">
@@ -89,6 +100,9 @@
     import { useDMThreadsStore } from "../stores/dmThreads";
     import { useProfilesStore } from "../stores/profiles";
     import { profile, session } from "../stores/auth";
+    import { useNotificationsStore } from "../stores/notifications";
+
+    const notifications = useNotificationsStore();
 
     const emit = defineEmits(["openThread", "openAddFriends"]);
 

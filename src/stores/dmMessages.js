@@ -3,6 +3,8 @@ import { defineStore } from "pinia";
 import { supabase } from "../services/supabase";
 import { useAuthStore } from "./auth";
 import { isPaused } from "../lifecycle/resume";
+import { useNotificationsStore } from "./notifications";
+import { session } from "./auth";
 
 const OUTBOX_KEY = "gio-dm-outbox-v1";
 const WORKER_MS = 1200;
@@ -20,6 +22,8 @@ export const useDMMessagesStore = defineStore("dmMessages", {
         _worker: null,
         _guardsInstalled: false,
         _runLock: false,
+        _inboxSub: null,
+
     }),
 
     getters: {
@@ -77,6 +81,56 @@ export const useDMMessagesStore = defineStore("dmMessages", {
             this._saveOutbox();
         },
 
+        subscribeInbox() {
+            if (this._inboxSub) {
+                console.log("[dmInbox] already subscribed");
+                return;
+            }
+
+            console.log("[dmInbox] subscribing...");
+
+            const ch = supabase
+                .channel("dm_inbox")
+                .on(
+                    "postgres_changes",
+                    { event: "INSERT", schema: "public", table: "dm_messages" },
+                    (payload) => {
+                        console.log("[dmInbox] INSERT event", payload);
+                        const r = payload?.new;
+                        if (!r) return;
+
+                        const myId = session.value?.user?.id ?? null;
+                        console.log("[dmInbox] myId=", myId, "from=", r.user_id, "thread=", r.thread_id);
+
+                        if (myId && String(r.user_id) === String(myId)) return;
+
+                        const notif = useNotificationsStore();
+                        notif.onIncomingDM({
+                            threadId: r.thread_id,
+                            fromUserId: r.user_id,
+                            myUserId: myId,
+                            text: r.text ?? "",
+                            createdAtMs: Date.parse(r.created_at) || Date.now(),
+                        });
+
+                        console.log("[dmInbox] unread now:", notif.dmUnread?.[String(r.thread_id)]);
+                    }
+                )
+                .subscribe((status) => {
+                    console.log("[dmInbox] status:", status);
+                });
+
+            this._inboxSub = ch;
+        },
+
+
+
+        async unsubscribeInbox() {
+            if (!this._inboxSub) return;
+            try { await supabase.removeChannel(this._inboxSub); } catch { }
+            this._inboxSub = null;
+        },
+
         installGuards() {
             if (this._guardsInstalled) return;
             this._guardsInstalled = true;
@@ -84,6 +138,7 @@ export const useDMMessagesStore = defineStore("dmMessages", {
             this._loadOutbox();
             this.hydrateOutboxToUI();
             this.startWorker();
+            this.subscribeInbox();
 
             const kick = () => {
                 this.hydrateOutboxToUI();

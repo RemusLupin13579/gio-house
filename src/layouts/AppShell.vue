@@ -48,12 +48,25 @@
             <!-- LEFT RAIL (desktop): DMs button ABOVE houses rail + divider -->
             <aside class="hidden md:flex w-16 bg-[#0b0f12] border-r border-white/5 flex-col items-center">
                 <div class="w-full px-2 pt-2">
-                    <button class="w-full h-12 rounded-2xl bg-white/5 border border-white/10 hover:border-green-500/40 transition flex items-center justify-center"
+                    <button class="relative w-full h-12 rounded-2xl bg-white/5 border border-white/10 hover:border-green-500/40 transition flex items-center justify-center"
                             :class="isDMMode ? 'border-green-500/40 bg-white/10' : ''"
                             @click="goDMs()"
                             title="DMs">
                         💬
+
+                        <!-- badge -->
+                        <span v-if="notifications.dmTotalUnread > 0"
+                              class="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1
+               rounded-full bg-green-500 text-black text-[11px] font-extrabold
+               flex items-center justify-center shadow-lg">
+                            {{ Math.min(99, notifications.dmTotalUnread) }}
+                        </span>
+
+                        <!-- pulse (שקט, בלי קוקאין) -->
+                        <span v-if="notifications.dmTotalUnread > 0"
+                              class="absolute -top-1 -right-1 w-[18px] h-[18px] rounded-full bg-green-500/40 animate-ping"></span>
                     </button>
+
 
                     <div class="h-px bg-white/10 mt-2 mb-1"></div>
                 </div>
@@ -298,12 +311,25 @@
                     <!-- LEFT RAIL (mobile): DMs button + houses -->
                     <div class="w-16 bg-[#0b0f12] border-r border-white/10 flex flex-col items-center">
                         <div class="w-full px-2 pt-2">
-                            <button class="w-full h-12 rounded-2xl bg-white/5 border border-white/10 hover:border-green-500/40 transition flex items-center justify-center"
+                            <button class="relative w-full h-12 rounded-2xl bg-white/5 border border-white/10 hover:border-green-500/40 transition flex items-center justify-center"
                                     :class="isDMMode ? 'border-green-500/40 bg-white/10' : ''"
-                                    @click="goDMs({ closeDrawer: false })"
+                                    @click="goDMs()"
                                     title="DMs">
                                 💬
+
+                                <!-- badge -->
+                                <span v-if="notifications.dmTotalUnread > 0"
+                                      class="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1
+rounded-full bg-green-500 text-black text-[11px] font-extrabold
+flex items-center justify-center shadow-lg">
+                                    {{ Math.min(99, notifications.dmTotalUnread) }}
+                                </span>
+
+                                <!-- pulse (שקט, בלי קוקאין) -->
+                                <span v-if="notifications.dmTotalUnread > 0"
+                                      class="absolute -top-1 -right-1 w-[18px] h-[18px] rounded-full bg-green-500/40 animate-ping"></span>
                             </button>
+
 
                             <div class="h-px bg-white/10 mt-2 mb-1"></div>
                         </div>
@@ -527,6 +553,8 @@
 
 
 <script setup>
+    import { useNotifications } from "../composables/useNotifications";
+    import { useNotificationsStore } from "../stores/notifications";
     import RoomManagerModal from "../components/RoomManagerModal.vue";
     import HousesSidebar from "../components/HousesSidebar.vue";
     import HouseInviteModal from "../components/HouseInviteModal.vue";
@@ -547,6 +575,9 @@
     import { useDMThreadsStore } from "../stores/dmThreads";
 
     const dmThreads = useDMThreadsStore();
+
+    const { notif } = useNotifications();         // context + auto-clear
+    const notifications = useNotificationsStore(); // for getters
 
     const addFriendsOpen = ref(false);
     const inlineEdit = ref({ id: null, draft: "" });
@@ -767,26 +798,50 @@
             router.replace({ name: "dm", params: { threadId: last } });
         }
     }
+
     async function signOut() {
         try {
             // 1) להתנתק אמיתי מה-auth
             const { error } = await supabase.auth.signOut();
             if (error) console.warn("signOut error:", error);
 
-            // 2) לנתק realtime/subs שלך
+            // 2) לנתק realtime / subs
             try { await presence.disconnect?.(); } catch (_) { }
+
             try {
                 const subs = Object.keys(messages.subs || {});
-                for (const roomId of subs) await messages.unsubscribe(roomId);
+                for (const roomId of subs) {
+                    await messages.unsubscribe(roomId);
+                }
+            } catch (_) { }
+
+            // ✅ DM inbox + thread subs
+            try {
+                const dmMessages = useDMMessagesStore();
+                await dmMessages.unsubscribeInbox?.();
+
+                const dmSubs = Object.keys(dmMessages.subs || {});
+                for (const threadId of dmSubs) {
+                    await dmMessages.unsubscribe(threadId);
+                }
             } catch (_) { }
 
             // 3) לאפס state מקומי
             session.value = null;
             profile.value = null;
+
             house.reset?.();
             rooms.reset?.();
+
             messages.byRoom = {};
             messages.subs = {};
+
+            try {
+                const dmMessages = useDMMessagesStore();
+                dmMessages.byThread = {};
+                dmMessages.subs = {};
+                dmMessages.outbox = [];
+            } catch (_) { }
 
             // 4) רק את הדברים שלך (לא של Supabase)
             try { localStorage.removeItem("gio_current_house_id"); } catch (_) { }
@@ -797,6 +852,7 @@
             await router.replace({ name: "login" });
         }
     }
+
 
     function onPopState() {
         if (suppressNextPop) {
