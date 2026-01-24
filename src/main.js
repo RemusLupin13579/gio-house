@@ -1,3 +1,4 @@
+// /src/main.js
 import { createApp } from "vue";
 import App from "./App.vue";
 import router from "./router";
@@ -17,6 +18,18 @@ const pinia = createPinia();
 const app = createApp(App).use(pinia).use(router);
 app.mount("#app");
 
+// ✅ Service Worker
+if ("serviceWorker" in navigator) {
+    window.addEventListener("load", async () => {
+        try {
+            const reg = await navigator.serviceWorker.register("/sw.js", { scope: "/" });
+            console.log("[SW] registered:", reg?.scope);
+        } catch (e) {
+            console.warn("[SW] register failed:", e);
+        }
+    });
+}
+
 const notif = useNotificationsStore(pinia);
 notif.load();
 
@@ -28,6 +41,7 @@ notif.load();
     const presence = usePresenceStore(pinia);
     const messages = useMessagesStore(pinia);
     const profiles = useProfilesStore(pinia);
+
     await profiles.fetchMyProfile();
     await presence.refreshSelf?.();
 
@@ -45,7 +59,7 @@ notif.load();
     }
 
     const dmMessages = useDMMessagesStore(pinia);
-    dmMessages.installGuards?.();  // זה גם יעשה subscribeInbox()
+    dmMessages.installGuards?.();  // DM inbox subscribe + outbox worker
     messages.installGuards?.();
     presence.installGuards?.();
 

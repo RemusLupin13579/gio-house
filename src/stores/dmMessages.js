@@ -5,6 +5,7 @@ import { useAuthStore } from "./auth";
 import { isPaused } from "../lifecycle/resume";
 import { useNotificationsStore } from "./notifications";
 import { session } from "./auth";
+import { useDMThreadsStore } from "./dmThreads";
 
 const OUTBOX_KEY = "gio-dm-outbox-v1";
 const WORKER_MS = 1200;
@@ -13,7 +14,18 @@ const MAX_ATTEMPTS = 6;
 function uuid() { return crypto.randomUUID(); }
 function nowIso() { return new Date().toISOString(); }
 function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+function getPushApiUrl() {
+    // בפרודקשן: נשאר יחסי
+    if (location.hostname !== "localhost") return "/api/send-push";
 
+    // בלוקאל: תירה לפרודקשן (כי אין /api ב-vite dev)
+    return "https://gio-home.vercel.app/api/send-push";
+}
+
+function previewText(s, n = 120) {
+    const t = String(s || "").replace(/\s+/g, " ").trim();
+    return t.length > n ? t.slice(0, n - 1) + "…" : t;
+}
 export const useDMMessagesStore = defineStore("dmMessages", {
     state: () => ({
         byThread: {},   // { [threadId]: Message[] }
@@ -260,6 +272,7 @@ export const useDMMessagesStore = defineStore("dmMessages", {
             return clientId;
         },
 
+
         async runWorker() {
             if (this._runLock) return;
             if (isPaused()) return;
@@ -272,6 +285,16 @@ export const useDMMessagesStore = defineStore("dmMessages", {
                 let userId = null;
                 try { userId = await auth.waitUntilReady(5000); }
                 catch { return; }
+
+                const dmThreads = useDMThreadsStore();
+
+                // שם השולח ל-preview (נשען על dmThreads אם יש, אחרת fallback)
+                // אם יש לך profilesStore זמין אצלך בפרויקט — עדיף למשוך ממנו nickname.
+                // כרגע נשמור יציב בלי עוד importים:
+                const fromName =
+                    dmThreads?.myNickname ||
+                    session.value?.user?.email?.split("@")?.[0] ||
+                    "GIO";
 
                 for (const item of this.outbox) {
                     if (item.status !== "queued") continue;
@@ -316,6 +339,36 @@ export const useDMMessagesStore = defineStore("dmMessages", {
                         item.serverId = data.id;
                         item.error = null;
                         this._saveOutbox();
+
+                        // ---- PUSH (best-effort, לא שוברת שליחה) ----
+                        try {
+                            const t = dmThreads.byId(item.threadId);
+                            const toUserId = t?.otherUserId || null;
+
+                            // self thread / unknown
+                            if (!toUserId || String(toUserId) === String(userId)) continue;
+
+                            // payload עם preview נחמד
+                            const payload = {
+                                title: fromName, // אפשר לשים פה nickname אמיתי אם יש לך מקור
+                                body: previewText(item.content, 120),
+                                url: `/dm/${item.threadId}`,
+                                tag: `dm_${item.threadId}`,
+                            };
+
+                            const resp = await fetch(getPushApiUrl(), {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ toUserId, payload }),
+                            });
+
+                            const json = await resp.json().catch(() => ({}));
+                            if (!resp.ok) console.warn("[send-push] failed:", resp.status, json);
+                            else console.log("[send-push] ok:", json);
+                        } catch (e) {
+                            console.warn("[send-push] best-effort crashed:", e);
+                        }
+
                     } catch (e) {
                         item.status = "queued";
                         item.error = e?.message || "SEND_FAILED";
@@ -334,6 +387,8 @@ export const useDMMessagesStore = defineStore("dmMessages", {
                 this._runLock = false;
             }
         },
+
+
 
         startWorker() {
             if (this._worker) return;

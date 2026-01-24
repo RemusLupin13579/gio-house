@@ -28,3 +28,5 @@ dist-ssr
 # deps & builds
 node_modules/
 dist/
+.vercel
+.env*.local

@@ -1,18 +1,22 @@
+<!-- /src/components/ProfileSettingsModal.vue -->
 <template>
     <div class="fixed inset-0 z-[10060]">
         <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" @click="$emit('close')"></div>
 
-        <div class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[min(92vw,420px)]
+        <div class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[min(92vw,440px)]
              bg-[#0b0f12] border border-white/10 rounded-2xl shadow-2xl overflow-hidden">
+            <!-- Header -->
             <div class="px-4 py-3 border-b border-white/10 flex items-center justify-between">
                 <div class="font-extrabold text-green-200">הגדרות פרופיל</div>
-                <button class="w-9 h-9 rounded-xl bg-white/5 border border-white/10 hover:border-green-500/50 transition"
+
+                <button class="w-9 h-9 rounded-xl bg-white/5 border border-white/10 hover:border-green-500/50 transition active:scale-[0.98]"
                         @click="$emit('close')"
                         title="Close">
                     ✕
                 </button>
             </div>
 
+            <!-- Body -->
             <div class="p-4 space-y-4">
                 <!-- Preview -->
                 <div class="flex items-center gap-3">
@@ -22,12 +26,69 @@
                     </div>
 
                     <div class="min-w-0">
-                        <div class="font-bold truncate" :style="{ color: safeColor }">
+                        <div class="font-extrabold truncate" :style="{ color: safeColor }">
                             {{ draft.nickname || "User" }}
                         </div>
                         <div class="text-xs text-white/40 truncate">ID: {{ myId || "-" }}</div>
                     </div>
                 </div>
+
+                <!-- Notifications (Push) -->
+                <section class="p-3 rounded-2xl border border-white/10 bg-white/5">
+                    <div class="flex items-start justify-between gap-3">
+                        <div class="min-w-0">
+                            <div class="font-extrabold text-white/85 leading-tight">Notifications</div>
+                            
+
+                            <div class="mt-2 text-[11px] leading-snug">
+                                <template v-if="pushSupport === 'unsupported'">
+                                    <span class="text-white/45">
+                                        המכשיר/דפדפן לא תומך ב-Push (צריך PWA/דפדפן תומך + Service Worker).
+                                    </span>
+                                </template>
+
+                                <template v-else-if="pushSupport === 'denied'">
+                                    <span class="text-yellow-200/80">
+                                        ההרשאה חסומה. פתח הגדרות אתר והפעל Notifications.
+                                    </span>
+                                </template>
+
+                                <template v-else>
+                                    <span class="text-white/45">
+                                        סטטוס: <span class="text-white/70 font-bold">{{ pushEnabled ? "Enabled" : "Disabled" }}</span>
+                                    </span>
+                                </template>
+
+                                <div v-if="pushError" class="mt-1 text-red-300/90">
+                                    {{ pushError }}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="shrink-0 pt-1">
+                            <button class="relative w-14 h-8 rounded-full border transition
+                       disabled:opacity-40 disabled:cursor-not-allowed"
+                                    :class="pushEnabled ? 'bg-green-500/80 border-green-500/40' : 'bg-white/10 border-white/15'"
+                                    :disabled="pushBusy || pushSupport !== 'supported'"
+                                    @click="togglePush"
+                                    :title="pushEnabled ? 'Disable notifications' : 'Enable notifications'">
+                                <span class="absolute top-1 w-6 h-6 rounded-full bg-[#0b0f12] border border-white/15 shadow transition"
+                                      :style="{ left: pushEnabled ? '30px' : '4px' }" />
+                                <span v-if="pushBusy" class="absolute inset-0 flex items-center justify-center text-[10px] text-black/70 font-extrabold">
+                                    …
+                                </span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- tiny helper row -->
+                    <div class="mt-3 flex items-center justify-between gap-2">
+                        <div class="text-[11px] text-white/40" dir="rtl">
+                            טיפ לאייפון: עובד הכי טוב כשמתקינים את האתר כאפליקציה
+                            (Add to Home Screen).
+                        </div>
+                    </div>
+                </section>
 
                 <!-- Avatar upload -->
                 <div>
@@ -59,7 +120,8 @@
                 <div>
                     <div class="text-xs text-white/50 mb-1">שם משתמש</div>
                     <input v-model="draft.nickname"
-                           class="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm outline-none focus:border-green-500/30"
+                           class="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm outline-none
+                   focus:border-green-500/30"
                            placeholder="Nickname" />
                     <div v-if="err" class="mt-1 text-[11px] text-red-300/90">{{ err }}</div>
                 </div>
@@ -85,27 +147,40 @@
                 </div>
 
                 <!-- DM scene background -->
-                <div class="mt-4 p-3 rounded-2xl bg-white/5 border border-white/10">
-                    <div class="font-extrabold text-white/80 mb-2">DM Scene</div>
+                <div class="p-3 rounded-2xl bg-white/5 border border-white/10">
+                    <div class="flex items-center justify-between gap-3 mb-2">
+                        <div>
+                            <div class="font-extrabold text-white/80">DM Scene</div>
+                            <div class="text-[11px] text-white/40">רקע + כיתוב שיופיעו בסצנה</div>
+                        </div>
+
+                        <button class="px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 hover:border-white/20 transition text-[11px]
+                     disabled:opacity-40"
+                                :disabled="savingDMScene"
+                                @click="saveDmCaption"
+                                title="Save caption">
+                            Save caption
+                        </button>
+                    </div>
 
                     <div class="flex items-center gap-3">
                         <div class="w-20 h-14 rounded-xl border border-white/10 overflow-hidden bg-black/40 flex items-center justify-center">
-                            <img v-if="dmBgUrl" :src="dmBgUrl" class="w-full h-full object-cover" />
+                            <img v-if="dmBgUrl" :src="dmBgUrl" class="w-full h-full object-cover" alt="" />
                             <span v-else class="text-white/30 text-xs">No BG</span>
                         </div>
 
                         <div class="flex items-center gap-2">
-                            <label class="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:border-green-500/30 transition cursor-pointer">
-                                Upload
-                                <input ref="dmFileEl"
-                                       type="file"
-                                       accept="image/*"
-                                       class="hidden"
-                                       :disabled="savingDMScene"
-                                       @change="(e) => uploadDmScene(e.target.files?.[0])" />
-                            </label>
+                            <input ref="dmFileEl" type="file" accept="image/*" class="hidden" :disabled="savingDMScene" @change="onPickDmBg" />
 
-                            <button class="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:border-red-400/30 transition"
+                            <button class="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:border-green-500/30 transition text-xs
+                       disabled:opacity-40"
+                                    :disabled="savingDMScene"
+                                    @click="dmFileEl?.click()">
+                                {{ savingDMScene ? "..." : "Upload" }}
+                            </button>
+
+                            <button class="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:border-red-400/30 transition text-xs
+                       disabled:opacity-40"
                                     :disabled="savingDMScene || !dmBgUrl"
                                     @click="removeDmScene">
                                 Remove
@@ -116,12 +191,8 @@
                     <div class="mt-3">
                         <input v-model="dmCaption"
                                placeholder="Caption קצר שיופיע בסצנה…"
-                               class="w-full h-10 rounded-2xl bg-white/5 border border-white/10 px-4 text-sm outline-none focus:border-green-500/30" />
-                        <button class="mt-2 px-4 py-2 rounded-2xl bg-green-500 text-black font-extrabold disabled:opacity-30"
-                                :disabled="savingDMScene"
-                                @click="saveDmCaption">
-                            Save Caption
-                        </button>
+                               class="w-full h-10 rounded-2xl bg-white/5 border border-white/10 px-4 text-sm outline-none
+                     focus:border-green-500/30" />
                     </div>
                 </div>
 
@@ -139,7 +210,8 @@
                             ביטול
                         </button>
 
-                        <button class="px-4 py-2 rounded-xl bg-green-500 text-black font-bold text-xs hover:scale-[1.02] active:scale-[0.99] transition
+                        <button class="px-4 py-2 rounded-xl bg-green-500 text-black font-extrabold text-xs
+                     hover:scale-[1.02] active:scale-[0.99] transition
                      disabled:opacity-40 disabled:hover:scale-100"
                                 :disabled="saving || uploading"
                                 @click="save">
@@ -153,10 +225,11 @@
 </template>
 
 <script setup>
-    import { computed, reactive, ref, watch } from "vue";
+    import { computed, reactive, ref, watch, onMounted } from "vue";
     import { useProfilesStore } from "../stores/profiles";
     import { useAuthStore } from "../stores/auth";
     import { supabase } from "../services/supabase";
+    import { ensurePushEnabled } from "../composables/usePush";
 
     defineEmits(["close", "signout"]);
 
@@ -180,6 +253,58 @@
     });
 
     /* =========================
+       ✅ Push UI state
+       ========================= */
+    const pushEnabled = ref(false);
+    const pushBusy = ref(false);
+    const pushError = ref("");
+
+    const pushSupport = computed(() => {
+        if (!("serviceWorker" in navigator) || !("PushManager" in window)) return "unsupported";
+        if (typeof Notification !== "undefined" && Notification.permission === "denied") return "denied";
+        return "supported";
+    });
+
+    async function refreshPushState() {
+        pushError.value = "";
+        try {
+            if (pushSupport.value !== "supported") {
+                pushEnabled.value = false;
+                return;
+            }
+            const reg = await navigator.serviceWorker.ready;
+            const sub = await reg.pushManager.getSubscription();
+            pushEnabled.value = !!sub && Notification.permission === "granted";
+        } catch (e) {
+            pushEnabled.value = false;
+        }
+    }
+
+    async function togglePush() {
+        pushError.value = "";
+        pushBusy.value = true;
+        try {
+            if (pushSupport.value !== "supported") return;
+
+            if (pushEnabled.value) {
+                const reg = await navigator.serviceWorker.ready;
+                const sub = await reg.pushManager.getSubscription();
+                if (sub) await sub.unsubscribe();
+                pushEnabled.value = false;
+                return;
+            }
+
+            await ensurePushEnabled();
+            await refreshPushState();
+        } catch (e) {
+            pushError.value = e?.message || String(e);
+            pushEnabled.value = false;
+        } finally {
+            pushBusy.value = false;
+        }
+    }
+
+    /* =========================
        ✅ DM SCENE (source of truth: profilesStore)
        ========================= */
     const savingDMScene = ref(false);
@@ -193,7 +318,6 @@
             draft.nickname = p?.nickname || "User";
             draft.color = normalizeToHexColor(p?.color || "#22c55e");
             draft.avatar_url = p?.avatar_url || null;
-
             dmCaption.value = p?.dm_scene_caption || "";
         },
         { immediate: true }
@@ -201,6 +325,13 @@
 
     function resetDmFileInput() {
         if (dmFileEl.value) dmFileEl.value.value = "";
+    }
+
+    function onPickDmBg(e) {
+        const file = e?.target?.files?.[0];
+        resetDmFileInput();
+        if (!file) return;
+        void uploadDmScene(file);
     }
 
     async function uploadDmScene(file) {
@@ -226,10 +357,7 @@
             const publicUrl = data?.publicUrl || null;
             if (!publicUrl) throw new Error("לא הצלחתי לקבל URL לתמונה");
 
-            // ✅ update via store (keeps UI stable even after Save)
             await profilesStore.updateMyProfile({ dm_scene_background_url: publicUrl });
-
-            resetDmFileInput();
         } catch (e) {
             err.value = e?.message || String(e);
         } finally {
@@ -262,7 +390,7 @@
     }
 
     /* =========================
-       ✅ COLOR HELPERS (keep HEX)
+       ✅ Color helpers (keep HEX)
        ========================= */
     function clamp01(x) {
         return Math.max(0, Math.min(1, x));
@@ -299,7 +427,6 @@
     function normalizeToHexColor(input) {
         const v = String(input || "").trim();
         if (!v) return "#22c55e";
-
         if (/^#[0-9a-fA-F]{6}$/.test(v)) return v.toLowerCase();
         if (/^#[0-9a-fA-F]{3}$/.test(v)) {
             const r = v[1],
@@ -307,7 +434,6 @@
                 b = v[3];
             return `#${r}${r}${g}${g}${b}${b}`.toLowerCase();
         }
-
         const m = v.match(/^hsl\(\s*([0-9.]+)\s*,\s*([0-9.]+)%\s*,\s*([0-9.]+)%\s*\)$/i);
         if (m) {
             const h = Number(m[1]);
@@ -316,7 +442,6 @@
             const [r, g, b] = hslToRgb(h, s, l);
             return rgbToHex(r, g, b);
         }
-
         return "#22c55e";
     }
 
@@ -329,7 +454,7 @@
     }
 
     /* =========================
-       ✅ AVATAR UPLOAD (bucket: avatars)
+       ✅ Avatar upload (bucket: avatars)
        ========================= */
     function extFromType(type = "") {
         if (type.includes("png")) return "png";
@@ -390,7 +515,7 @@
     }
 
     /* =========================
-       ✅ SAVE
+       ✅ Save
        ========================= */
     function isUniqueViolation(message = "") {
         return /duplicate key value violates unique constraint/i.test(message);
@@ -412,10 +537,13 @@
             });
         } catch (e2) {
             const msg = e2?.message || String(e2);
-            if (isUniqueViolation(msg)) err.value = "השם הזה תפוס 😅 נסה משהו אחר";
-            else err.value = msg;
+            err.value = isUniqueViolation(msg) ? "השם הזה תפוס 😅 נסה משהו אחר" : msg;
         } finally {
             saving.value = false;
         }
     }
+
+    onMounted(() => {
+        void refreshPushState();
+    });
 </script>
