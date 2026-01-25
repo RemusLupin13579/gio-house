@@ -6,6 +6,7 @@ import { isPaused } from "../lifecycle/resume";
 import { useNotificationsStore } from "./notifications";
 import { session } from "./auth";
 import { useDMThreadsStore } from "./dmThreads";
+import { useProfilesStore } from "./profiles";
 
 const OUTBOX_KEY = "gio-dm-outbox-v1";
 const WORKER_MS = 1200;
@@ -287,19 +288,20 @@ export const useDMMessagesStore = defineStore("dmMessages", {
                 catch { return; }
 
                 const dmThreads = useDMThreadsStore();
-                const profiles = (await import("./profiles")).useProfilesStore?.() || null;
+                const profilesStore = useProfilesStore();
 
-                // נתוני שולח ל-preview
-                const me = profiles?.getById?.(userId) || null;
+                // ✅ ודא שלפחות הפרופיל שלי בקאש כדי לקבל nickname/avatar
+                try { await profilesStore.ensureLoaded([userId]); } catch { }
+
+                const me = profilesStore.getById(userId);
                 const fromName =
                     me?.nickname ||
                     session.value?.user?.email?.split("@")?.[0] ||
                     "GIO";
 
-                // ❗ האייקון של ההתראה = תמונת פרופיל (לא הלוגו)
-                const fromAvatar =
-                    me?.avatar_url ||
-                    null; // אם אין – ה-SW יעשה fallback
+                // helper: icon url fallback
+                const supabasePublicAvatarUrl = (uid) =>
+                    `https://khaezthvfznjqalhzitz.supabase.co/storage/v1/object/public/avatars/${uid}/avatar.jpg`;
 
                 for (const item of this.outbox) {
                     if (item.status !== "queued") continue;
@@ -345,34 +347,41 @@ export const useDMMessagesStore = defineStore("dmMessages", {
                         item.error = null;
                         this._saveOutbox();
 
-                        // ---- PUSH (best-effort) ----
+                        // ---- PUSH (best-effort, לא שוברת שליחה) ----
                         try {
                             const t = dmThreads.byId(item.threadId);
                             const toUserId = t?.otherUserId || null;
-
-                            // self-thread / unknown
                             if (!toUserId || String(toUserId) === String(userId)) continue;
 
-                            // אחרי insert וה-data קיים
-                            const msgId = data?.id || `${Date.now()}_${item.clientId}`;
+                            // (לא חובה אבל טוב) לדאוג שהפרופיל שלי נטען כדי להביא avatar_url
+                            // פה כבר עשינו ensureLoaded([userId]) למעלה.
 
-                            const fromProfile = profilesStore.getById(userId);
-                            const iconUrl = fromProfile?.avatar_url || "/pwa-192.png?v=1";
+                            const myAvatar =
+                                me?.avatar_full_url ||
+                                me?.avatar_url ||
+                                supabasePublicAvatarUrl(userId);
 
                             const payload = {
                                 title: fromName,
                                 body: previewText(item.content, 140),
                                 url: `/dm/${item.threadId}`,
-                                tag: `dm_${item.threadId}`,     // baseTag
+
+                                // ✅ חשוב: זה "baseTag" בשרת/ב-SW שלך
+                                tag: `dm_${item.threadId}`,
+
+                                // ✅ סטאק אמיתי + מזהה ייחודי כדי שלא ידרוס
                                 stack: true,
-                                msgId: data.id,                // ✅ הכי טוב
-                                iconUrl,                       // ✅ זה האייקון השמאלי
+                                msgId: data.id,
+
+                                // ✅ תמונת פרופיל בצד שמאל (icon)
+                                iconUrl: myAvatar,
+
+                                // badge קטן אפשר להשאיר לוגו
                                 badgeUrl: "/pwa-192.png?v=1",
+
+                                // אופציונלי לעתיד (תמונה גדולה)
+                                // imageUrl: ...
                             };
-
-
-
-                            console.log("[send-push] calling", getPushApiUrl(), { method: "POST", toUserId });
 
                             const resp = await fetch(getPushApiUrl(), {
                                 method: "POST",
@@ -405,6 +414,7 @@ export const useDMMessagesStore = defineStore("dmMessages", {
                 this._runLock = false;
             }
         },
+
 
 
 
