@@ -23,9 +23,14 @@ function sleep(ms) {
 }
 
 function getPushApiUrl() {
-    const base = "https://khaezthvfznjqalhzitz.supabase.co/functions/v1/send-push";
-    return base;
+    // Always hit your own backend.
+    // Prod: /api/send-push on gio-home.vercel.app
+    // Local: if you don't have a local API server, call prod API.
+    return location.hostname === "localhost"
+        ? "https://gio-home.vercel.app/api/send-push"
+        : "/api/send-push";
 }
+
 
 
 function previewText(s, n = 140) {
@@ -434,11 +439,16 @@ export const useDMMessagesStore = defineStore("dmMessages", {
                                 api: getPushApiUrl(),
                             });
 
-                            const resp = await fetch(getPushApiUrl(), {
+                            const url = getPushApiUrl();
+
+                            console.log("[send-push] calling", url, { toUserId, groupKey: payload.groupKey, msgId: payload.msgId });
+
+                            const resp = await fetch(url, {
                                 method: "POST",
                                 headers: { "Content-Type": "application/json" },
                                 body: JSON.stringify({ toUserId, payload }),
                             });
+
 
 
                             const json = await resp.json().catch(() => ({}));
