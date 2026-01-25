@@ -1,150 +1,56 @@
-/* /public/sw.js */
+// /public/sw.js
 
-const SW_VERSION = "2026-01-25_06";
-console.log("[SW] boot", SW_VERSION);
+self.addEventListener('push', function (event) {
+    if (!event.data) return;
 
-self.addEventListener("install", () => self.skipWaiting());
-self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim()));
+    const newData = event.data.json();
+    const tag = newData.tag; // מזהה הקבוצה (למשל ID של הצאט)
 
-self.addEventListener("message", (event) => {
-    if (event.data?.type === "PING_SW_VERSION") {
-        event.source?.postMessage?.({ type: "SW_VERSION", version: SW_VERSION });
-    }
+    event.waitUntil(
+        self.registration.getNotifications({ tag: tag }).then(notifications => {
+            let currentNotification = notifications[0];
+            let title = newData.title;
+            let body = newData.body;
+            let icon = newData.icon;
+
+            if (currentNotification) {
+                // אם כבר יש התראה פתוחה מאותו צ'אט/קבוצה
+                const oldBody = currentNotification.body;
+                // שרשור ההודעות (כמו בוואטסאפ)
+                body = oldBody + '\n' + newData.title + ': ' + newData.body;
+                title = "הודעות חדשות ב-" + newData.title;
+            }
+
+            return self.registration.showNotification(title, {
+                body: body,
+                icon: icon,
+                badge: '/pwa-192.png',
+                tag: tag, // חשוב לקיבוץ
+                renotify: true, // מרעיד את המכשיר גם כשיש התראה קיימת
+                data: newData.data,
+                vibrate: [100, 50, 100],
+                actions: [
+                    { action: 'open', title: 'פתח צ'אט' }
+                ]
+            });
+        })
+    );
 });
 
-function safeJson(event) {
-    try {
-        return event.data ? event.data.json() : {};
-    } catch (e) {
-        console.warn("[SW] push data parse failed", e);
-        return {};
-    }
-}
+// טיפול בלחיצה על ההתראה
+self.addEventListener('notificationclick', function (event) {
+    event.notification.close();
+    const urlToOpen = event.notification.data.url || '/';
 
-function clip(s, n = 180) {
-    const t = String(s || "").replace(/\s+/g, " ").trim();
-    return t.length > n ? t.slice(0, n - 1) + "…" : t;
-}
-
-async function readGroupState(groupKey) {
-    try {
-        const cache = await caches.open("gio-notif-groups-v1");
-        const res = await cache.match(`group:${groupKey}`);
-        if (!res) return { count: 0, lines: [] };
-        const json = await res.json().catch(() => null);
-        if (!json) return { count: 0, lines: [] };
-        return {
-            count: Number(json.count || 0),
-            lines: Array.isArray(json.lines) ? json.lines : [],
-        };
-    } catch {
-        return { count: 0, lines: [] };
-    }
-}
-
-async function writeGroupState(groupKey, state) {
-    try {
-        const cache = await caches.open("gio-notif-groups-v1");
-        await cache.put(
-            `group:${groupKey}`,
-            new Response(JSON.stringify(state), {
-                headers: { "Content-Type": "application/json" },
-            })
-        );
-    } catch { }
-}
-
-async function cacheIcon(iconUrl) {
-    // Windows/Chrome לפעמים מתעלמים מ-icon מרוחק.
-    // caching לא מבטיח 100%, אבל משפר יציבות בפועל.
-    if (!iconUrl || typeof iconUrl !== "string") return;
-    if (!iconUrl.startsWith("http")) return;
-
-    try {
-        const cache = await caches.open("gio-avatars-v1");
-        const hit = await cache.match(iconUrl);
-        if (hit) return;
-
-        const resp = await fetch(iconUrl, { cache: "no-store" }).catch(() => null);
-        // גם opaque יכול להיכנס לקאש
-        if (resp) await cache.put(iconUrl, resp);
-    } catch { }
-}
-
-self.addEventListener("push", (event) => {
-    event.waitUntil((async () => {
-        const data = safeJson(event);
-
-        // ====== Payload expected ======
-        // {
-        //   groupKey: "dm_<threadId>" | "room_<roomKey>" | ...
-        //   title: "nickname"
-        //   body: "preview text"
-        //   url: "/dm/<threadId>"
-        //   iconUrl: "https://.../avatars/<id>/avatar.jpg"
-        //   badgeUrl: "/pwa-192.png?v=1"
-        //   msgId: "serverMessageId"
-        // }
-        // ==============================
-
-        const groupKey = String(data.groupKey || "gio").trim() || "gio";
-        const title = String(data.title || "GIO").trim() || "GIO";
-        const preview = clip(data.body || "New message", 160);
-        const url = String(data.url || "/");
-
-        // icon/badge
-        const iconUrl =
-            typeof data.iconUrl === "string" && data.iconUrl.length
-                ? data.iconUrl
-                : "/pwa-192.png?v=1";
-
-        const badgeUrl =
-            typeof data.badgeUrl === "string" && data.badgeUrl.length
-                ? data.badgeUrl
-                : "/pwa-192.png?v=1";
-
-        // cache remote icon (best-effort)
-        await cacheIcon(iconUrl);
-
-        // ===== WhatsApp-like grouping per groupKey =====
-        const prev = await readGroupState(groupKey);
-        const nextCount = (prev.count || 0) + 1;
-
-        // שומרים כמה שורות אחרונות (כמו expand)
-        const maxLines = 5;
-        const nextLines = [...(prev.lines || []), preview].slice(-maxLines);
-
-        await writeGroupState(groupKey, { count: nextCount, lines: nextLines });
-
-        // body multiline -> Android/Chrome מראה expand יפה
-        const more = nextCount > nextLines.length ? `\n+${nextCount - nextLines.length} more` : "";
-        const body = nextLines.join("\n") + more;
-
-        // ✅ זה “ווצאפ”: tag קבוע לקבוצה => לא מחליף קבוצות אחרות
-        // אבל כן מעדכן את אותה קבוצה (DM thread) במקום לייצר 200 נוטיפיקציות מאותו צ'אט.
-        const tag = groupKey;
-
-        console.log("[SW] notify", SW_VERSION, { groupKey, tag, title, iconUrl, count: nextCount });
-
-        const options = {
-            body,
-            tag,
-            renotify: true,
-            silent: false,
-            data: { url, groupKey },
-            icon: iconUrl,
-            badge: badgeUrl,
-            vibrate: [80, 40, 80],
-            timestamp: Date.now(),
-            // כפתורים (לא בכל פלטפורמה, אבל שווה)
-            actions: [
-                { action: "open", title: "Open" },
-                { action: "mark_read", title: "Mark read" },
-            ],
-        };
-
-        await self.registration.showNotification(title, options);
-    })());
+    event.waitUntil(
+        clients.matchAll({ type: 'window', includeUncontrolled: true }).then(windowClients => {
+            for (var i = 0; i < windowClients.length; i++) {
+                var client = windowClients[i];
+                if (client.url === urlToOpen && 'focus' in client) return client.focus();
+            }
+            if (clients.openWindow) return clients.openWindow(urlToOpen);
+        })
+    );
 });
 
 self.addEventListener("notificationclick", (event) => {

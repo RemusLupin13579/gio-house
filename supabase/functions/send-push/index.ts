@@ -87,8 +87,18 @@ serve(async (req) => {
         const notifPayload = {
             title: payload.title || "GIO",
             body: payload.body || "New message",
-            url: payload.url || "/",
-            tag: payload.tag || "gio",
+            // שימוש בנתיב האווטאר שיצרת
+            icon: payload.icon || "https://gio-home.vercel.app/pwa-192.png",
+            badge: "https://gio-home.vercel.app/pwa-192.png", // לוגו קטן בשורת הסטטוס
+            data: {
+                url: payload.url || "/",
+                senderName: payload.title,
+                text: payload.body,
+                threadId: payload.tag || "default" // מזהה לקיבוץ
+            },
+            // אם תשאיר tag קבוע, הדפדפן ידרוס. אם תוריד, יהיו עשרות התראות נפרדות.
+            // לכן נשתמש ב-tag בתוך ה-Service Worker בצורה חכמה.
+            tag: payload.tag || "gio-group",
         };
 
         let sent = 0;
