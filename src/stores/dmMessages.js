@@ -21,17 +21,63 @@ function nowIso() {
 function sleep(ms) {
     return new Promise((r) => setTimeout(r, ms));
 }
+function getPushApiUrl() {
+    // בפרודקשן: route של Vercel
+    if (location.hostname !== "localhost") return "/api/send-push";
+
+    // בלוקאל: אין /api ב-vite dev => תירה לפרודקשן
+    return "https://gio-home.vercel.app/api/send-push";
+}
+
 function previewText(s, n = 140) {
     const t = String(s || "").replace(/\s+/g, " ").trim();
     return t.length > n ? t.slice(0, n - 1) + "…" : t;
 }
 
-function getPushApiUrl() {
-    // prod: relative
-    if (location.hostname !== "localhost") return "/api/send-push";
-    // local dev: your Vite doesn't have /api
-    return "https://gio-home.vercel.app/api/send-push";
+function stripTrailingSlash(u) {
+    return String(u || "").replace(/\/+$/, "");
 }
+
+// ✅ בוחר URL ציבורי לאוואטר מהבאקט avatars/<id>/...
+// iPhone אצלך => avatar.*, אז זה ראשון.
+// מוסיף cache-bust כדי לא להיתקע על לוגו/מטמון.
+function pickAvatarUrl(uid) {
+    const base =
+        stripTrailingSlash(import.meta?.env?.VITE_SUPABASE_URL) ||
+        stripTrailingSlash(process.env?.VITE_SUPABASE_URL) ||
+        "https://khaezthvfznjqalhzitz.supabase.co"; // fallback קשיח אצלך
+
+    const v = Date.now(); // cache bust
+    const candidates = [
+        `avatars/${uid}/avatar.jpg`,
+        `avatars/${uid}/avatar.jpeg`,
+        `avatars/${uid}/avatar.png`,
+        `avatars/${uid}/head.png`,
+        `avatars/${uid}/head.jpg`,
+        `avatars/${uid}/head.jpeg`,
+    ];
+
+    // אין לנו פה HEAD יציב בלי להתעסק עם CORS, אז בוחרים "הכי סביר".
+    // אצלך זה כמעט תמיד avatar.jpg / head.png.
+    return `${base}/storage/v1/object/public/${candidates[0]}?v=${v}`;
+}
+
+// (לא חובה, אבל נחמד) אם בפרופיל יש avatar_full_url — משתמשים בו
+function resolveAvatarFromProfile(uid, meProfile) {
+    const v = Date.now();
+    const raw =
+        meProfile?.avatar_full_url ||
+        meProfile?.avatar_url ||
+        null;
+
+    if (raw) {
+        // cache bust גם לזה
+        const glue = raw.includes("?") ? "&" : "?";
+        return `${raw}${glue}v=${v}`;
+    }
+    return pickAvatarUrl(uid);
+}
+
 
 function publicAvatarCandidates(uid) {
     const base = `https://khaezthvfznjqalhzitz.supabase.co/storage/v1/object/public/avatars/${uid}`;
@@ -320,22 +366,18 @@ export const useDMMessagesStore = defineStore("dmMessages", {
                 const dmThreads = useDMThreadsStore();
                 const profilesStore = useProfilesStore();
 
-                // ensure my profile cached
-                try {
-                    await profilesStore.ensureLoaded([userId]);
-                } catch { }
-
+                // ✅ תביא את הפרופיל שלי כדי לקבל nickname + avatar
+                try { await profilesStore.ensureLoaded([userId]); } catch { }
                 const me = profilesStore.getById(userId);
-                const fromName = me?.nickname || session.value?.user?.email?.split("@")?.[0] || "GIO";
 
-                // pick avatar in a deterministic way:
-                // 1) avatar_full_url / avatar_url if provided
-                // 2) fallback to known public paths (avatar/head)
-                const candidates = publicAvatarCandidates(userId);
-                const myAvatar =
-                    (me?.avatar_full_url && String(me.avatar_full_url)) ||
-                    (me?.avatar_url && String(me.avatar_url)) ||
-                    candidates[0];
+                // ✅ לא משתמשים ב-Google name / email כ-fallback — זה מה שהחזיר אותך אחורה
+                const fromName = (me?.nickname && String(me.nickname).trim()) ? String(me.nickname).trim() : "GIO";
+
+                // ✅ אוואטר שלי (תמונה בצד שמאל בהתראה)
+                const myAvatar = resolveAvatarFromProfile(userId, me);
+
+                // badge קטן (ליד) נשאר לוגו
+                const badgeUrl = "/pwa-192.png?v=1";
 
                 for (const item of this.outbox) {
                     if (item.status !== "queued") continue;
@@ -385,33 +427,38 @@ export const useDMMessagesStore = defineStore("dmMessages", {
                         try {
                             const t = dmThreads.byId(item.threadId);
                             const toUserId = t?.otherUserId || null;
+
+                            // self / unknown => אל תשלח
                             if (!toUserId || String(toUserId) === String(userId)) continue;
+
+                            // ✅ סטאק: tag ייחודי לכל הודעה כדי שלא תדרוס.
+                            // baseTag מאפשר לך "קיבוץ" עתידי לפי thread.
+                            const baseTag = `dm_${item.threadId}`;
+                            const msgId = String(data?.id || `${Date.now()}_${Math.random().toString(16).slice(2)}`);
 
                             const payload = {
                                 title: fromName,
                                 body: previewText(item.content, 160),
                                 url: `/dm/${item.threadId}`,
 
-                                // for grouping
-                                tag: `dm_${item.threadId}`,
-                                threadId: String(item.threadId),
+                                // חשוב: baseTag לשרשור + msgId לייחודיות
+                                tag: baseTag,      // זה ה-baseTag אצל השרת/SW שלך
+                                msgId,             // גורם ל-tag ייחודי ב-SW
 
-                                // uniqueness for per-message stacking
-                                msgId: data.id,
+                                stack: true,
+                                threadId: item.threadId,
 
-                                // avatar on left
+                                // ✅ זה מה שמחליף את הלוגו בצד שמאל (icon)
                                 iconUrl: myAvatar,
 
-                                // small badge (logo)
-                                badgeUrl: "/pwa-192.png?v=1",
-
-                                // show per-message too (in addition to summary)
-                                showMessage: true,
+                                // ✅ זה האייקון הקטן/בג׳ ליד (badge)
+                                badgeUrl,
                             };
 
-                            console.log("[send-push] calling", getPushApiUrl(), { toUserId, threadId: item.threadId });
+                            const apiUrl = getPushApiUrl();
+                            console.log("[send-push] calling", apiUrl, { toUserId, msgId, baseTag });
 
-                            const resp = await fetch(getPushApiUrl(), {
+                            const resp = await fetch(apiUrl, {
                                 method: "POST",
                                 headers: { "Content-Type": "application/json" },
                                 body: JSON.stringify({ toUserId, payload }),
@@ -420,9 +467,11 @@ export const useDMMessagesStore = defineStore("dmMessages", {
                             const json = await resp.json().catch(() => ({}));
                             if (!resp.ok) console.warn("[send-push] failed:", resp.status, json);
                             else console.log("[send-push] ok:", json);
+
                         } catch (e) {
                             console.warn("[send-push] best-effort crashed:", e);
                         }
+
                     } catch (e) {
                         item.status = "queued";
                         item.error = e?.message || "SEND_FAILED";
@@ -441,6 +490,7 @@ export const useDMMessagesStore = defineStore("dmMessages", {
                 this._runLock = false;
             }
         },
+
 
         startWorker() {
             if (this._worker) return;
