@@ -335,15 +335,13 @@ export const useDMMessagesStore = defineStore("dmMessages", {
                 const dmThreads = useDMThreadsStore();
                 const profilesStore = useProfilesStore();
 
-                // ✅ להביא nickname+avatar שלי (לא גוגל / לא אימייל)
+                // ✅ טען את הפרופיל שלי בשביל nickname יציב
                 try { await profilesStore.ensureLoaded([userId]); } catch { }
                 const me = profilesStore.getById(userId);
 
-                const fromName = (me?.nickname && String(me.nickname).trim())
-                    ? String(me.nickname).trim()
-                    : "GIO";
-
-                const myAvatar = resolveAvatarFromProfile(userId, me);
+                const fromName =
+                    me?.nickname ||
+                    "GIO";
 
                 for (const item of this.outbox) {
                     if (item.status !== "queued") continue;
@@ -396,37 +394,33 @@ export const useDMMessagesStore = defineStore("dmMessages", {
 
                             if (!toUserId || String(toUserId) === String(userId)) continue;
 
-                            // ✅ הכי חשוב: TAG ייחודי לכל הודעה
-                            // גם אם ה-SW שלך תקוע על גרסה ישנה — זה ימנע דריסה.
-                            const msgId = String(data?.id || `${Date.now()}_${Math.random().toString(16).slice(2)}`);
-                            const uniqueTag = `dm_${item.threadId}_${msgId}`;
-
                             const payload = {
-                                title: fromName,
+                                // WhatsApp style:
+                                title: fromName, // nickname
                                 body: previewText(item.content, 160),
                                 url: `/dm/${item.threadId}`,
 
-                                // ✅ זה מה שמפסיק דריסה גם עם SW ישן
-                                tag: uniqueTag,
+                                // ✅ זה הסוד: groupKey קבוע ל-thread
+                                // כל thread = notification משלו
+                                groupKey: `dm_${item.threadId}`,
 
-                                // שולח גם לשיטה החדשה וגם לישנה
-                                msgId,
-                                threadId: item.threadId,
+                                // ✅ כדי שהשרת יבחר icon מהבאקט שלך (avatars/<fromUserId>/avatar|head.*)
+                                fromUserId: userId,
 
-                                // ✅ תמונת פרופיל כ-icon (התמונה הגדולה בצד שמאל)
-                                // שולחים גם icon וגם iconUrl כדי לכסות SW ישן/חדש
-                                icon: myAvatar,
-                                iconUrl: myAvatar,
-
-                                // badge קטן (ליד) – נשאר לוגו
-                                badge: "/pwa-192.png?v=1",
+                                // optional (logo as badge)
                                 badgeUrl: "/pwa-192.png?v=1",
+
+                                // unique msgId (helps debug + optional)
+                                msgId: String(data.id),
                             };
 
-                            const apiUrl = getPushApiUrl();
-                            console.log("[send-push] calling", apiUrl, { toUserId, tag: uniqueTag, icon: myAvatar });
+                            console.log("[send-push] calling /api/send-push", {
+                                toUserId,
+                                groupKey: payload.groupKey,
+                                msgId: payload.msgId,
+                            });
 
-                            const resp = await fetch(apiUrl, {
+                            const resp = await fetch("/api/send-push", {
                                 method: "POST",
                                 headers: { "Content-Type": "application/json" },
                                 body: JSON.stringify({ toUserId, payload }),
@@ -458,6 +452,7 @@ export const useDMMessagesStore = defineStore("dmMessages", {
                 this._runLock = false;
             }
         },
+
 
 
 

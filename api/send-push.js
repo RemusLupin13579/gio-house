@@ -1,21 +1,53 @@
 // /api/send-push.js
 import webpush from "web-push";
 
-export default async function handler(req, res) {
-    // CORS (ok)
-    res.setHeader("Access-Control-Allow-Origin", "https://gio-home.vercel.app");
+const ALLOW_ORIGIN = "https://gio-home.vercel.app";
+
+function cors(res) {
+    res.setHeader("Access-Control-Allow-Origin", ALLOW_ORIGIN);
     res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
     res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+}
+
+async function headOk(url) {
+    try {
+        const r = await fetch(url, { method: "HEAD" });
+        return r.ok;
+    } catch {
+        return false;
+    }
+}
+
+// ✅ בוחר אווטאר אמיתי לפי מה שיש אצלך בבאקט
+async function pickAvatarUrl(SUPABASE_URL, userId) {
+    if (!SUPABASE_URL || !userId) return null;
+
+    const base = `${SUPABASE_URL}/storage/v1/object/public/avatars/${userId}`;
+    const candidates = [
+        `${base}/avatar.jpg`,
+        `${base}/avatar.jpeg`,
+        `${base}/avatar.png`,
+        `${base}/head.png`,
+        `${base}/head.jpg`,
+        `${base}/head.jpeg`,
+    ];
+
+    for (const u of candidates) {
+        // בשרת זה זול לבדוק HEAD
+        // (אם אתה רוצה מהר יותר: תוריד HEAD ותסתמך על הראשון שקיים אצלך קבוע)
+        // כרגע: יציב.
+        if (await headOk(u)) return u;
+    }
+
+    return null;
+}
+
+export default async function handler(req, res) {
+    cors(res);
 
     if (req.method === "OPTIONS") return res.status(200).send("ok");
-
-    if (req.method === "GET") {
-        return res.status(200).json({ ok: true, route: "/api/send-push" });
-    }
-
-    if (req.method !== "POST") {
-        return res.status(405).json({ error: "METHOD_NOT_ALLOWED", got: req.method });
-    }
+    if (req.method === "GET") return res.status(200).json({ ok: true, route: "/api/send-push" });
+    if (req.method !== "POST") return res.status(405).json({ error: "METHOD_NOT_ALLOWED", got: req.method });
 
     try {
         const { toUserId, payload } = req.body || {};
@@ -23,26 +55,18 @@ export default async function handler(req, res) {
 
         const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
         const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-        if (!SUPABASE_URL || !SERVICE_KEY) {
-            return res.status(500).json({ error: "MISSING_SUPABASE_ENV" });
-        }
+        if (!SUPABASE_URL || !SERVICE_KEY) return res.status(500).json({ error: "MISSING_SUPABASE_ENV" });
 
         const VAPID_PUBLIC = process.env.VAPID_PUBLIC_KEY || process.env.VITE_VAPID_PUBLIC_KEY;
         const VAPID_PRIVATE = process.env.VAPID_PRIVATE_KEY;
         const VAPID_SUBJECT = process.env.VAPID_SUBJECT || "mailto:admin@example.com";
-
-        if (!VAPID_PUBLIC || !VAPID_PRIVATE) {
-            return res.status(500).json({ error: "MISSING_VAPID_KEYS" });
-        }
+        if (!VAPID_PUBLIC || !VAPID_PRIVATE) return res.status(500).json({ error: "MISSING_VAPID_KEYS" });
 
         webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC, VAPID_PRIVATE);
 
-        // fetch subs with service role
+        // fetch subs with service role (REST)
         const r = await fetch(
-            `${SUPABASE_URL}/rest/v1/push_subscriptions?user_id=eq.${encodeURIComponent(
-                toUserId
-            )}&select=endpoint,p256dh,auth`,
+            `${SUPABASE_URL}/rest/v1/push_subscriptions?user_id=eq.${encodeURIComponent(toUserId)}&select=endpoint,p256dh,auth`,
             {
                 headers: {
                     apikey: SERVICE_KEY,
@@ -61,32 +85,30 @@ export default async function handler(req, res) {
             return res.status(200).json({ ok: true, sent: 0, note: "NO_SUBSCRIPTIONS" });
         }
 
-        const msgId =
-            payload?.msgId ||
-            payload?.messageId ||
-            payload?.id ||
-            `${Date.now()}_${Math.random().toString(16).slice(2)}`;
+        // ===== Normalize payload for SW =====
+        const msgId = String(payload?.msgId || payload?.id || `${Date.now()}_${Math.random().toString(16).slice(2)}`);
 
-        // ✅ IMPORTANT: SW expects these exact keys
+        // אם הלקוח לא סיפק iconUrl – נבחר לפי הבאקט avatars/<fromUserId>/...
+        let iconUrl = payload?.iconUrl || null;
+        if (!iconUrl && payload?.fromUserId) {
+            iconUrl = await pickAvatarUrl(SUPABASE_URL, String(payload.fromUserId));
+        }
+
         const notifPayload = {
+            // WhatsApp-like: title=nickname
             title: payload?.title || "GIO",
             body: payload?.body || "New message",
             url: payload?.url || "/",
 
-            // used for summary grouping + per-message tag base
-            baseTag: payload?.tag || "gio",
-            threadId: payload?.threadId || null,
+            // ✅ groupKey זה העיקר: DM thread / room / etc.
+            groupKey: payload?.groupKey || "gio",
 
-            // uniqueness
+            // meta
             msgId,
 
-            // icons/images
-            iconUrl: payload?.iconUrl || null,
-            badgeUrl: payload?.badgeUrl || null,
-            imageUrl: payload?.imageUrl || null,
-
-            // whether SW also displays per-message notification (in addition to summary)
-            showMessage: payload?.showMessage !== false,
+            // images
+            iconUrl: iconUrl || null,
+            badgeUrl: payload?.badgeUrl || "/pwa-192.png?v=1",
         };
 
         let sent = 0;
@@ -122,7 +144,7 @@ export default async function handler(req, res) {
             }
         }
 
-        return res.status(200).json({ ok: true, sent, total: subs.length, msgId, results });
+        return res.status(200).json({ ok: true, sent, total: subs.length, msgId, payload: notifPayload, results });
     } catch (e) {
         console.error("[api/send-push] crashed:", e);
         return res.status(500).json({ error: "PUSH_FAILED", message: e?.message || String(e) });
