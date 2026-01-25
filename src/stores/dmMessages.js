@@ -353,20 +353,24 @@ export const useDMMessagesStore = defineStore("dmMessages", {
                             // self-thread / unknown
                             if (!toUserId || String(toUserId) === String(userId)) continue;
 
+                            // אחרי insert וה-data קיים
+                            const msgId = data?.id || `${Date.now()}_${item.clientId}`;
+
                             const payload = {
                                 title: fromName,
                                 body: previewText(item.content, 140),
                                 url: `/dm/${item.threadId}`,
                                 tag: `dm_${item.threadId}`,
 
-                                stack: true,             // ✅ לא לדרוס, לעשות stack
-                                msgId: data.id,          // ✅ שיהיה ייחודי
+                                stack: true,
+                                msgId,
                                 threadId: item.threadId,
 
-                                iconUrl: `/api/avatar/${userId}`,  // ✅ מהדומיין שלך (מומלץ)
+                                // ✅ האייקון מהדומיין שלך
+                                iconUrl: `/api/avatar/${userId}`, // זה השולח (או fromUserId אמיתי)
                                 badgeUrl: "/pwa-192.png?v=1",
-                                imageUrl: null,
                             };
+
 
                             console.log("[send-push] calling", getPushApiUrl(), { method: "POST", toUserId });
 
