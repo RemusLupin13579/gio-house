@@ -1,3 +1,29 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+/* Firefox */
+* {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(34, 197, 94, 0.45) rgba(255, 255, 255, 0.06);
+}
+
+    /* Chrome/Edge/Safari */
+    *::-webkit-scrollbar {
+        width: 10px;
+        height: 10px;
+    }
+
+    *::-webkit-scrollbar-track {
+        background: rgba(255, 255, 255, 0.06);
+        border-radius: 999px;
+    }
+
+    *::-webkit-scrollbar-thumb {
+        background: rgba(34, 197, 94, 0.45);
+        border-radius: 999px;
+        border: 2px solid rgba(0, 0, 0, 0.35);
+    }
+
+        *::-webkit-scrollbar-thumb:hover {
+            background: rgba(34, 197, 94, 0.65);
+        }
