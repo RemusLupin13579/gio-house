@@ -2,6 +2,7 @@
 import webpush from "web-push";
 
 export default async function handler(req, res) {
+    // CORS (ok)
     res.setHeader("Access-Control-Allow-Origin", "https://gio-home.vercel.app");
     res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
     res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
@@ -22,6 +23,7 @@ export default async function handler(req, res) {
 
         const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
         const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
         if (!SUPABASE_URL || !SERVICE_KEY) {
             return res.status(500).json({ error: "MISSING_SUPABASE_ENV" });
         }
@@ -29,13 +31,14 @@ export default async function handler(req, res) {
         const VAPID_PUBLIC = process.env.VAPID_PUBLIC_KEY || process.env.VITE_VAPID_PUBLIC_KEY;
         const VAPID_PRIVATE = process.env.VAPID_PRIVATE_KEY;
         const VAPID_SUBJECT = process.env.VAPID_SUBJECT || "mailto:admin@example.com";
+
         if (!VAPID_PUBLIC || !VAPID_PRIVATE) {
             return res.status(500).json({ error: "MISSING_VAPID_KEYS" });
         }
 
         webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC, VAPID_PRIVATE);
 
-        // fetch subs with service role (REST)
+        // fetch subs with service role
         const r = await fetch(
             `${SUPABASE_URL}/rest/v1/push_subscriptions?user_id=eq.${encodeURIComponent(
                 toUserId
@@ -58,32 +61,32 @@ export default async function handler(req, res) {
             return res.status(200).json({ ok: true, sent: 0, note: "NO_SUBSCRIPTIONS" });
         }
 
-        // ✅ חשוב: מעבירים את כל ה payload ולא חותכים
         const msgId =
             payload?.msgId ||
             payload?.messageId ||
             payload?.id ||
             `${Date.now()}_${Math.random().toString(16).slice(2)}`;
 
+        // ✅ IMPORTANT: SW expects these exact keys
         const notifPayload = {
             title: payload?.title || "GIO",
             body: payload?.body || "New message",
             url: payload?.url || "/",
 
-            // אם תשלח tag קבוע ל-thread זה ידרוס.
-            // אז אנחנו מחזיקים baseTag + msgId
+            // used for summary grouping + per-message tag base
             baseTag: payload?.tag || "gio",
+            threadId: payload?.threadId || null,
+
+            // uniqueness
             msgId,
 
-            // ✅ סטאק אמיתי
-            stack: payload?.stack !== false, // default true
-
-            // ✅ תמונות
+            // icons/images
             iconUrl: payload?.iconUrl || null,
             badgeUrl: payload?.badgeUrl || null,
             imageUrl: payload?.imageUrl || null,
 
-            threadId: payload?.threadId || null,
+            // whether SW also displays per-message notification (in addition to summary)
+            showMessage: payload?.showMessage !== false,
         };
 
         let sent = 0;
@@ -101,12 +104,11 @@ export default async function handler(req, res) {
                 const body = e?.body ?? null;
                 results.push({ endpoint: s.endpoint, ok: false, statusCode, body });
 
+                // cleanup dead subs
                 if (statusCode === 404 || statusCode === 410) {
                     try {
                         await fetch(
-                            `${SUPABASE_URL}/rest/v1/push_subscriptions?endpoint=eq.${encodeURIComponent(
-                                s.endpoint
-                            )}`,
+                            `${SUPABASE_URL}/rest/v1/push_subscriptions?endpoint=eq.${encodeURIComponent(s.endpoint)}`,
                             {
                                 method: "DELETE",
                                 headers: {

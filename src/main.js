@@ -25,16 +25,23 @@ if ("serviceWorker" in navigator) {
             const reg = await navigator.serviceWorker.register("/sw.js", { scope: "/" });
             console.log("[SW] registered:", reg?.scope);
 
-            // חשוב: למשוך עדכון של ה-SW
-            await reg.update();
-
-            // לוג עוזר: מי שולט כרגע
+            // log controller
             console.log("[SW] controller?", !!navigator.serviceWorker.controller);
+
+            // ping version
+            const ready = await navigator.serviceWorker.ready;
+            ready.active?.postMessage?.({ type: "PING_SW_VERSION" });
+
+            navigator.serviceWorker.addEventListener("message", (e) => {
+                if (e.data?.type === "SW_VERSION") console.log("[SW] version:", e.data.version);
+            });
         } catch (e) {
             console.warn("[SW] register failed:", e);
         }
     });
 }
+
+
 
 
 const notif = useNotificationsStore(pinia);

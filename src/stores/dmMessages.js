@@ -12,31 +12,49 @@ const OUTBOX_KEY = "gio-dm-outbox-v1";
 const WORKER_MS = 1200;
 const MAX_ATTEMPTS = 6;
 
-function uuid() { return crypto.randomUUID(); }
-function nowIso() { return new Date().toISOString(); }
-function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
-function getPushApiUrl() {
-    // בפרודקשן: נשאר יחסי
-    if (location.hostname !== "localhost") return "/api/send-push";
-
-    // בלוקאל: תירה לפרודקשן (כי אין /api ב-vite dev)
-    return "https://gio-home.vercel.app/api/send-push";
+function uuid() {
+    return crypto.randomUUID();
 }
-
-function previewText(s, n = 120) {
+function nowIso() {
+    return new Date().toISOString();
+}
+function sleep(ms) {
+    return new Promise((r) => setTimeout(r, ms));
+}
+function previewText(s, n = 140) {
     const t = String(s || "").replace(/\s+/g, " ").trim();
     return t.length > n ? t.slice(0, n - 1) + "…" : t;
 }
+
+function getPushApiUrl() {
+    // prod: relative
+    if (location.hostname !== "localhost") return "/api/send-push";
+    // local dev: your Vite doesn't have /api
+    return "https://gio-home.vercel.app/api/send-push";
+}
+
+function publicAvatarCandidates(uid) {
+    const base = `https://khaezthvfznjqalhzitz.supabase.co/storage/v1/object/public/avatars/${uid}`;
+    return [
+        `${base}/avatar.jpg`,
+        `${base}/avatar.jpeg`,
+        `${base}/avatar.png`,
+        `${base}/head.png`,
+        `${base}/head.jpg`,
+        `${base}/head.jpeg`,
+    ];
+}
+
 export const useDMMessagesStore = defineStore("dmMessages", {
     state: () => ({
-        byThread: {},   // { [threadId]: Message[] }
-        subs: {},       // { [threadId]: RealtimeChannel }
-        outbox: [],     // { clientId, threadId, content, replyToId, ... }
+        byThread: {}, // { [threadId]: Message[] }
+        subs: {}, // { [threadId]: RealtimeChannel }
+        outbox: [], // { clientId, threadId, content, replyToId, ... }
+
         _worker: null,
         _guardsInstalled: false,
         _runLock: false,
         _inboxSub: null,
-
     }),
 
     getters: {
@@ -49,13 +67,17 @@ export const useDMMessagesStore = defineStore("dmMessages", {
         },
 
         _saveOutbox() {
-            try { localStorage.setItem(OUTBOX_KEY, JSON.stringify(this.outbox)); } catch { }
+            try {
+                localStorage.setItem(OUTBOX_KEY, JSON.stringify(this.outbox));
+            } catch { }
         },
         _loadOutbox() {
             try {
                 const raw = localStorage.getItem(OUTBOX_KEY);
                 this.outbox = raw ? JSON.parse(raw) : [];
-            } catch { this.outbox = []; }
+            } catch {
+                this.outbox = [];
+            }
         },
 
         _ensureThread(threadId) {
@@ -70,11 +92,19 @@ export const useDMMessagesStore = defineStore("dmMessages", {
 
             if (msg.client_id) {
                 const i = arr.findIndex((m) => m.client_id && m.client_id === msg.client_id);
-                if (i >= 0) { arr[i] = { ...arr[i], ...msg }; this._sortThread(threadId); return; }
+                if (i >= 0) {
+                    arr[i] = { ...arr[i], ...msg };
+                    this._sortThread(threadId);
+                    return;
+                }
             }
             if (msg.id) {
                 const j = arr.findIndex((m) => m.id && m.id === msg.id);
-                if (j >= 0) { arr[j] = { ...arr[j], ...msg }; this._sortThread(threadId); return; }
+                if (j >= 0) {
+                    arr[j] = { ...arr[j], ...msg };
+                    this._sortThread(threadId);
+                    return;
+                }
             }
             arr.push(msg);
             this._sortThread(threadId);
@@ -104,31 +134,27 @@ export const useDMMessagesStore = defineStore("dmMessages", {
 
             const ch = supabase
                 .channel("dm_inbox")
-                .on(
-                    "postgres_changes",
-                    { event: "INSERT", schema: "public", table: "dm_messages" },
-                    (payload) => {
-                        console.log("[dmInbox] INSERT event", payload);
-                        const r = payload?.new;
-                        if (!r) return;
+                .on("postgres_changes", { event: "INSERT", schema: "public", table: "dm_messages" }, (payload) => {
+                    console.log("[dmInbox] INSERT event", payload);
+                    const r = payload?.new;
+                    if (!r) return;
 
-                        const myId = session.value?.user?.id ?? null;
-                        console.log("[dmInbox] myId=", myId, "from=", r.user_id, "thread=", r.thread_id);
+                    const myId = session.value?.user?.id ?? null;
+                    console.log("[dmInbox] myId=", myId, "from=", r.user_id, "thread=", r.thread_id);
 
-                        if (myId && String(r.user_id) === String(myId)) return;
+                    if (myId && String(r.user_id) === String(myId)) return;
 
-                        const notif = useNotificationsStore();
-                        notif.onIncomingDM({
-                            threadId: r.thread_id,
-                            fromUserId: r.user_id,
-                            myUserId: myId,
-                            text: r.text ?? "",
-                            createdAtMs: Date.parse(r.created_at) || Date.now(),
-                        });
+                    const notif = useNotificationsStore();
+                    notif.onIncomingDM({
+                        threadId: r.thread_id,
+                        fromUserId: r.user_id,
+                        myUserId: myId,
+                        text: r.text ?? "",
+                        createdAtMs: Date.parse(r.created_at) || Date.now(),
+                    });
 
-                        console.log("[dmInbox] unread now:", notif.dmUnread?.[String(r.thread_id)]);
-                    }
-                )
+                    console.log("[dmInbox] unread now:", notif.dmUnread?.[String(r.thread_id)]);
+                })
                 .subscribe((status) => {
                     console.log("[dmInbox] status:", status);
                 });
@@ -136,11 +162,11 @@ export const useDMMessagesStore = defineStore("dmMessages", {
             this._inboxSub = ch;
         },
 
-
-
         async unsubscribeInbox() {
             if (!this._inboxSub) return;
-            try { await supabase.removeChannel(this._inboxSub); } catch { }
+            try {
+                await supabase.removeChannel(this._inboxSub);
+            } catch { }
             this._inboxSub = null;
         },
 
@@ -231,7 +257,9 @@ export const useDMMessagesStore = defineStore("dmMessages", {
         async unsubscribe(threadId) {
             const ch = this.subs[threadId];
             if (!ch) return;
-            try { await supabase.removeChannel(ch); } catch { }
+            try {
+                await supabase.removeChannel(ch);
+            } catch { }
             delete this.subs[threadId];
         },
 
@@ -273,7 +301,6 @@ export const useDMMessagesStore = defineStore("dmMessages", {
             return clientId;
         },
 
-
         async runWorker() {
             if (this._runLock) return;
             if (isPaused()) return;
@@ -284,24 +311,31 @@ export const useDMMessagesStore = defineStore("dmMessages", {
                 await auth.init();
 
                 let userId = null;
-                try { userId = await auth.waitUntilReady(5000); }
-                catch { return; }
+                try {
+                    userId = await auth.waitUntilReady(5000);
+                } catch {
+                    return;
+                }
 
                 const dmThreads = useDMThreadsStore();
                 const profilesStore = useProfilesStore();
 
-                // ✅ ודא שלפחות הפרופיל שלי בקאש כדי לקבל nickname/avatar
-                try { await profilesStore.ensureLoaded([userId]); } catch { }
+                // ensure my profile cached
+                try {
+                    await profilesStore.ensureLoaded([userId]);
+                } catch { }
 
                 const me = profilesStore.getById(userId);
-                const fromName =
-                    me?.nickname ||
-                    session.value?.user?.email?.split("@")?.[0] ||
-                    "GIO";
+                const fromName = me?.nickname || session.value?.user?.email?.split("@")?.[0] || "GIO";
 
-                // helper: icon url fallback
-                const supabasePublicAvatarUrl = (uid) =>
-                    `https://khaezthvfznjqalhzitz.supabase.co/storage/v1/object/public/avatars/${uid}/avatar.jpg`;
+                // pick avatar in a deterministic way:
+                // 1) avatar_full_url / avatar_url if provided
+                // 2) fallback to known public paths (avatar/head)
+                const candidates = publicAvatarCandidates(userId);
+                const myAvatar =
+                    (me?.avatar_full_url && String(me.avatar_full_url)) ||
+                    (me?.avatar_url && String(me.avatar_url)) ||
+                    candidates[0];
 
                 for (const item of this.outbox) {
                     if (item.status !== "queued") continue;
@@ -347,41 +381,35 @@ export const useDMMessagesStore = defineStore("dmMessages", {
                         item.error = null;
                         this._saveOutbox();
 
-                        // ---- PUSH (best-effort, לא שוברת שליחה) ----
+                        // ---- PUSH (best-effort) ----
                         try {
                             const t = dmThreads.byId(item.threadId);
                             const toUserId = t?.otherUserId || null;
                             if (!toUserId || String(toUserId) === String(userId)) continue;
 
-                            // (לא חובה אבל טוב) לדאוג שהפרופיל שלי נטען כדי להביא avatar_url
-                            // פה כבר עשינו ensureLoaded([userId]) למעלה.
-
-                            const myAvatar =
-                                me?.avatar_full_url ||
-                                me?.avatar_url ||
-                                supabasePublicAvatarUrl(userId);
-
                             const payload = {
                                 title: fromName,
-                                body: previewText(item.content, 140),
+                                body: previewText(item.content, 160),
                                 url: `/dm/${item.threadId}`,
 
-                                // ✅ חשוב: זה "baseTag" בשרת/ב-SW שלך
+                                // for grouping
                                 tag: `dm_${item.threadId}`,
+                                threadId: String(item.threadId),
 
-                                // ✅ סטאק אמיתי + מזהה ייחודי כדי שלא ידרוס
-                                stack: true,
+                                // uniqueness for per-message stacking
                                 msgId: data.id,
 
-                                // ✅ תמונת פרופיל בצד שמאל (icon)
+                                // avatar on left
                                 iconUrl: myAvatar,
 
-                                // badge קטן אפשר להשאיר לוגו
+                                // small badge (logo)
                                 badgeUrl: "/pwa-192.png?v=1",
 
-                                // אופציונלי לעתיד (תמונה גדולה)
-                                // imageUrl: ...
+                                // show per-message too (in addition to summary)
+                                showMessage: true,
                             };
+
+                            console.log("[send-push] calling", getPushApiUrl(), { toUserId, threadId: item.threadId });
 
                             const resp = await fetch(getPushApiUrl(), {
                                 method: "POST",
@@ -395,7 +423,6 @@ export const useDMMessagesStore = defineStore("dmMessages", {
                         } catch (e) {
                             console.warn("[send-push] best-effort crashed:", e);
                         }
-
                     } catch (e) {
                         item.status = "queued";
                         item.error = e?.message || "SEND_FAILED";
@@ -414,10 +441,6 @@ export const useDMMessagesStore = defineStore("dmMessages", {
                 this._runLock = false;
             }
         },
-
-
-
-
 
         startWorker() {
             if (this._worker) return;
