@@ -82,9 +82,14 @@ export default async function handler(req, res) {
             body: payload?.body || "New message",
             url: payload?.url || "/",
 
-            iconUrl: iconUrl || null,
-            badgeUrl: payload?.badgeUrl || "https://gio-home.vercel.app/pwa-192.png?v=1",
+            // iOS לא יכבד icon פר-התראה => נשאיר לוגו כאן
+            iconUrl: "/pwa-192.png?v=1",
+            badgeUrl: payload?.badgeUrl || "/pwa-192.png?v=1",
+
+            // ✅ פה נשים את האוואטר (מה שבאמת רצית)
+            imageUrl: iconUrl || null, // iconUrl כאן הוא האוואטר שמצאת מ-avatars/<id>/...
         };
+
 
         let sent = 0;
         const results = [];

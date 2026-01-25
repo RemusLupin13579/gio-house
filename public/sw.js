@@ -44,14 +44,6 @@ self.addEventListener("push", (event) => {
         const url = data.url || "/";
         const msgId = String(data.msgId || Date.now());
 
-        const iconUrl = (typeof data.iconUrl === "string" && data.iconUrl.startsWith("http"))
-            ? data.iconUrl
-            : "/pwa-192.png?v=1";
-
-        const badgeUrl = (typeof data.badgeUrl === "string" && data.badgeUrl.length)
-            ? data.badgeUrl
-            : "/pwa-192.png?v=1";
-
         const line = clip(data.body || "New message", 120);
 
         // ✅ צבירת שורות אחרונות (עד 4)
@@ -65,18 +57,34 @@ self.addEventListener("push", (event) => {
                 ? next[0].line
                 : next.map((x) => `• ${x.line}`).reverse().join("\n");
 
-        // ✅ וואטסאפ: tag קבוע ל-groupKey => עדכון אותה התראה, לא ערימה
+        const iconUrl =
+            (typeof data.iconUrl === "string" && data.iconUrl.length)
+                ? data.iconUrl
+                : "/pwa-192.png?v=1";
+
+        const badgeUrl =
+            (typeof data.badgeUrl === "string" && data.badgeUrl.length)
+                ? data.badgeUrl
+                : "/pwa-192.png?v=1";
+
+        const imageUrl =
+            (typeof data.imageUrl === "string" && data.imageUrl.startsWith("http"))
+                ? data.imageUrl
+                : undefined;
+
         const options = {
-            tag: groupKey,
+            tag: groupKey,                // וואטסאפ: אחד לכל שיחה
             body,
             data: { url, groupKey },
-            icon: iconUrl,
+            icon: iconUrl,                // לוגו (iOS יראה את הלוגו בכל מקרה)
             badge: badgeUrl,
+            ...(imageUrl ? { image: imageUrl } : {}),   // ✅ האוואטר כתמונה “בפנים”
             renotify: true,
             silent: false,
             vibrate: [60, 30, 60],
             timestamp: Date.now(),
         };
+
 
         console.log("[SW] showNotification", { groupKey, title, iconUrl });
         await self.registration.showNotification(title, options);
