@@ -30,7 +30,7 @@ self.addEventListener('push', function (event) {
                 data: newData.data,
                 vibrate: [100, 50, 100],
                 actions: [
-                    { action: 'open', title: 'פתח צ'אט' }
+                    { action: 'open', title: 'פתח צאט' }
                 ]
             });
         })
