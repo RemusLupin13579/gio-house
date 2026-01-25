@@ -1,13 +1,26 @@
 /* /public/sw.js */
 
-/**
- * Web Push handler
- * Note: iOS works ONLY for installed PWA (Add to Home Screen) + iOS 16.4+
- */
+self.addEventListener("install", (event) => {
+    // חשוב כדי שהגרסה החדשה תיכנס מיד
+    self.skipWaiting();
+});
+
+self.addEventListener("activate", (event) => {
+    event.waitUntil((async () => {
+        // חשוב כדי שה-SW ישלוט מיידית על טאבים קיימים
+        await self.clients.claim();
+    })());
+});
 
 self.addEventListener("push", (event) => {
+    // ✅ לוג שחייב להופיע בקונסול של ה-Service Worker
+    console.log("[SW] PUSH RECEIVED", event);
+
     let data = {};
-    try { data = event.data ? event.data.json() : {}; } catch { }
+    try { data = event.data ? event.data.json() : {}; }
+    catch (e) { console.warn("[SW] push data parse failed", e); }
+
+    console.log("[SW] payload:", data);
 
     const title = data.title || "GIO";
     const body = data.body || "New message";
@@ -18,11 +31,13 @@ self.addEventListener("push", (event) => {
         body,
         tag,
         renotify: true,
+        silent: false,
         data: { url },
         icon: "/pwa-192.png?v=1",
         badge: "/pwa-192.png?v=1",
-        vibrate: [80, 40, 80], // Android mostly
+        vibrate: [80, 40, 80],
     };
+
 
     event.waitUntil(self.registration.showNotification(title, options));
 });
@@ -41,7 +56,6 @@ self.addEventListener("notificationclick", (event) => {
                 return;
             }
         }
-
         if (clients.openWindow) return clients.openWindow(url);
     })());
 });

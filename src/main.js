@@ -24,11 +24,18 @@ if ("serviceWorker" in navigator) {
         try {
             const reg = await navigator.serviceWorker.register("/sw.js", { scope: "/" });
             console.log("[SW] registered:", reg?.scope);
+
+            // חשוב: למשוך עדכון של ה-SW
+            await reg.update();
+
+            // לוג עוזר: מי שולט כרגע
+            console.log("[SW] controller?", !!navigator.serviceWorker.controller);
         } catch (e) {
             console.warn("[SW] register failed:", e);
         }
     });
 }
+
 
 const notif = useNotificationsStore(pinia);
 notif.load();

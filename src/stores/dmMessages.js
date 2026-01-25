@@ -287,14 +287,19 @@ export const useDMMessagesStore = defineStore("dmMessages", {
                 catch { return; }
 
                 const dmThreads = useDMThreadsStore();
+                const profiles = (await import("./profiles")).useProfilesStore?.() || null;
 
-                // שם השולח ל-preview (נשען על dmThreads אם יש, אחרת fallback)
-                // אם יש לך profilesStore זמין אצלך בפרויקט — עדיף למשוך ממנו nickname.
-                // כרגע נשמור יציב בלי עוד importים:
+                // נתוני שולח ל-preview
+                const me = profiles?.getById?.(userId) || null;
                 const fromName =
-                    dmThreads?.myNickname ||
+                    me?.nickname ||
                     session.value?.user?.email?.split("@")?.[0] ||
                     "GIO";
+
+                // ❗ האייקון של ההתראה = תמונת פרופיל (לא הלוגו)
+                const fromAvatar =
+                    me?.avatar_url ||
+                    null; // אם אין – ה-SW יעשה fallback
 
                 for (const item of this.outbox) {
                     if (item.status !== "queued") continue;
@@ -340,20 +345,26 @@ export const useDMMessagesStore = defineStore("dmMessages", {
                         item.error = null;
                         this._saveOutbox();
 
-                        // ---- PUSH (best-effort, לא שוברת שליחה) ----
+                        // ---- PUSH (best-effort) ----
                         try {
                             const t = dmThreads.byId(item.threadId);
                             const toUserId = t?.otherUserId || null;
 
-                            // self thread / unknown
+                            // self-thread / unknown
                             if (!toUserId || String(toUserId) === String(userId)) continue;
 
-                            // payload עם preview נחמד
                             const payload = {
-                                title: fromName, // אפשר לשים פה nickname אמיתי אם יש לך מקור
-                                body: previewText(item.content, 120),
+                                title: fromName,
+                                body: previewText(item.content, 140),
                                 url: `/dm/${item.threadId}`,
                                 tag: `dm_${item.threadId}`,
+
+                                // 👇 חדש: האייקון יהיה האווטאר של השולח
+                                iconUrl: fromAvatar,      // אם null -> SW יעשה fallback
+                                badgeUrl: "/pwa-192.png", // קטן ו”מותגי”, סבבה להשאיר
+
+                                // 👇 להמשך כשיהיו תמונות מצורפות
+                                imageUrl: null,
                             };
 
                             console.log("[send-push] calling", getPushApiUrl(), { method: "POST", toUserId });
@@ -363,8 +374,6 @@ export const useDMMessagesStore = defineStore("dmMessages", {
                                 headers: { "Content-Type": "application/json" },
                                 body: JSON.stringify({ toUserId, payload }),
                             });
-
-                            console.log("[send-push] resp status:", resp.status);
 
                             const json = await resp.json().catch(() => ({}));
                             if (!resp.ok) console.warn("[send-push] failed:", resp.status, json);
@@ -391,6 +400,7 @@ export const useDMMessagesStore = defineStore("dmMessages", {
                 this._runLock = false;
             }
         },
+
 
 
 
