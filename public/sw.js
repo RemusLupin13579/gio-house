@@ -1,6 +1,5 @@
 /* /public/sw.js */
-
-const SW_VERSION = "2026-01-25_06";
+const SW_VERSION = "2026-01-25_wa_01";
 console.log("[SW] boot", SW_VERSION);
 
 self.addEventListener("install", () => self.skipWaiting());
@@ -13,157 +12,82 @@ self.addEventListener("message", (event) => {
 });
 
 function safeJson(event) {
-    try {
-        return event.data ? event.data.json() : {};
-    } catch (e) {
-        console.warn("[SW] push data parse failed", e);
-        return {};
-    }
+    try { return event.data ? event.data.json() : {}; } catch { return {}; }
 }
 
-function clip(s, n = 180) {
+function clip(s, n = 160) {
     const t = String(s || "").replace(/\s+/g, " ").trim();
     return t.length > n ? t.slice(0, n - 1) + "…" : t;
 }
 
-async function readGroupState(groupKey) {
-    try {
-        const cache = await caches.open("gio-notif-groups-v1");
-        const res = await cache.match(`group:${groupKey}`);
-        if (!res) return { count: 0, lines: [] };
-        const json = await res.json().catch(() => null);
-        if (!json) return { count: 0, lines: [] };
-        return {
-            count: Number(json.count || 0),
-            lines: Array.isArray(json.lines) ? json.lines : [],
-        };
-    } catch {
-        return { count: 0, lines: [] };
-    }
+// שומר “הודעות אחרונות” לכל groupKey בתוך Cache Storage (פשוט ויציב)
+async function readGroupLog(groupKey) {
+    const cache = await caches.open("gio-notif-v1");
+    const key = new Request(`https://gio.local/notif/${encodeURIComponent(groupKey)}`);
+    const res = await cache.match(key);
+    if (!res) return [];
+    try { return await res.json(); } catch { return []; }
 }
 
-async function writeGroupState(groupKey, state) {
-    try {
-        const cache = await caches.open("gio-notif-groups-v1");
-        await cache.put(
-            `group:${groupKey}`,
-            new Response(JSON.stringify(state), {
-                headers: { "Content-Type": "application/json" },
-            })
-        );
-    } catch { }
-}
-
-async function cacheIcon(iconUrl) {
-    // Windows/Chrome לפעמים מתעלמים מ-icon מרוחק.
-    // caching לא מבטיח 100%, אבל משפר יציבות בפועל.
-    if (!iconUrl || typeof iconUrl !== "string") return;
-    if (!iconUrl.startsWith("http")) return;
-
-    try {
-        const cache = await caches.open("gio-avatars-v1");
-        const hit = await cache.match(iconUrl);
-        if (hit) return;
-
-        const resp = await fetch(iconUrl, { cache: "no-store" }).catch(() => null);
-        // גם opaque יכול להיכנס לקאש
-        if (resp) await cache.put(iconUrl, resp);
-    } catch { }
+async function writeGroupLog(groupKey, arr) {
+    const cache = await caches.open("gio-notif-v1");
+    const key = new Request(`https://gio.local/notif/${encodeURIComponent(groupKey)}`);
+    await cache.put(key, new Response(JSON.stringify(arr), { headers: { "Content-Type": "application/json" } }));
 }
 
 self.addEventListener("push", (event) => {
     event.waitUntil((async () => {
         const data = safeJson(event);
 
-        // ====== Payload expected ======
-        // {
-        //   groupKey: "dm_<threadId>" | "room_<roomKey>" | ...
-        //   title: "nickname"
-        //   body: "preview text"
-        //   url: "/dm/<threadId>"
-        //   iconUrl: "https://.../avatars/<id>/avatar.jpg"
-        //   badgeUrl: "/pwa-192.png?v=1"
-        //   msgId: "serverMessageId"
-        // }
-        // ==============================
-
-        const groupKey = String(data.groupKey || "gio").trim() || "gio";
+        const groupKey = String(data.groupKey || data.tag || "gio").trim() || "gio";
         const title = String(data.title || "GIO").trim() || "GIO";
-        const preview = clip(data.body || "New message", 160);
-        const url = String(data.url || "/");
+        const url = data.url || "/";
+        const msgId = String(data.msgId || Date.now());
 
-        // icon/badge
-        const iconUrl =
-            typeof data.iconUrl === "string" && data.iconUrl.length
-                ? data.iconUrl
-                : "/pwa-192.png?v=1";
+        const iconUrl = (typeof data.iconUrl === "string" && data.iconUrl.startsWith("http"))
+            ? data.iconUrl
+            : "/pwa-192.png?v=1";
 
-        const badgeUrl =
-            typeof data.badgeUrl === "string" && data.badgeUrl.length
-                ? data.badgeUrl
-                : "/pwa-192.png?v=1";
+        const badgeUrl = (typeof data.badgeUrl === "string" && data.badgeUrl.length)
+            ? data.badgeUrl
+            : "/pwa-192.png?v=1";
 
-        // cache remote icon (best-effort)
-        await cacheIcon(iconUrl);
+        const line = clip(data.body || "New message", 120);
 
-        // ===== WhatsApp-like grouping per groupKey =====
-        const prev = await readGroupState(groupKey);
-        const nextCount = (prev.count || 0) + 1;
+        // ✅ צבירת שורות אחרונות (עד 4)
+        const log = await readGroupLog(groupKey);
+        const next = [{ id: msgId, t: Date.now(), line }, ...log].slice(0, 4);
+        await writeGroupLog(groupKey, next);
 
-        // שומרים כמה שורות אחרונות (כמו expand)
-        const maxLines = 5;
-        const nextLines = [...(prev.lines || []), preview].slice(-maxLines);
+        // body “מרובה שורות”
+        const body =
+            next.length === 1
+                ? next[0].line
+                : next.map((x) => `• ${x.line}`).reverse().join("\n");
 
-        await writeGroupState(groupKey, { count: nextCount, lines: nextLines });
-
-        // body multiline -> Android/Chrome מראה expand יפה
-        const more = nextCount > nextLines.length ? `\n+${nextCount - nextLines.length} more` : "";
-        const body = nextLines.join("\n") + more;
-
-        // ✅ זה “ווצאפ”: tag קבוע לקבוצה => לא מחליף קבוצות אחרות
-        // אבל כן מעדכן את אותה קבוצה (DM thread) במקום לייצר 200 נוטיפיקציות מאותו צ'אט.
-        const tag = groupKey;
-
-        console.log("[SW] notify", SW_VERSION, { groupKey, tag, title, iconUrl, count: nextCount });
-
+        // ✅ וואטסאפ: tag קבוע ל-groupKey => עדכון אותה התראה, לא ערימה
         const options = {
+            tag: groupKey,
             body,
-            tag,
-            renotify: true,
-            silent: false,
             data: { url, groupKey },
             icon: iconUrl,
             badge: badgeUrl,
-            vibrate: [80, 40, 80],
+            renotify: true,
+            silent: false,
+            vibrate: [60, 30, 60],
             timestamp: Date.now(),
-            // כפתורים (לא בכל פלטפורמה, אבל שווה)
-            actions: [
-                { action: "open", title: "Open" },
-                { action: "mark_read", title: "Mark read" },
-            ],
         };
 
+        console.log("[SW] showNotification", { groupKey, title, iconUrl });
         await self.registration.showNotification(title, options);
     })());
 });
 
 self.addEventListener("notificationclick", (event) => {
-    const action = event.action;
-    const groupKey = event.notification?.data?.groupKey;
+    event.notification.close();
     const url = event.notification?.data?.url || "/";
 
-    event.notification.close();
-
     event.waitUntil((async () => {
-        // "Mark read" רק מוחק state + סוגר
-        if (action === "mark_read" && groupKey) {
-            try {
-                const cache = await caches.open("gio-notif-groups-v1");
-                await cache.delete(`group:${groupKey}`);
-            } catch { }
-            return;
-        }
-
         const allClients = await clients.matchAll({ type: "window", includeUncontrolled: true });
         for (const c of allClients) {
             if ("focus" in c) {

@@ -402,54 +402,37 @@ export const useDMMessagesStore = defineStore("dmMessages", {
                         try {
                             const t = dmThreads.byId(item.threadId);
                             const toUserId = t?.otherUserId || null;
-
                             if (!toUserId || String(toUserId) === String(userId)) continue;
 
                             const payload = {
-                                // WhatsApp-style group notification:
-                                groupKey: `dm_${item.threadId}`,          // קבוצה קבועה = שיחה
-                                title: fromName,                          // nickname
-                                body: previewText(item.content, 160),     // preview
+                                groupKey: `dm_${item.threadId}`,        // ✅ קיבוץ לפי שיחה (וואטסאפ)
+                                threadId: String(item.threadId),
+                                msgId: String(data.id),                 // ✅ מזהה הודעה
+
+                                title: fromName,                        // ✅ nickname
+                                body: previewText(item.content, 160),   // ✅ preview
+
                                 url: `/dm/${item.threadId}`,
 
-                                // ✅ תמונה בצד שמאל (האוואטר)
-                                iconUrl: myIconUrl,
+                                // ✅ הכי חשוב: לא שולחים iconUrl מהקליינט
+                                // כי הוא מגיע אצלך מ-avatars_full וזה דופק הכל
+                                fromUserId: String(userId),
 
-                                // ✅ לוגו קטן (badge)
-                                badgeUrl: "https://gio-home.vercel.app/pwa-192.png?v=1",
-
-                                // ✅ מזהה הודעה (לניפוי/דיבוג/איחוד)
-                                msgId: String(data.id),
-
-                                // (אופציונלי) מי השולח אם תרצה לשרת
-                                fromUserId: userId,
+                                badgeUrl: "/pwa-192.png?v=1",
                             };
 
                             console.log("[send-push] calling /api/send-push", {
                                 toUserId,
                                 groupKey: payload.groupKey,
                                 msgId: payload.msgId,
-                            });
-                            console.log("[push payload]", {
-                                toUserId,
-                                groupKey: payload.groupKey,
-                                title: payload.title,
-                                iconUrl: payload.iconUrl,
-                                msgId: payload.msgId,
-                                api: getPushApiUrl(),
+                                fromUserId: payload.fromUserId,
                             });
 
-                            const url = getPushApiUrl();
-
-                            console.log("[send-push] calling", url, { toUserId, groupKey: payload.groupKey, msgId: payload.msgId });
-
-                            const resp = await fetch(url, {
+                            const resp = await fetch(getPushApiUrl(), {
                                 method: "POST",
                                 headers: { "Content-Type": "application/json" },
                                 body: JSON.stringify({ toUserId, payload }),
                             });
-
-
 
                             const json = await resp.json().catch(() => ({}));
                             if (!resp.ok) console.warn("[send-push] failed:", resp.status, json);
@@ -458,6 +441,7 @@ export const useDMMessagesStore = defineStore("dmMessages", {
                         } catch (e) {
                             console.warn("[send-push] best-effort crashed:", e);
                         }
+
 
                     } catch (e) {
                         item.status = "queued";
