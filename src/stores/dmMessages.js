@@ -359,11 +359,12 @@ export const useDMMessagesStore = defineStore("dmMessages", {
                                 url: `/dm/${item.threadId}`,
                                 tag: `dm_${item.threadId}`,
 
-                                // 👇 חדש: האייקון יהיה האווטאר של השולח
-                                iconUrl: fromAvatar,      // אם null -> SW יעשה fallback
-                                badgeUrl: "/pwa-192.png", // קטן ו”מותגי”, סבבה להשאיר
+                                stack: true,             // ✅ לא לדרוס, לעשות stack
+                                msgId: data.id,          // ✅ שיהיה ייחודי
+                                threadId: item.threadId,
 
-                                // 👇 להמשך כשיהיו תמונות מצורפות
+                                iconUrl: `/api/avatar/${userId}`,  // ✅ מהדומיין שלך (מומלץ)
+                                badgeUrl: "/pwa-192.png?v=1",
                                 imageUrl: null,
                             };
 
