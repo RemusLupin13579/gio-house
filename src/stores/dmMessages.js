@@ -23,9 +23,10 @@ function sleep(ms) {
 }
 
 function getPushApiUrl() {
-    if (location.hostname !== "localhost") return "/api/send-push";
-    return "https://gio-home.vercel.app/api/send-push";
+    const base = "https://khaezthvfznjqalhzitz.supabase.co/functions/v1/send-push";
+    return base;
 }
+
 
 function previewText(s, n = 140) {
     const t = String(s || "").replace(/\s+/g, " ").trim();
@@ -34,10 +35,12 @@ function previewText(s, n = 140) {
 
 // ✅ אצלך הבאקט: avatars/<ID>/avatar.* או head.*
 function pickAvatarUrl(uid) {
-    const base = "https://khaezthvfznjqalhzitz.supabase.co";
-    const v = Date.now(); // cache bust
-    // iPhone אצלך => avatar, אז זה ראשון.
-    return `${base}/storage/v1/object/public/avatars/${uid}/avatar.jpg?v=${v}`;
+    const base = `https://khaezthvfznjqalhzitz.supabase.co/storage/v1/object/public/avatars/${uid}`;
+    const v = Date.now();
+    // לא בודקים HEAD פה (קליינט), רק שולחים “הימור” סביר.
+    // השרת/edge שלך יכול לעשות HEAD ולבחור באמת (מומלץ),
+    // אבל גם ככה: נשלח png קודם ואז jpg.
+    return `${base}/avatar.png?v=${v}`; // ראשון
 }
 
 function resolveAvatarFromProfile(uid, profile) {
@@ -49,6 +52,7 @@ function resolveAvatarFromProfile(uid, profile) {
     }
     return pickAvatarUrl(uid);
 }
+
 
 
 function publicAvatarCandidates(uid) {
@@ -339,6 +343,8 @@ export const useDMMessagesStore = defineStore("dmMessages", {
                 try { await profilesStore.ensureLoaded([userId]); } catch { }
                 const me = profilesStore.getById(userId);
 
+                const myIconUrl = resolveAvatarFromProfile(userId, me);
+
                 const fromName =
                     me?.nickname ||
                     "GIO";
@@ -395,23 +401,23 @@ export const useDMMessagesStore = defineStore("dmMessages", {
                             if (!toUserId || String(toUserId) === String(userId)) continue;
 
                             const payload = {
-                                // WhatsApp style:
-                                title: fromName, // nickname
-                                body: previewText(item.content, 160),
+                                // WhatsApp-style group notification:
+                                groupKey: `dm_${item.threadId}`,          // קבוצה קבועה = שיחה
+                                title: fromName,                          // nickname
+                                body: previewText(item.content, 160),     // preview
                                 url: `/dm/${item.threadId}`,
 
-                                // ✅ זה הסוד: groupKey קבוע ל-thread
-                                // כל thread = notification משלו
-                                groupKey: `dm_${item.threadId}`,
+                                // ✅ תמונה בצד שמאל (האוואטר)
+                                iconUrl: myIconUrl,
 
-                                // ✅ כדי שהשרת יבחר icon מהבאקט שלך (avatars/<fromUserId>/avatar|head.*)
-                                fromUserId: userId,
+                                // ✅ לוגו קטן (badge)
+                                badgeUrl: "https://gio-home.vercel.app/pwa-192.png?v=1",
 
-                                // optional (logo as badge)
-                                badgeUrl: "/pwa-192.png?v=1",
-
-                                // unique msgId (helps debug + optional)
+                                // ✅ מזהה הודעה (לניפוי/דיבוג/איחוד)
                                 msgId: String(data.id),
+
+                                // (אופציונלי) מי השולח אם תרצה לשרת
+                                fromUserId: userId,
                             };
 
                             console.log("[send-push] calling /api/send-push", {
@@ -419,12 +425,21 @@ export const useDMMessagesStore = defineStore("dmMessages", {
                                 groupKey: payload.groupKey,
                                 msgId: payload.msgId,
                             });
+                            console.log("[push payload]", {
+                                toUserId,
+                                groupKey: payload.groupKey,
+                                title: payload.title,
+                                iconUrl: payload.iconUrl,
+                                msgId: payload.msgId,
+                                api: getPushApiUrl(),
+                            });
 
-                            const resp = await fetch("/api/send-push", {
+                            const resp = await fetch(getPushApiUrl(), {
                                 method: "POST",
                                 headers: { "Content-Type": "application/json" },
                                 body: JSON.stringify({ toUserId, payload }),
                             });
+
 
                             const json = await resp.json().catch(() => ({}));
                             if (!resp.ok) console.warn("[send-push] failed:", resp.status, json);
