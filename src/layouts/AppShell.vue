@@ -144,7 +144,8 @@
                 <!-- body list -->
                 <div class="flex-1 min-h-0 w-full overflow-hidden flex flex-col p-3">
                     <template v-if="isDMMode">
-                        <DMSidebar @openAddFriends="addFriendsOpen = true" />
+                        <DMSidebar @openAddFriends="addFriendsOpen = true"
+                                   @openThread="onDMOpenThread" />
                     </template>
 
                     <template v-else>
@@ -621,6 +622,22 @@
         if (!hid) return null;
         return lastRoomByHouse.value?.[hid] ?? null;
     }
+    async function onDMOpenThread(id) {
+        if (!id) return;
+
+        dmThreads.setLastThreadId?.(String(id));
+
+        // ✅ קודם סוגרים מגירה (רק במובייל), בלי history.back
+        if (isMobile() && mobileNavOpen.value) {
+            closeMobileNav({ skipHistoryBack: true });
+            await nextTick();
+        }
+
+        // ✅ ואז ניווט
+        if (route.name !== "dm" || String(route.params.threadId) !== String(id)) {
+            await router.push({ name: "dm", params: { threadId: String(id) } });
+        }
+    }
 
 
     // ✅ קאש קטן כדי לא לקרוא getter פעמיים לכל חדר בתוך template
@@ -633,19 +650,6 @@
     }
     function isHomeRoute() {
         return route.name === "home" || String(route.path || "") === "/";
-    }
-
-    async function onMobileOpenThread(id) {
-        if (!id) return;
-
-        // ✅ זוכר last
-        dmThreads.setLastThreadId?.(String(id));
-
-        // ✅ נווט לצ'אט
-        await router.push({ name: "dm", params: { threadId: String(id) } });
-
-        // ✅ סגור מגירה בלי history.back (אחרת תיפול ל-home)
-        closeMobileNav({ skipHistoryBack: true });
     }
 
 
@@ -728,13 +732,12 @@
             mobileNavOpen.value = false;
 
             // ✅ אם היינו במסך /dms במובייל — אחרי סגירה קופצים לצ'אט האחרון
-            if (isMobile() && route.name === "dms") {
-                // dmThreads צריך להיות מיובא/מוגדר ב-AppShell
-                const last = dmThreads.lastThreadId || dmThreads.selfThreadId;
-                if (last) {
-                    router.replace({ name: "dm", params: { threadId: String(last) } });
-                }
+            if (isMobile() && (route.name === "dms" || route.name === "dm")) {
+                closeMobileNav({ skipHistoryBack: true });
+            } else {
+                closeMobileNav();
             }
+
         }, 155);
 
         // ✅ אם יש מצב שהכנסנו state של drawer — חייבים לנקות אותו נכון
@@ -780,20 +783,6 @@
         }
 
         house.enterRoom?.("lobby");
-    }
-
-
-    async function onCloseDrawer() {
-        drawerOpen.value = false;
-
-        // רק במובייל ורק אם אנחנו במסך /dms
-        if (!isMobile.value) return;
-        if (route.name !== "dms") return;
-
-        const last = dmThreads.lastThreadId || dmThreads.selfThreadId;
-        if (last) {
-            router.replace({ name: "dm", params: { threadId: last } });
-        }
     }
 
     async function signOut() {
@@ -894,16 +883,6 @@
             return;
         }
     }
-
-    watch(
-        () => route.name,
-        (name) => {
-            if (name === "dms" && isMobile.value) {
-                drawerOpen.value = true;
-            }
-        },
-        { immediate: true }
-    );
 
 
     watch(mobileNavOpen, (open) => {
