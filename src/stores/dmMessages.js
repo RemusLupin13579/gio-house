@@ -12,6 +12,10 @@ const OUTBOX_KEY = "gio-dm-outbox-v1";
 const WORKER_MS = 1200;
 const MAX_ATTEMPTS = 6;
 
+// ✅ DEV hits Vercel directly, PROD uses same-origin
+const API_BASE =
+    (import.meta?.env?.DEV ? "https://gio-home.vercel.app" : "");
+
 function uuid() { return crypto.randomUUID(); }
 function nowIso() { return new Date().toISOString(); }
 function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
@@ -28,6 +32,10 @@ function withTimeout(promise, ms, label = "timeout") {
             .then((val) => { clearTimeout(t); resolve(val); })
             .catch((err) => { clearTimeout(t); reject(err); });
     });
+}
+
+async function readTextSafe(res) {
+    try { return await res.text(); } catch { return ""; }
 }
 
 export const useDMMessagesStore = defineStore("dmMessages", {
@@ -101,7 +109,6 @@ export const useDMMessagesStore = defineStore("dmMessages", {
             const me = String(myUserId || "");
             if (!tid || !me) return null;
 
-            // NOTE: requires RLS policy that lets participants select members
             const req = supabase
                 .from("dm_thread_members")
                 .select("user_id")
@@ -111,8 +118,7 @@ export const useDMMessagesStore = defineStore("dmMessages", {
             if (error) throw error;
 
             const ids = (rows || []).map(r => String(r.user_id)).filter(Boolean);
-            const other = ids.find(uid => uid !== me) || null;
-            return other;
+            return ids.find(uid => uid !== me) || null;
         },
 
         async _pushDMToUser({ toUserId, threadId, fromUserId, fromName, text, createdAt, msgId }) {
@@ -122,21 +128,19 @@ export const useDMMessagesStore = defineStore("dmMessages", {
                 threadId: tid,
                 url: `/dm/${tid}`,
                 msgId: String(msgId || `${tid}_${Date.parse(createdAt) || Date.now()}`),
-
-                // title stays stable ("DM"), body has "name: text"
                 title: "DM",
                 body: `${String(fromName || "GIO")}: ${previewText(text, 180)}`,
-
-                // extras for SW (if you want suppression / grouping)
                 fromUserId: String(fromUserId || ""),
                 lineTitle: String(fromName || "GIO"),
                 badgeUrl: "/pwa-192.png?v=1",
             };
 
-            console.log("[push][dm] sending toUserId", { threadId: tid, toUserId: String(toUserId) });
+            const endpoint = `${API_BASE}/api/send-push`;
+
+            console.log("[push][dm] sending toUserId", { threadId: tid, toUserId: String(toUserId), endpoint });
 
             const res = await withTimeout(
-                fetch("/api/send-push", {
+                fetch(endpoint, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ toUserId: String(toUserId), payload }),
@@ -145,7 +149,7 @@ export const useDMMessagesStore = defineStore("dmMessages", {
                 "send-push dm fetch timeout"
             );
 
-            const txt = await res.text().catch(() => "");
+            const txt = await readTextSafe(res);
             if (!res.ok) throw new Error(`send-push failed ${res.status} ${txt}`);
 
             let json = {};
@@ -248,7 +252,6 @@ export const useDMMessagesStore = defineStore("dmMessages", {
             this.hydrateOutboxToUI();
         },
 
-        // compat alias (so DMChatPanel won't explode)
         async loadThreadMessages(threadId) {
             return this.load(threadId);
         },
@@ -388,7 +391,6 @@ export const useDMMessagesStore = defineStore("dmMessages", {
 
                         if (error) throw error;
 
-                        // ACK UI immediately
                         this._upsert(item.threadId, {
                             id: data.id,
                             client_id: data.client_id,
@@ -401,7 +403,6 @@ export const useDMMessagesStore = defineStore("dmMessages", {
                             _error: null,
                         });
 
-                        // DM list preview
                         try {
                             dmThreads.bumpLastMessage(String(item.threadId), {
                                 text: data.text ?? item.content,
@@ -410,7 +411,6 @@ export const useDMMessagesStore = defineStore("dmMessages", {
                             });
                         } catch { }
 
-                        // PUSH (best-effort) — safe path: resolve recipient via dm_thread_members (RLS) => send toUserId
                         try {
                             console.log("[push][dm] start", { threadId: item.threadId, fromUserId: userId });
 

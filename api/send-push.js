@@ -1,6 +1,6 @@
-// /api/send-push.js
 import webpush from "web-push";
-const VERSION = "send-push_2026-01-27_threadId_enabled";
+
+const VERSION = "send-push_2026-01-27_DEPLOY_FIX_senderId_only";
 
 const ALLOW_ORIGINS = new Set([
     "https://gio-home.vercel.app",
@@ -9,7 +9,7 @@ const ALLOW_ORIGINS = new Set([
 ]);
 
 function setCors(req, res) {
-    const origin = req.headers.origin || "";
+    const origin = req.headers?.origin || "";
     const allow = ALLOW_ORIGINS.has(origin) ? origin : "https://gio-home.vercel.app";
 
     res.setHeader("Access-Control-Allow-Origin", allow);
@@ -53,11 +53,11 @@ async function supaGET(url, serviceKey) {
     const r = await fetch(url, {
         headers: { apikey: serviceKey, authorization: `Bearer ${serviceKey}` },
     });
+
     const txt = await r.text().catch(() => "");
     let json = null;
-    try {
-        json = txt ? JSON.parse(txt) : null;
-    } catch { }
+    try { json = txt ? JSON.parse(txt) : null; } catch { }
+
     return { ok: r.ok, status: r.status, txt, json };
 }
 
@@ -66,12 +66,12 @@ export default async function handler(req, res) {
 
     if (req.method === "OPTIONS") return res.status(200).send("ok");
     if (req.method === "GET") return res.status(200).json({ ok: true, route: "/api/send-push", version: VERSION });
+
     if (req.method !== "POST") {
         return res.status(405).json({ ok: false, error: "METHOD_NOT_ALLOWED", got: req.method });
     }
 
     try {
-        // --- body parse safety (sometimes req.body is a string in some runtimes) ---
         let body = req.body;
         if (typeof body === "string") {
             try { body = JSON.parse(body); } catch { body = {}; }
@@ -83,67 +83,65 @@ export default async function handler(req, res) {
         const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
         const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
         if (!SUPABASE_URL || !SERVICE_KEY) {
-            return res.status(500).json({ ok: false, error: "MISSING_SUPABASE_ENV" });
+            return res.status(500).json({ ok: false, error: "MISSING_SUPABASE_ENV", version: VERSION });
         }
 
         const VAPID_PUBLIC = process.env.VAPID_PUBLIC_KEY || process.env.VITE_VAPID_PUBLIC_KEY;
         const VAPID_PRIVATE = process.env.VAPID_PRIVATE_KEY;
         const VAPID_SUBJECT = process.env.VAPID_SUBJECT || "mailto:admin@example.com";
         if (!VAPID_PUBLIC || !VAPID_PRIVATE) {
-            return res.status(500).json({ ok: false, error: "MISSING_VAPID_KEYS" });
+            return res.status(500).json({ ok: false, error: "MISSING_VAPID_KEYS", version: VERSION });
         }
 
         webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC, VAPID_PRIVATE);
 
-        // ---- determine targets ----
+        const senderId = payload?.fromUserId ? String(payload.fromUserId) : null;
+
+        const removeSenderAndDedupe = (arr) => {
+            let out = (arr || []).filter(Boolean).map(String);
+            if (senderId) out = out.filter((uid) => uid !== senderId);
+            return [...new Set(out)];
+        };
+
         let targets = [];
 
         if (toUserId) {
-            targets = [String(toUserId)];
+            targets = removeSenderAndDedupe([String(toUserId)]);
         } else if (houseId) {
             const hid = String(houseId);
             const memUrl = `${SUPABASE_URL}/rest/v1/house_members?house_id=eq.${encodeURIComponent(hid)}&select=user_id`;
             const mem = await supaGET(memUrl, SERVICE_KEY);
             if (!mem.ok) {
-                return res.status(500).json({ ok: false, error: "HOUSE_MEMBERS_QUERY_FAILED", status: mem.status, body: mem.txt });
+                return res.status(500).json({ ok: false, error: "HOUSE_MEMBERS_QUERY_FAILED", status: mem.status, body: mem.txt, version: VERSION });
             }
             const rows = Array.isArray(mem.json) ? mem.json : [];
-            targets = rows.map((x) => x?.user_id).filter(Boolean).map(String);
-
-            const fromUserId = payload?.fromUserId ? String(payload.fromUserId) : null;
-            if (fromUserId) targets = targets.filter((uid) => uid !== fromUserId);
-            targets = [...new Set(targets)];
+            targets = removeSenderAndDedupe(rows.map((x) => x?.user_id));
         } else if (threadId) {
             const tid = String(threadId);
-
-            // ✅ your table: public.dm_thread_members (thread_id, user_id)
-        } else if (threadId) {
-            const tid = String(threadId);
-
-            // ✅ this matches your DB table name:
-            const memUrl =
-                `${SUPABASE_URL}/rest/v1/dm_thread_members?thread_id=eq.${encodeURIComponent(tid)}&select=user_id`;
-
+            const memUrl = `${SUPABASE_URL}/rest/v1/dm_thread_members?thread_id=eq.${encodeURIComponent(tid)}&select=user_id`;
             const mem = await supaGET(memUrl, SERVICE_KEY);
             if (!mem.ok) {
-                return res.status(500).json({
-                    ok: false,
-                    error: "DM_MEMBERS_QUERY_FAILED",
-                    status: mem.status,
-                    body: mem.txt,
-                });
+                return res.status(500).json({ ok: false, error: "DM_MEMBERS_QUERY_FAILED", status: mem.status, body: mem.txt, version: VERSION });
             }
-
             const rows = Array.isArray(mem.json) ? mem.json : [];
-            targets = rows.map((x) => x?.user_id).filter(Boolean).map(String);
+            targets = removeSenderAndDedupe(rows.map((x) => x?.user_id));
+        } else if (roomId) {
+            const rid = String(roomId);
+            const memUrl = `${SUPABASE_URL}/rest/v1/room_members?room_id=eq.${encodeURIComponent(rid)}&select=user_id`;
+            const mem = await supaGET(memUrl, SERVICE_KEY);
+            if (!mem.ok) {
+                return res.status(500).json({ ok: false, error: "ROOM_MEMBERS_QUERY_FAILED", status: mem.status, body: mem.txt, version: VERSION });
+            }
+            const rows = Array.isArray(mem.json) ? mem.json : [];
+            targets = removeSenderAndDedupe(rows.map((x) => x?.user_id));
+        } else {
+            return res.status(400).json({ ok: false, error: "MISSING_TARGET", need: "toUserId OR houseId OR threadId OR roomId", version: VERSION });
+        }
 
-            const fromUserId = payload?.fromUserId ? String(payload.fromUserId) : null;
-            if (fromUserId) targets = targets.filter((uid) => uid !== fromUserId);
+        if (targets.length === 0) {
+            return res.status(200).json({ ok: true, sent: 0, note: "NO_TARGET_USERS", version: VERSION });
+        }
 
-            targets = [...new Set(targets)];
-
-
-        // ---- build notif payload ----
         const msgId = String(payload?.msgId || `${Date.now()}_${Math.random().toString(16).slice(2)}`);
         const groupKey = String(payload?.groupKey || payload?.tag || "gio").trim() || "gio";
         const title = String(payload?.title || "GIO").trim() || "GIO";
@@ -151,16 +149,13 @@ export default async function handler(req, res) {
         const url = String(payload?.url || "/");
 
         let iconUrl = null;
-        const fromUserId = payload?.fromUserId ? String(payload.fromUserId) : null;
-        if (fromUserId) {
-            iconUrl = await pickFirstExisting(avatarCandidates(fromUserId));
+        if (senderId) {
+            iconUrl = await pickFirstExisting(avatarCandidates(senderId));
             if (iconUrl) iconUrl = `${iconUrl}?v=${Date.now()}`;
         }
         if (!iconUrl && typeof payload?.iconUrl === "string" && payload.iconUrl.startsWith("http")) {
             iconUrl = payload.iconUrl;
         }
-
-        const badgeUrl = payload?.badgeUrl || "/pwa-192.png?v=1";
 
         const notifPayload = {
             groupKey,
@@ -169,14 +164,13 @@ export default async function handler(req, res) {
             url,
             msgId,
             iconUrl: iconUrl || "https://gio-home.vercel.app/pwa-192.png?v=1",
-            badgeUrl,
+            badgeUrl: payload?.badgeUrl || "/pwa-192.png?v=1",
             lineTitle: payload?.lineTitle || null,
             roomKey: payload?.roomKey || null,
-            threadId: payload?.threadId || threadId || null,
-            fromUserId: fromUserId || null,
+            threadId: payload?.threadId || (threadId ? String(threadId) : null),
+            fromUserId: senderId, // פה זה רק שדה בתוך JSON, לא identifier חדש
         };
 
-        // ---- send to each target user's subscriptions ----
         let sent = 0;
         const details = [];
 
@@ -184,7 +178,7 @@ export default async function handler(req, res) {
             const subsUrl = `${SUPABASE_URL}/rest/v1/push_subscriptions?user_id=eq.${encodeURIComponent(uid)}&select=endpoint,p256dh,auth`;
             const subsRes = await supaGET(subsUrl, SERVICE_KEY);
             if (!subsRes.ok) {
-                details.push({ userId: uid, ok: false, error: "SUBS_QUERY_FAILED", status: subsRes.status });
+                details.push({ userId: uid, ok: false, error: "SUBS_QUERY_FAILED", status: subsRes.status, body: subsRes.txt });
                 continue;
             }
 
@@ -204,8 +198,7 @@ export default async function handler(req, res) {
                     userSent++;
                     results.push({ endpoint: s.endpoint, ok: true });
                 } catch (e) {
-                    const statusCode = e?.statusCode ?? null;
-                    results.push({ endpoint: s.endpoint, ok: false, statusCode, body: e?.body ?? null });
+                    results.push({ endpoint: s.endpoint, ok: false, statusCode: e?.statusCode ?? null, body: e?.body ?? null });
                 }
             }
 
@@ -215,6 +208,7 @@ export default async function handler(req, res) {
 
         return res.status(200).json({
             ok: true,
+            version: VERSION,
             mode: toUserId ? "single" : houseId ? "house" : threadId ? "thread" : "room",
             targets: targets.length,
             sent,
@@ -223,6 +217,6 @@ export default async function handler(req, res) {
         });
     } catch (e) {
         console.error("[api/send-push] crashed:", e);
-        return res.status(500).json({ ok: false, error: "PUSH_FAILED", message: e?.message || String(e) });
+        return res.status(500).json({ ok: false, error: "PUSH_FAILED", message: e?.message || String(e), version: VERSION });
     }
 }

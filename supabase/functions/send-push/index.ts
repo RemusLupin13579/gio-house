@@ -1,5 +1,6 @@
-// supabase/functions/send-push/index.ts
 import webpush from "npm:web-push@3.6.7";
+
+const VERSION = "supabase-send-push_2026-01-27_senderId_only";
 
 const ALLOW_ORIGINS = new Set([
     "https://gio-home.vercel.app",
@@ -40,9 +41,7 @@ async function pickFirstExisting(urls: string[]) {
                 const g = await fetch(u, { method: "GET" });
                 if (g.ok) return u;
             }
-        } catch {
-            // ignore
-        }
+        } catch { }
     }
     return null;
 }
@@ -53,11 +52,7 @@ async function supaGET(url: string, serviceKey: string) {
     });
     const txt = await r.text().catch(() => "");
     let json: any = null;
-    try {
-        json = txt ? JSON.parse(txt) : null;
-    } catch {
-        // ignore
-    }
+    try { json = txt ? JSON.parse(txt) : null; } catch { }
     return { ok: r.ok, status: r.status, txt, json };
 }
 
@@ -66,12 +61,14 @@ export default async function handler(req: Request): Promise<Response> {
     const headers = corsHeaders(origin);
 
     if (req.method === "OPTIONS") return new Response("ok", { status: 200, headers });
+
     if (req.method === "GET") {
-        return new Response(JSON.stringify({ ok: true, route: "/api/send-push", version: "supabase-function" }), {
+        return new Response(JSON.stringify({ ok: true, route: "/functions/v1/send-push", version: VERSION }), {
             status: 200,
             headers: { ...headers, "Content-Type": "application/json" },
         });
     }
+
     if (req.method !== "POST") {
         return new Response(JSON.stringify({ ok: false, error: "METHOD_NOT_ALLOWED", got: req.method }), {
             status: 405,
@@ -83,20 +80,20 @@ export default async function handler(req: Request): Promise<Response> {
         const body = await req.json().catch(() => ({}));
         const { toUserId, roomId, houseId, threadId, payload } = body || {};
 
-        const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || Deno.env.get("VITE_SUPABASE_URL") || "";
+        const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
         const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
         if (!SUPABASE_URL || !SERVICE_KEY) {
-            return new Response(JSON.stringify({ ok: false, error: "MISSING_SUPABASE_ENV" }), {
+            return new Response(JSON.stringify({ ok: false, error: "MISSING_SUPABASE_ENV", version: VERSION }), {
                 status: 500,
                 headers: { ...headers, "Content-Type": "application/json" },
             });
         }
 
-        const VAPID_PUBLIC = Deno.env.get("VAPID_PUBLIC_KEY") || Deno.env.get("VITE_VAPID_PUBLIC_KEY") || "";
+        const VAPID_PUBLIC = Deno.env.get("VAPID_PUBLIC_KEY") || "";
         const VAPID_PRIVATE = Deno.env.get("VAPID_PRIVATE_KEY") || "";
         const VAPID_SUBJECT = Deno.env.get("VAPID_SUBJECT") || "mailto:admin@example.com";
         if (!VAPID_PUBLIC || !VAPID_PRIVATE) {
-            return new Response(JSON.stringify({ ok: false, error: "MISSING_VAPID_KEYS" }), {
+            return new Response(JSON.stringify({ ok: false, error: "MISSING_VAPID_KEYS", version: VERSION }), {
                 status: 500,
                 headers: { ...headers, "Content-Type": "application/json" },
             });
@@ -104,92 +101,53 @@ export default async function handler(req: Request): Promise<Response> {
 
         webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC, VAPID_PRIVATE);
 
-        // ---- determine targets ----
+        const senderId = payload?.fromUserId ? String(payload.fromUserId) : null;
+
+        const removeSenderAndDedupe = (arr: any[]) => {
+            let out = (arr || []).filter(Boolean).map(String);
+            if (senderId) out = out.filter((uid) => uid !== senderId);
+            return [...new Set(out)];
+        };
+
         let targets: string[] = [];
 
         if (toUserId) {
-            targets = [String(toUserId)];
+            targets = removeSenderAndDedupe([String(toUserId)]);
         } else if (houseId) {
             const hid = String(houseId);
-            const memUrl =
-                `${SUPABASE_URL}/rest/v1/house_members?house_id=eq.${encodeURIComponent(hid)}&select=user_id`;
-
+            const memUrl = `${SUPABASE_URL}/rest/v1/house_members?house_id=eq.${encodeURIComponent(hid)}&select=user_id`;
             const mem = await supaGET(memUrl, SERVICE_KEY);
-            if (!mem.ok) {
-                return new Response(JSON.stringify({
-                    ok: false,
-                    error: "HOUSE_MEMBERS_QUERY_FAILED",
-                    status: mem.status,
-                    body: mem.txt,
-                }), { status: 500, headers: { ...headers, "Content-Type": "application/json" } });
-            }
-
+            if (!mem.ok) return new Response(JSON.stringify({ ok: false, error: "HOUSE_MEMBERS_QUERY_FAILED", status: mem.status, body: mem.txt, version: VERSION }), { status: 500, headers: { ...headers, "Content-Type": "application/json" } });
             const rows = Array.isArray(mem.json) ? mem.json : [];
-            targets = rows.map((x: any) => x?.user_id).filter(Boolean).map(String);
-
-            const fromUserId = payload?.fromUserId ? String(payload.fromUserId) : null;
-            if (fromUserId) targets = targets.filter((uid) => uid !== fromUserId);
-            targets = [...new Set(targets)];
+            targets = removeSenderAndDedupe(rows.map((x: any) => x?.user_id));
         } else if (threadId) {
             const tid = String(threadId);
-            const DM_MEMBERS_TABLE = "dm_thread_members"; // ✅ לפי מה שהבאת
-
-            const memUrl =
-                `${SUPABASE_URL}/rest/v1/${DM_MEMBERS_TABLE}?thread_id=eq.${encodeURIComponent(tid)}&select=user_id`;
-
+            const memUrl = `${SUPABASE_URL}/rest/v1/dm_thread_members?thread_id=eq.${encodeURIComponent(tid)}&select=user_id`;
             const mem = await supaGET(memUrl, SERVICE_KEY);
-            if (!mem.ok) {
-                return new Response(JSON.stringify({
-                    ok: false,
-                    error: "DM_MEMBERS_QUERY_FAILED",
-                    status: mem.status,
-                    body: mem.txt,
-                }), { status: 500, headers: { ...headers, "Content-Type": "application/json" } });
-            }
-
+            if (!mem.ok) return new Response(JSON.stringify({ ok: false, error: "DM_MEMBERS_QUERY_FAILED", status: mem.status, body: mem.txt, version: VERSION }), { status: 500, headers: { ...headers, "Content-Type": "application/json" } });
             const rows = Array.isArray(mem.json) ? mem.json : [];
-            targets = rows.map((x: any) => x?.user_id).filter(Boolean).map(String);
-
-            const fromUserId = payload?.fromUserId ? String(payload.fromUserId) : null;
-            if (fromUserId) targets = targets.filter((uid) => uid !== fromUserId);
-            targets = [...new Set(targets)];
+            targets = removeSenderAndDedupe(rows.map((x: any) => x?.user_id));
         } else if (roomId) {
             const rid = String(roomId);
-            const memUrl =
-                `${SUPABASE_URL}/rest/v1/room_members?room_id=eq.${encodeURIComponent(rid)}&select=user_id`;
-
+            const memUrl = `${SUPABASE_URL}/rest/v1/room_members?room_id=eq.${encodeURIComponent(rid)}&select=user_id`;
             const mem = await supaGET(memUrl, SERVICE_KEY);
-            if (!mem.ok) {
-                return new Response(JSON.stringify({
-                    ok: false,
-                    error: "ROOM_MEMBERS_QUERY_FAILED",
-                    status: mem.status,
-                    body: mem.txt,
-                }), { status: 500, headers: { ...headers, "Content-Type": "application/json" } });
-            }
-
+            if (!mem.ok) return new Response(JSON.stringify({ ok: false, error: "ROOM_MEMBERS_QUERY_FAILED", status: mem.status, body: mem.txt, version: VERSION }), { status: 500, headers: { ...headers, "Content-Type": "application/json" } });
             const rows = Array.isArray(mem.json) ? mem.json : [];
-            targets = rows.map((x: any) => x?.user_id).filter(Boolean).map(String);
-
-            const fromUserId = payload?.fromUserId ? String(payload.fromUserId) : null;
-            if (fromUserId) targets = targets.filter((uid) => uid !== fromUserId);
-            targets = [...new Set(targets)];
+            targets = removeSenderAndDedupe(rows.map((x: any) => x?.user_id));
         } else {
-            return new Response(JSON.stringify({
-                ok: false,
-                error: "MISSING_TARGET",
-                need: "toUserId OR houseId OR threadId OR roomId"
-            }), { status: 400, headers: { ...headers, "Content-Type": "application/json" } });
+            return new Response(JSON.stringify({ ok: false, error: "MISSING_TARGET", need: "toUserId OR houseId OR threadId OR roomId", version: VERSION }), {
+                status: 400,
+                headers: { ...headers, "Content-Type": "application/json" },
+            });
         }
 
         if (targets.length === 0) {
-            return new Response(JSON.stringify({ ok: true, sent: 0, note: "NO_TARGET_USERS" }), {
+            return new Response(JSON.stringify({ ok: true, sent: 0, note: "NO_TARGET_USERS", version: VERSION }), {
                 status: 200,
                 headers: { ...headers, "Content-Type": "application/json" },
             });
         }
 
-        // ---- build notif payload ----
         const msgId = String(payload?.msgId || `${Date.now()}_${Math.random().toString(16).slice(2)}`);
         const groupKey = String(payload?.groupKey || payload?.tag || "gio").trim() || "gio";
         const title = String(payload?.title || "GIO").trim() || "GIO";
@@ -197,16 +155,10 @@ export default async function handler(req: Request): Promise<Response> {
         const url = String(payload?.url || "/");
 
         let iconUrl: string | null = null;
-        const fromUserId = payload?.fromUserId ? String(payload.fromUserId) : null;
-        if (fromUserId) {
-            iconUrl = await pickFirstExisting(avatarCandidates(fromUserId));
+        if (senderId) {
+            iconUrl = await pickFirstExisting(avatarCandidates(senderId));
             if (iconUrl) iconUrl = `${iconUrl}?v=${Date.now()}`;
         }
-        if (!iconUrl && typeof payload?.iconUrl === "string" && payload.iconUrl.startsWith("http")) {
-            iconUrl = payload.iconUrl;
-        }
-
-        const badgeUrl = payload?.badgeUrl || "/pwa-192.png?v=1";
 
         const notifPayload = {
             groupKey,
@@ -215,24 +167,21 @@ export default async function handler(req: Request): Promise<Response> {
             url,
             msgId,
             iconUrl: iconUrl || "https://gio-home.vercel.app/pwa-192.png?v=1",
-            badgeUrl,
+            badgeUrl: payload?.badgeUrl || "/pwa-192.png?v=1",
             lineTitle: payload?.lineTitle || null,
             roomKey: payload?.roomKey || null,
-            threadId: payload?.threadId || null,
-            fromUserId: fromUserId || null,
+            threadId: payload?.threadId || (threadId ? String(threadId) : null),
+            fromUserId: senderId,
         };
 
-        // ---- send to each target user's subscriptions ----
         let sent = 0;
         const details: any[] = [];
 
         for (const uid of targets) {
-            const subsUrl =
-                `${SUPABASE_URL}/rest/v1/push_subscriptions?user_id=eq.${encodeURIComponent(uid)}&select=endpoint,p256dh,auth`;
-
+            const subsUrl = `${SUPABASE_URL}/rest/v1/push_subscriptions?user_id=eq.${encodeURIComponent(uid)}&select=endpoint,p256dh,auth`;
             const subsRes = await supaGET(subsUrl, SERVICE_KEY);
             if (!subsRes.ok) {
-                details.push({ userId: uid, ok: false, error: "SUBS_QUERY_FAILED", status: subsRes.status });
+                details.push({ userId: uid, ok: false, error: "SUBS_QUERY_FAILED", status: subsRes.status, body: subsRes.txt });
                 continue;
             }
 
@@ -252,8 +201,7 @@ export default async function handler(req: Request): Promise<Response> {
                     userSent++;
                     results.push({ endpoint: s.endpoint, ok: true });
                 } catch (e: any) {
-                    const statusCode = e?.statusCode ?? null;
-                    results.push({ endpoint: s.endpoint, ok: false, statusCode, body: e?.body ?? null });
+                    results.push({ endpoint: s.endpoint, ok: false, statusCode: e?.statusCode ?? null, body: e?.body ?? null });
                 }
             }
 
@@ -261,17 +209,13 @@ export default async function handler(req: Request): Promise<Response> {
             details.push({ userId: uid, ok: true, sent: userSent, total: subs.length, results });
         }
 
-        return new Response(JSON.stringify({
-            ok: true,
-            mode: toUserId ? "single" : houseId ? "house" : threadId ? "thread" : "room",
-            targets: targets.length,
-            sent,
-            payload: notifPayload,
-            details,
-        }), { status: 200, headers: { ...headers, "Content-Type": "application/json" } });
+        return new Response(JSON.stringify({ ok: true, version: VERSION, targets: targets.length, sent, payload: notifPayload, details }), {
+            status: 200,
+            headers: { ...headers, "Content-Type": "application/json" },
+        });
     } catch (e: any) {
         console.error("[send-push fn] crashed:", e);
-        return new Response(JSON.stringify({ ok: false, error: "PUSH_FAILED", message: e?.message || String(e) }), {
+        return new Response(JSON.stringify({ ok: false, error: "PUSH_FAILED", message: e?.message || String(e), version: VERSION }), {
             status: 500,
             headers: { ...headers, "Content-Type": "application/json" },
         });
