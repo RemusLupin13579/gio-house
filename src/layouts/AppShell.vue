@@ -65,11 +65,11 @@
                             title="DMs">
                         💬
 
-                        <span v-if="notifications.dmTotalUnread > 0"
+                        <span v-if="dmTotalUnread > 0"
                               class="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1
-                     rounded-full bg-green-500 text-black text-[11px] font-extrabold
-                     flex items-center justify-center shadow-lg">
-                            {{ Math.min(99, notifications.dmTotalUnread) }}
+                         rounded-full bg-green-500 text-black text-[11px] font-extrabold
+                         flex items-center justify-center shadow-lg">
+                            {{ Math.min(99, dmTotalUnread) }}
                         </span>
                     </button>
 
@@ -125,11 +125,13 @@
 
                                 <div v-if="houseMenuOpen"
                                      class="absolute right-0 mt-2 w-48 bg-[#0b0f12] border border-white/10 rounded-xl shadow-xl overflow-hidden z-50">
-                                    <button class="w-full px-3 py-2 text-right hover:bg-white/5" @click="openInviteModal = true; houseMenuOpen=false">
+                                    <button class="w-full px-3 py-2 text-right hover:bg-white/5"
+                                            @click="openInviteModal = true; houseMenuOpen=false">
                                         הזמן חברים
                                     </button>
                                     <div class="h-px bg-white/10 my-1"></div>
-                                    <button class="w-full px-3 py-2 text-right hover:bg-white/5" @click="openRoomsModal = true; houseMenuOpen=false">
+                                    <button class="w-full px-3 py-2 text-right hover:bg-white/5"
+                                            @click="openRoomsModal = true; houseMenuOpen=false">
                                         ניהול בית
                                     </button>
                                 </div>
@@ -227,8 +229,8 @@
 
                                     <span v-if="getRoomUnread(r.key) > 0"
                                           class="min-w-[18px] h-[18px] px-1 rounded-full
-                           bg-green-500 text-black text-[11px] font-extrabold
-                           flex items-center justify-center shadow-lg"
+                               bg-green-500 text-black text-[11px] font-extrabold
+                               flex items-center justify-center shadow-lg"
                                           title="Unread">
                                         {{ Math.min(99, getRoomUnread(r.key)) }}
                                     </span>
@@ -287,10 +289,7 @@
             <!-- ✅ MAIN CONTENT -->
             <main class="flex-1 bg-black overflow-hidden min-h-0">
                 <div class="gio-fade h-full min-h-0" :key="house.currentHouseId">
-                    <!-- אם drawer פתוח וגם במסך /dms במובייל → לא מציגים מאחור -->
                     <div v-if="isMobile() && mobileNavOpen && route.name === 'dms'" class="h-full bg-black"></div>
-
-                    <!-- אחרת → רגיל -->
                     <RouterView v-else class="h-full min-h-0" />
                 </div>
             </main>
@@ -302,7 +301,6 @@
                  :style="{ opacity: overlayOpacity }"
                  @click="closeMobileNav({ skipHistoryBack: true })"></div>
 
-            <!-- ✅ חשוב: אין w-full. רוחב מפורש כדי שלא “יברח” -->
             <div class="absolute left-0 top-0 h-full bg-[#0b0f12]/95 shadow-2xl will-change-transform overflow-hidden"
                  :style="{ width: `${drawerW || drawerWidth()}px`, transform: `translateX(${drawerTranslateX}px)` }"
                  @touchstart.passive="onDrawerTouchStart"
@@ -310,8 +308,7 @@
                  @touchend="onDrawerTouchEnd">
 
                 <div class="flex h-full w-full overflow-hidden">
-
-                    <!-- LEFT RAIL (mobile): DMs + houses -->
+                    <!-- LEFT RAIL (mobile) -->
                     <div class="w-16 bg-[#0b0f12] border-r border-white/10 flex flex-col items-center">
                         <div class="w-full px-2 pt-2">
                             <button class="relative w-full h-12 rounded-2xl bg-white/5 border border-white/10 hover:border-green-500/40 transition flex items-center justify-center"
@@ -320,14 +317,14 @@
                                     title="DMs">
                                 💬
 
-                                <span v-if="notifications.dmTotalUnread > 0"
+                                <span v-if="dmTotalUnread > 0"
                                       class="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1
-                         rounded-full bg-green-500 text-black text-[11px] font-extrabold
-                         flex items-center justify-center shadow-lg">
-                                    {{ Math.min(99, notifications.dmTotalUnread) }}
+                             rounded-full bg-green-500 text-black text-[11px] font-extrabold
+                             flex items-center justify-center shadow-lg">
+                                    {{ Math.min(99, dmTotalUnread) }}
                                 </span>
 
-                                <span v-if="notifications.dmTotalUnread > 0"
+                                <span v-if="dmTotalUnread > 0"
                                       class="absolute -top-1 -right-1 w-[18px] h-[18px] rounded-full bg-green-500/40 animate-ping"></span>
                             </button>
 
@@ -360,11 +357,13 @@
 
                                     <div v-if="houseMenuOpen"
                                          class="absolute right-0 mt-2 w-48 bg-[#0b0f12] border border-white/10 rounded-xl shadow-xl overflow-hidden z-50">
-                                        <button class="w-full px-3 py-2 text-right hover:bg-white/5" @click="openInviteModal = true; houseMenuOpen=false">
+                                        <button class="w-full px-3 py-2 text-right hover:bg-white/5"
+                                                @click="openInviteModal = true; houseMenuOpen=false">
                                             הזמן חברים
                                         </button>
                                         <div class="h-px bg-white/10 my-1"></div>
-                                        <button class="w-full px-3 py-2 text-right hover:bg-white/5" @click="openRoomsModal = true; houseMenuOpen=false">
+                                        <button class="w-full px-3 py-2 text-right hover:bg-white/5"
+                                                @click="openRoomsModal = true; houseMenuOpen=false">
                                             ניהול בית
                                         </button>
                                     </div>
@@ -378,14 +377,13 @@
                             </button>
                         </div>
 
-                        <!-- ✅ BODY (mobile) — wrapper אחיד לשני המצבים -->
+                        <!-- BODY (mobile) -->
                         <div class="flex-1 min-h-0 overflow-hidden">
                             <div class="h-full min-h-0 w-full overflow-hidden flex flex-col p-4">
                                 <div class="text-xs text-white/40 mb-3 px-3 uppercase tracking-wider">
                                     {{ isDMMode ? "Messages" : "חדרים" }}
                                 </div>
 
-                                <!-- ✅ scroll area פנימי אחיד -->
                                 <div class="space-y-1 overflow-y-auto min-h-0 w-full min-w-0">
                                     <template v-if="isDMMode">
                                         <DMSidebar class="w-full min-w-0"
@@ -551,60 +549,68 @@
         *
         * המטרה: “שלד” יציב שלא נשבר כשאתה מוסיף פיצ׳רים.
         */
-        import {useNotifications} from "../composables/useNotifications";
-        import {useNotificationsStore} from "../stores/notifications";
+        import { computed, ref, watch, onMounted, onBeforeUnmount, nextTick } from "vue";
+        import { RouterView, useRoute, useRouter } from "vue-router";
+
+        import { useNotifications } from "../composables/useNotifications";
+        import { useNotificationsStore } from "../stores/notifications";
+
+        import { useHouseStore } from "../stores/house";
+        import { usePresenceStore } from "../stores/presence";
+        import { session, profile } from "../stores/auth";
+        import { useRoomsStore } from "../stores/rooms";
+        import { useUIStore } from "../stores/ui";
+        import { useMessagesStore } from "../stores/messages";
+        import { supabase } from "../services/supabase";
+
+        import ProfileSettingsModal from "../components/ProfileSettingsModal.vue";
         import RoomManagerModal from "../components/RoomManagerModal.vue";
         import HousesSidebar from "../components/HousesSidebar.vue";
         import HouseInviteModal from "../components/HouseInviteModal.vue";
         import HouseSwitcherModal from "../components/HouseSwitcherModal.vue";
-        import {computed, ref, watch, onMounted, onBeforeUnmount, nextTick} from "vue";
-        import {RouterView, useRoute, useRouter} from "vue-router";
-        import {useHouseStore} from "../stores/house";
-        import {usePresenceStore} from "../stores/presence";
-        import {session, profile} from "../stores/auth";
-        import {useRoomsStore} from "../stores/rooms";
-        import {useUIStore} from "../stores/ui";
-        import {useMessagesStore} from "../stores/messages";
-        import {supabase} from "../services/supabase";
-        import ProfileSettingsModal from "../components/ProfileSettingsModal.vue";
-        // ✅ DM MODE sidebar
+
         import DMSidebar from "../components/DMsSidebar.vue";
         import AddFriendsModal from "../components/AddFriendsModal.vue";
-        import {useDMThreadsStore} from "../stores/dmThreads";
 
-        const roomUnread = (roomKey) => Number(notifications.roomUnread?.[roomKey] || 0);
-        const dmThreads = useDMThreadsStore();
+        import { useDMThreadsStore } from "../stores/dmThreads";
+        import { useDMMessagesStore } from "../stores/dmMessages"; // ✅ חשוב אם signOut מנקה DM subs
 
-        const {notif} = useNotifications();         // context + auto-clear
-        const notifications = useNotificationsStore(); // for getters
-
-        const addFriendsOpen = ref(false);
-        const inlineEdit = ref({id: null, draft: "" });
-        const inlineEditInput = ref(null);
-
+        // ✅ Stores
         const ui = useUIStore();
-        const openInviteModal = ref(false);
-
-        const roomsStore = useRoomsStore();
         const router = useRouter();
         const route = useRoute();
-        const rooms = useRoomsStore();
-        const messages = useMessagesStore();
+
         const house = useHouseStore();
         const presence = usePresenceStore();
+        const roomsStore = useRoomsStore();
+        const messages = useMessagesStore();
 
+        const notifications = useNotificationsStore(); // ✅ קודם כל
+        const { notif } = useNotifications();          // ✅ hook שמעדכן context + auto-clear
+
+        const dmThreads = useDMThreadsStore();
+
+        // ✅ BADGES should come from notifications store (live)
+        const dmTotalUnread = computed(() => Number(notifications.dmTotalUnread || 0));
+
+        // ✅ DM mode
+        const isDMMode = computed(() => route.name === "dms" || route.name === "dm");
+
+        // ✅ top bar only when NOT room and NOT dm
+        const showMobileTopBar = computed(() => route.name !== "room" && route.name !== "dm" && route.name !== "dms");
+
+        // UI state
+        const addFriendsOpen = ref(false);
+        const openInviteModal = ref(false);
         const openProfileModal = ref(false);
         const openRoomsModal = ref(false);
         const openHouseModal = ref(false);
         const houseMenuOpen = ref(false);
 
+        const inlineEdit = ref({ id: null, draft: "" });
+        const inlineEditInput = ref(null);
+
         const AVATARS_MAX = 5;
-
-    // ✅ DM mode
-    const isDMMode = computed(() => route.name === "dms" || route.name === "dm");
-
-    // ✅ top bar only when NOT room and NOT dm
-    const showMobileTopBar = computed(() => route.name !== "room" && route.name !== "dm" && route.name !== "dms");
 
         /* =========================
        ✅ BACK/FOWARD ROUTING HANDLING
@@ -796,58 +802,50 @@
     }
 
         async function signOut() {
-        try {
-            // 1) להתנתק אמיתי מה-auth
-            const {error} = await supabase.auth.signOut();
-        if (error) console.warn("signOut error:", error);
+            try {
+                const { error } = await supabase.auth.signOut();
+                if (error) console.warn("signOut error:", error);
 
-        // 2) לנתק realtime / subs
-        try {await presence.disconnect?.(); } catch (_) { }
+                try { await presence.disconnect?.(); } catch (_) { }
 
-        try {
-                const subs = Object.keys(messages.subs || { });
-        for (const roomId of subs) {
-            await messages.unsubscribe(roomId);
-                }
-            } catch (_) { }
+                try {
+                    const subs = Object.keys(messages.subs || {});
+                    for (const roomId of subs) await messages.unsubscribe(roomId);
+                } catch (_) { }
 
-            // ✅ DM inbox + thread subs
-        try {
-                const dmMessages = useDMMessagesStore();
-        await dmMessages.unsubscribeInbox?.();
+                // ✅ DM inbox + thread subs
+                try {
+                    const dmMessages = useDMMessagesStore();
+                    await dmMessages.unsubscribeInbox?.();
 
-        const dmSubs = Object.keys(dmMessages.subs || { });
-        for (const threadId of dmSubs) {
-            await dmMessages.unsubscribe(threadId);
-                }
-            } catch (_) { }
+                    const dmSubs = Object.keys(dmMessages.subs || {});
+                    for (const threadId of dmSubs) await dmMessages.unsubscribe(threadId);
+                } catch (_) { }
 
-            // 3) לאפס state מקומי
-        session.value = null;
-        profile.value = null;
+                session.value = null;
+                profile.value = null;
 
-        house.reset?.();
-        rooms.reset?.();
+                house.reset?.();
+                roomsStore.reset?.();
 
-        messages.byRoom = { };
-        messages.subs = { };
+                messages.byRoom = {};
+                messages.subs = {};
 
-        try {
-                const dmMessages = useDMMessagesStore();
-        dmMessages.byThread = { };
-        dmMessages.subs = { };
-        dmMessages.outbox = [];
-            } catch (_) { }
+                try {
+                    const dmMessages = useDMMessagesStore();
+                    dmMessages.byThread = {};
+                    dmMessages.subs = {};
+                    dmMessages.outbox = [];
+                } catch (_) { }
 
-            // 4) רק את הדברים שלך (לא של Supabase)
-        try {localStorage.removeItem("gio_current_house_id"); } catch (_) { }
+                try { localStorage.removeItem("gio_current_house_id"); } catch (_) { }
 
-        await router.replace({name: "login" });
-        } catch (e) {
-            console.error("signOut failed:", e);
-        await router.replace({name: "login" });
+                await router.replace({ name: "login" });
+            } catch (e) {
+                console.error("signOut failed:", e);
+                await router.replace({ name: "login" });
+            }
         }
-    }
 
 
         function onPopState() {
@@ -1276,9 +1274,6 @@
         exitArmed.value = false;
         if (exitTimer) clearTimeout(exitTimer);
 
-        exitArmed.value = false;
-        if (exitTimer) clearTimeout(exitTimer);
-
         if (mobileNavOpen.value) closeMobileNav({skipHistoryBack: true });
 
         router.replace({name: "home" });
@@ -1394,6 +1389,7 @@
         scheduleAfk();
         recalcDrawerW();
         resetHorizontalScroll();
+        notifications.load?.();
 
         if (isMobile()) {
             // שכבת הגנה כדי שה-back הראשון בלובי לא יזרוק את המשתמש מיד החוצה
@@ -1495,17 +1491,16 @@
     }
         // ---------- unread badges (ROOMS) ----------
         function getRoomUnread(roomKey) {
-        // נסה כמה שמות אפשריים כדי שלא תקרוס אם ה-store שלך נקרא אחרת
-        const map =
-        notifications.roomUnread ||
-        notifications.roomsUnread ||
-        notifications.unreadRooms ||
-        notifications.byRoom ||
-        { };
+            const map =
+                notifications.roomUnread ||
+                notifications.roomsUnread ||
+                notifications.unreadRooms ||
+                notifications.byRoom ||
+                {};
 
-        const n = map?.[roomKey] ?? 0;
-        return Number(n) || 0;
-    }
+            const n = map?.[roomKey] ?? 0;
+            return Number(n) || 0;
+        }
 
 
 </script>

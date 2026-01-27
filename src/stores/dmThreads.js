@@ -5,7 +5,7 @@ import { useProfilesStore, PROFILE_SELECT } from "./profiles";
 
 export const useDMThreadsStore = defineStore("dmThreads", {
     state: () => ({
-        threads: [], // { id, otherUserId, otherProfile, lastText, lastAt, isSelf }
+        threads: [], // { id, otherUserId, otherProfile, lastText, lastAt, isSelf, unread }
         loading: false,
         lastError: null,
         selfThreadId: null,
@@ -13,7 +13,11 @@ export const useDMThreadsStore = defineStore("dmThreads", {
     }),
 
     getters: {
-        byId: (s) => (id) => s.threads.find((t) => String(t.id) === String(id)) || null,
+        byId: (s) => (id) =>
+            (s.threads || []).find((t) => String(t.id) === String(id)) || null,
+
+        totalUnread: (s) =>
+            (s.threads || []).reduce((sum, t) => sum + (Number(t.unread) || 0), 0),
     },
 
     actions: {
@@ -34,6 +38,7 @@ export const useDMThreadsStore = defineStore("dmThreads", {
             this.selfThreadId = data;
             return data;
         },
+
         bumpLastMessage(threadId, msg) {
             const t = this.byId(String(threadId));
             if (!t) return;
@@ -42,16 +47,36 @@ export const useDMThreadsStore = defineStore("dmThreads", {
             t.lastAt = msg.created_at ? Date.parse(msg.created_at) : Date.now();
             t.lastUserId = msg.user_id ?? t.lastUserId;
         },
+
+        markThreadReadLocal(threadId) {
+            const tid = String(threadId || "");
+            if (!tid) return;
+            const t = this.byId(tid);
+            if (t) t.unread = 0;
+        },
+
+        incrementUnreadLocal(threadId, delta = 1) {
+            const tid = String(threadId || "");
+            if (!tid) return;
+            const t = this.byId(tid);
+            if (!t) return;
+            t.unread = Math.max(0, (Number(t.unread) || 0) + (Number(delta) || 1));
+        },
+
+        setThreadUnreadLocal(threadId, count) {
+            const tid = String(threadId || "");
+            if (!tid) return;
+            const t = this.byId(tid);
+            if (!t) return;
+            t.unread = Math.max(0, Number(count) || 0);
+        },
+
         async _forceLoadProfiles(ids = []) {
             const profilesStore = useProfilesStore();
             const uniq = [...new Set(ids)].filter(Boolean);
             if (!uniq.length) return;
 
-            const { data, error } = await supabase
-                .from("profiles")
-                .select(PROFILE_SELECT)
-                .in("id", uniq);
-
+            const { data, error } = await supabase.from("profiles").select(PROFILE_SELECT).in("id", uniq);
             if (error) throw error;
             profilesStore.upsertMany(data || []);
         },
@@ -77,7 +102,6 @@ export const useDMThreadsStore = defineStore("dmThreads", {
                 const rows = data || [];
                 const otherIds = rows.map((r) => r.other_user_id).filter(Boolean);
 
-                // ✅ טען תמיד את הפרופילים עם שדות ה-DM scene
                 await this._forceLoadProfiles([myId, ...otherIds]);
 
                 const profilesStore = useProfilesStore();
@@ -85,15 +109,16 @@ export const useDMThreadsStore = defineStore("dmThreads", {
 
                 this.threads = rows.map((r) => {
                     const threadId = r.thread_id;
-                    const isSelf = !!(this.selfThreadId && String(threadId) === String(this.selfThreadId));
+                    const isSelf =
+                        !!(this.selfThreadId && String(threadId) === String(this.selfThreadId));
 
-                    // self thread: other_user_id לרוב null → "הצד השני" הוא אני
-                    const otherUserId = isSelf ? myId : (r.other_user_id || null);
+                    const otherUserId = isSelf ? myId : r.other_user_id || null;
 
-                    // ✅ זה החלק שהיה חסר לך וגרם ל-DMScene לקבל null
                     const otherProfile = isSelf
                         ? myProfile
-                        : (otherUserId ? (profilesStore.byId?.[otherUserId] || null) : null);
+                        : otherUserId
+                            ? (profilesStore.byId?.[otherUserId] || null)
+                            : null;
 
                     return {
                         id: threadId,
@@ -102,6 +127,7 @@ export const useDMThreadsStore = defineStore("dmThreads", {
                         isSelf,
                         lastText: r.last_text || "",
                         lastAt: r.last_at || null,
+                        unread: Number(r.unread_count || 0),
                     };
                 });
             } catch (e) {

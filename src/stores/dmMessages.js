@@ -13,8 +13,7 @@ const WORKER_MS = 1200;
 const MAX_ATTEMPTS = 6;
 
 // ✅ DEV hits Vercel directly, PROD uses same-origin
-const API_BASE =
-    (import.meta?.env?.DEV ? "https://gio-home.vercel.app" : "");
+const API_BASE = (import.meta?.env?.DEV ? "https://gio-home.vercel.app" : "");
 
 function uuid() { return crypto.randomUUID(); }
 function nowIso() { return new Date().toISOString(); }
@@ -128,20 +127,14 @@ export const useDMMessagesStore = defineStore("dmMessages", {
                 threadId: tid,
                 url: `/dm/${tid}`,
                 msgId: String(msgId || `${tid}_${Date.parse(createdAt) || Date.now()}`),
-                // ✅ title = username
                 title: String(fromName || "GIO"),
-                // ✅ body = רק הטקסט (בלי username)
                 body: previewText(text, 180),
                 fromUserId: String(fromUserId || ""),
-                // ❌ לא שולחים lineTitle בכלל ל-DM
                 badgeUrl: "/pwa-192.png?v=1",
-                // ✅ חדש:
                 noPrefix: true,
             };
 
-
             const endpoint = `${API_BASE}/api/send-push`;
-
             console.log("[push][dm] sending toUserId", { threadId: tid, toUserId: String(toUserId), endpoint });
 
             const res = await withTimeout(
@@ -176,7 +169,9 @@ export const useDMMessagesStore = defineStore("dmMessages", {
                     if (!r) return;
 
                     const myId = session.value?.user?.id ?? null;
-                    if (myId && String(r.user_id) === String(myId)) return;
+                    if (!myId) return; // ✅ חשוב
+
+                    if (String(r.user_id) === String(myId)) return;
 
                     const notif = useNotificationsStore();
                     notif.onIncomingDM({
@@ -229,7 +224,6 @@ export const useDMMessagesStore = defineStore("dmMessages", {
         },
 
         // ---------- load / subscribe per thread ----------
-        // /src/stores/dmMessages.js
         async load(threadId, limit = 200) {
             if (!threadId) return;
             this._ensureThread(threadId);
@@ -244,7 +238,6 @@ export const useDMMessagesStore = defineStore("dmMessages", {
 
             if (error) throw error;
 
-            // ✅ הופכים כדי להציג מלמעלה-למטה (ישן→חדש)
             this.byThread[threadId] = (data || []).reverse().map((r) => ({
                 id: r.id,
                 client_id: r.client_id,
