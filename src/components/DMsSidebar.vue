@@ -145,10 +145,6 @@
       dmThreads.setLastThreadId?.(String(id));   // ✅ זוכר מה היה האחרון
 
       emit("openThread", id);
-
-      if (route.name !== "dm" || String(route.params.threadId) !== String(id)) {
-        router.push({ name: "dm", params: { threadId: id } });
-      }
     }
 
 

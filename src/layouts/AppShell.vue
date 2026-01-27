@@ -2,10 +2,9 @@
     <!--
       GIO AppShell
       ============
-      זה “השלד” של כל האפליקציה:
-      - Desktop: 3 עמודות (Rail / Sidebar / Main)
-      - Mobile: Topbar + Drawer עם Rail + Sidebar
-      - RouterView תמיד ב-Main (חוץ ממקרה נדיר: drawer פתוח על מסך dms)
+      - Desktop: 3 columns (Rail / Sidebar / Main)
+      - Mobile: Topbar + Drawer with Rail + Sidebar
+      - RouterView always in Main (except when drawer open on /dms)
       - Badges: DM + Rooms (unread)
     -->
     <div class="fixed inset-0 bg-black text-white overflow-hidden flex flex-col md:flex-row">
@@ -66,14 +65,12 @@
                             title="DMs">
                         💬
 
-                        <!-- ✅ DM badge (כבר עובד אצלך, פה רק שמרתי אותו) -->
                         <span v-if="notifications.dmTotalUnread > 0"
                               class="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1
                      rounded-full bg-green-500 text-black text-[11px] font-extrabold
                      flex items-center justify-center shadow-lg">
                             {{ Math.min(99, notifications.dmTotalUnread) }}
                         </span>
-
                     </button>
 
                     <div class="h-px bg-white/10 mt-2 mb-1"></div>
@@ -200,17 +197,13 @@
                                             {{ r.name || r.key }}
                                         </span>
 
-                                        <!-- last preview -->
                                         <div class="text-[11px] text-white/40 truncate max-w-[180px] w-full text-left" dir="ltr">
                                             {{ roomsStore.lastPreviewFor?.(r.key) || "" }}
                                         </div>
                                     </div>
                                 </div>
 
-                                <!-- ✅ RIGHT SIDE: כאן שמים את ה-badge של החדרים הכי “צמוד לימין” שיש -->
                                 <div class="gio-room-right ml-auto flex items-center gap-2 justify-end" dir="ltr">
-
-                                    <!-- avatars -->
                                     <div class="gio-room-avatars" dir="ltr">
                                         <template v-for="(u, i) in roomUsers(r.key).slice(0, AVATARS_MAX)" :key="u.user_id || u.id || i">
                                             <div class="gio-room-avatar" :style="{ zIndex: 10 + i }" :title="u.nickname || 'User'">
@@ -226,13 +219,11 @@
                                         </div>
                                     </div>
 
-                                    <!-- count -->
                                     <span v-if="roomUsers(r.key).length >= 2" class="gio-room-count">
                                         <span v-if="presence.status === 'connecting'" class="gio-skel-count"></span>
                                         <span v-else>{{ roomUsers(r.key).length }}</span>
                                     </span>
 
-                                    <!-- ✅ Rooms badge (העתקה בול של DM badge, רק לפי roomKey) -->
                                     <span v-if="getRoomUnread(r.key) > 0"
                                           class="min-w-[18px] h-[18px] px-1 rounded-full
                            bg-green-500 text-black text-[11px] font-extrabold
@@ -257,7 +248,6 @@
                         <div class="leading-tight">
                             <div class="font-bold">{{ nickname }}</div>
 
-                            <!-- presence chip -->
                             <div class="gio-topbar__right">
                                 <div class="h-5 gio-presence-chip cursor-pointer select-none"
                                      :data-state="presence.status"
@@ -274,7 +264,10 @@
                                     <span v-else-if="presence.status === 'ready'">{{ myStatusLabel }}</span>
                                     <span v-else>Idle</span>
 
-                                    <button v-if="presence.status === 'failed'" class="gio-retry-btn" @click.stop="retryPresence" title="Retry">
+                                    <button v-if="presence.status === 'failed'"
+                                            class="gio-retry-btn"
+                                            @click.stop="retryPresence"
+                                            title="Retry">
                                         Retry
                                     </button>
                                 </div>
@@ -348,7 +341,6 @@
 
                     <!-- RIGHT PANEL (mobile): lists only -->
                     <div class="flex-1 bg-[#0c1116] flex flex-col min-h-0">
-
                         <div class="h-16 px-4 flex items-center justify-between border-b border-white/10">
                             <div class="flex items-center gap-2 min-w-0">
                                 <div class="font-bold text-green-300 truncate">
@@ -382,10 +374,11 @@
                             </button>
                         </div>
 
-                        <!-- body -->
+                        <!-- ✅ BODY (mobile) — כאן התיקון האמיתי: v-if + v-else צמודים -->
                         <div class="flex-1 min-h-0 overflow-hidden">
                             <template v-if="isDMMode">
-                                <DMSidebar @openAddFriends="addFriendsOpen = true" />
+                                <DMSidebar @openAddFriends="addFriendsOpen = true"
+                                           @openThread="onDMOpenThread" />
                             </template>
 
                             <template v-else>
@@ -410,6 +403,7 @@
                                                             <span v-else>{{ (u.nickname?.[0] ?? "•") }}</span>
                                                         </div>
                                                     </template>
+
                                                     <div v-if="roomUsers('lobby').length > AVATARS_MAX"
                                                          class="gio-room-avatar gio-room-more"
                                                          :title="`+${roomUsers('lobby').length - AVATARS_MAX}`">
@@ -435,10 +429,12 @@
                                             <div class="gio-room-row">
                                                 <div class="gio-room-left">
                                                     <span class="text-lg shrink-0">{{ r.icon || "🚪" }}</span>
+
                                                     <div class="min-w-0">
                                                         <span class="font-semibold truncate block max-w-[180px]">
                                                             {{ r.name || r.key }}
                                                         </span>
+
                                                         <div class="text-[11px] text-white/40 truncate max-w-[180px] w-full text-left" dir="ltr">
                                                             {{ roomsStore.lastPreviewFor?.(r.key) || "" }}
                                                         </div>
@@ -446,7 +442,6 @@
                                                 </div>
 
                                                 <div class="gio-room-right flex items-center gap-2" dir="ltr">
-
                                                     <span v-if="getRoomUnread(r.key) > 0"
                                                           class="w-[18px] h-[18px] rounded-full bg-green-500/40 animate-ping"
                                                           aria-hidden="true"></span>
@@ -464,14 +459,12 @@
                                                         {{ roomUsers(r.key).length }}
                                                     </span>
 
-                                                    <!-- ✅ Rooms badge -->
                                                     <span v-if="getRoomUnread(r.key) > 0"
                                                           class="min-w-[18px] h-[18px] px-1 rounded-full
                                    bg-green-500 text-black text-[11px] font-extrabold
                                    flex items-center justify-center shadow-lg">
                                                         {{ Math.min(99, getRoomUnread(r.key)) }}
                                                     </span>
-
                                                 </div>
                                             </div>
                                         </button>
@@ -480,7 +473,7 @@
                             </template>
                         </div>
 
-                        <!-- footer -->
+                        <!-- footer (mobile) -->
                         <div class="h-14 px-3 border-t border-white/10 flex items-center justify-between">
                             <div class="flex items-center gap-2">
                                 <div class="w-9 h-9 rounded-xl bg-white/5 border border-white/10 overflow-hidden flex items-center justify-center">
@@ -536,6 +529,7 @@
         <AddFriendsModal v-if="addFriendsOpen" @close="addFriendsOpen=false" />
     </div>
 </template>
+
 
 <script setup>
     /**
@@ -603,7 +597,7 @@
     const isDMMode = computed(() => route.name === "dms" || route.name === "dm");
 
     // ✅ top bar only when NOT room and NOT dm
-    const showMobileTopBar = computed(() => route.name !== "room" && route.name !== "dm");
+    const showMobileTopBar = computed(() => route.name !== "room" && route.name !== "dm" && route.name !== "dms");
 
     /* =========================
    ✅ BACK/FOWARD ROUTING HANDLING
@@ -622,20 +616,27 @@
         if (!hid) return null;
         return lastRoomByHouse.value?.[hid] ?? null;
     }
+
     async function onDMOpenThread(id) {
-        if (!id) return;
+        const threadId = String(id || "").trim();
+        if (!threadId) return;
 
-        dmThreads.setLastThreadId?.(String(id));
+        dmThreads.setLastThreadId?.(threadId);
 
-        // ✅ קודם סוגרים מגירה (רק במובייל), בלי history.back
+        // ✅ במובייל: סוגרים מגירה קודם, בלי history.back
         if (isMobile() && mobileNavOpen.value) {
             closeMobileNav({ skipHistoryBack: true });
             await nextTick();
         }
 
-        // ✅ ואז ניווט
-        if (route.name !== "dm" || String(route.params.threadId) !== String(id)) {
-            await router.push({ name: "dm", params: { threadId: String(id) } });
+        // ✅ ניווט (מוגן)
+        try {
+            if (route.name !== "dm" || String(route.params.threadId) !== threadId) {
+                await router.push({ name: "dm", params: { threadId } });
+            }
+        } catch (e) {
+            // swallow navigation failures
+            console.warn("[DM nav] ignored:", e);
         }
     }
 
@@ -723,28 +724,28 @@
 
     function closeMobileNav(options = {}) {
         if (!mobileNavOpen.value) return;
+
         houseMenuOpen.value = false;
 
         const w = drawerWidth();
         animateDrawer(-w, 0, 140);
 
-        window.setTimeout(() => {
+        window.setTimeout(async () => {
             mobileNavOpen.value = false;
 
-            // ✅ אם היינו במסך /dms במובייל — אחרי סגירה קופצים לצ'אט האחרון
-            if (isMobile() && (route.name === "dms" || route.name === "dm")) {
-                closeMobileNav({ skipHistoryBack: true });
-            } else {
-                closeMobileNav();
+            // ✅ אם סגרנו מגירה בזמן שהיינו ב־/dms במובייל:
+            // נחזיר את המשתמש ל־dm האחרון (אם יש), אחרת נשאר ב־dms
+            if (isMobile() && route.name === "dms") {
+                const last = dmThreads.lastThreadId || dmThreads.lastThread || null;
+                if (last) {
+                    try { await router.replace({ name: "dm", params: { threadId: String(last) } }); } catch (_) { }
+                }
             }
-
         }, 155);
 
-        // ✅ אם יש מצב שהכנסנו state של drawer — חייבים לנקות אותו נכון
+        // ✅ טיפול בהיסטוריה (לא רקורסיה)
         if (drawerHistoryPushed.value) {
             if (options.skipHistoryBack) {
-                // ✅ לא עושים back (כי זה היה יפיל אותך למסך קודם),
-                // במקום זה מוחקים את הדגל מה-entry הנוכחי
                 try {
                     const st = history.state || {};
                     const next = { ...st };
@@ -760,6 +761,7 @@
             }
         }
     }
+
 
     function safeReplaceState(stateObj) {
         try {
