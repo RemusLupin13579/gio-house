@@ -301,8 +301,8 @@
                  :style="{ opacity: overlayOpacity }"
                  @click="closeMobileNav({ skipHistoryBack: true })"></div>
 
-            <div class="absolute left-0 top-0 h-full w-full bg-[#0b0f12]/95 shadow-2xl will-change-transform"
-                 :style="{ transform: `translateX(${drawerTranslateX}px)` }"
+            <div class="absolute left-0 top-0 h-full bg-[#0b0f12]/95 shadow-2xl will-change-transform"
+                 :style="{ width: `${drawerW || drawerWidth()}px`, transform: `translateX(${drawerTranslateX}px)` }"
                  @touchstart.passive="onDrawerTouchStart"
                  @touchmove.passive="onDrawerTouchMove"
                  @touchend="onDrawerTouchEnd">
@@ -529,7 +529,7 @@
         <AddFriendsModal v-if="addFriendsOpen" @close="addFriendsOpen=false" />
     </div>
 </template>
-
+/
 
 <script setup>
     /**
@@ -663,9 +663,10 @@
     const drawerW = ref(0); // ✅ GLOBAL drawer width cache
 
     function drawerWidth() {
-        if (isMobile()) return window.innerWidth;
+        // גם במובייל וגם בדסקטופ — Drawer של “sidebar”, לא full-screen
         return Math.min(window.innerWidth * 0.86, 360);
     }
+
     function recalcDrawerW() {
         drawerW.value = drawerWidth();
 

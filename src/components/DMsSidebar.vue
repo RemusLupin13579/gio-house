@@ -1,6 +1,6 @@
 <!-- /src/components/DMsSidebar.vue -->
 <template>
-  <div class="h-full min-h-0 flex flex-col p-3">
+<div class="w-full min-w-0 overflow-hidden">
     <!-- Header (fixed) -->
     <div class="shrink-0">
       <div class="flex items-center justify-between mb-3">
