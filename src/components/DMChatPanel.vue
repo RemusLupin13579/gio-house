@@ -434,7 +434,7 @@
                 await threadsStore.loadMyThreads(80);
 
                 // ✅ load messages for this thread
-                await dm.loadThreadMessages(id);
+                await dm.load(id);
                 dm.subscribe(id);
 
                 // (אופציונלי) scroll

@@ -20,10 +20,15 @@ function previewText(s, n = 180) {
     const t = String(s || "").replace(/\s+/g, " ").trim();
     return t.length > n ? t.slice(0, n - 1) + "…" : t;
 }
-function getPushApiUrl() {
-    return "/api/send-push";
-}
 
+function withTimeout(promise, ms, label = "timeout") {
+    return new Promise((resolve, reject) => {
+        const t = setTimeout(() => reject(new Error(`${label} (${ms}ms)`)), ms);
+        Promise.resolve(promise)
+            .then((val) => { clearTimeout(t); resolve(val); })
+            .catch((err) => { clearTimeout(t); reject(err); });
+    });
+}
 
 export const useDMMessagesStore = defineStore("dmMessages", {
     state: () => ({
@@ -41,10 +46,7 @@ export const useDMMessagesStore = defineStore("dmMessages", {
     },
 
     actions: {
-        async loadThreadMessages(threadId) {
-            return this.load(threadId);
-        },
-
+        // ---------- outbox persistence ----------
         _saveOutbox() {
             try { localStorage.setItem(OUTBOX_KEY, JSON.stringify(this.outbox)); } catch { }
         },
@@ -55,6 +57,7 @@ export const useDMMessagesStore = defineStore("dmMessages", {
             } catch { this.outbox = []; }
         },
 
+        // ---------- list helpers ----------
         _ensureThread(threadId) {
             if (!this.byThread[threadId]) this.byThread[threadId] = [];
         },
@@ -73,6 +76,7 @@ export const useDMMessagesStore = defineStore("dmMessages", {
                 const j = arr.findIndex((m) => m.id && m.id === msg.id);
                 if (j >= 0) { arr[j] = { ...arr[j], ...msg }; this._sortThread(threadId); return; }
             }
+
             arr.push(msg);
             this._sortThread(threadId);
         },
@@ -91,6 +95,66 @@ export const useDMMessagesStore = defineStore("dmMessages", {
             this._saveOutbox();
         },
 
+        // ---------- DM helpers ----------
+        async _getDMRecipientId(threadId, myUserId) {
+            const tid = String(threadId || "");
+            const me = String(myUserId || "");
+            if (!tid || !me) return null;
+
+            // NOTE: requires RLS policy that lets participants select members
+            const req = supabase
+                .from("dm_thread_members")
+                .select("user_id")
+                .eq("thread_id", tid);
+
+            const { data: rows, error } = await withTimeout(req, 7000, "dm members select timeout");
+            if (error) throw error;
+
+            const ids = (rows || []).map(r => String(r.user_id)).filter(Boolean);
+            const other = ids.find(uid => uid !== me) || null;
+            return other;
+        },
+
+        async _pushDMToUser({ toUserId, threadId, fromUserId, fromName, text, createdAt, msgId }) {
+            const tid = String(threadId || "");
+            const payload = {
+                groupKey: `dm_${tid}`,
+                threadId: tid,
+                url: `/dm/${tid}`,
+                msgId: String(msgId || `${tid}_${Date.parse(createdAt) || Date.now()}`),
+
+                // title stays stable ("DM"), body has "name: text"
+                title: "DM",
+                body: `${String(fromName || "GIO")}: ${previewText(text, 180)}`,
+
+                // extras for SW (if you want suppression / grouping)
+                fromUserId: String(fromUserId || ""),
+                lineTitle: String(fromName || "GIO"),
+                badgeUrl: "/pwa-192.png?v=1",
+            };
+
+            console.log("[push][dm] sending toUserId", { threadId: tid, toUserId: String(toUserId) });
+
+            const res = await withTimeout(
+                fetch("/api/send-push", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ toUserId: String(toUserId), payload }),
+                }),
+                7000,
+                "send-push dm fetch timeout"
+            );
+
+            const txt = await res.text().catch(() => "");
+            if (!res.ok) throw new Error(`send-push failed ${res.status} ${txt}`);
+
+            let json = {};
+            try { json = txt ? JSON.parse(txt) : {}; } catch { }
+            console.log("[push][dm] ok:", { sent: json?.sent, mode: json?.mode });
+            return json;
+        },
+
+        // ---------- realtime inbox ----------
         subscribeInbox() {
             if (this._inboxSub) return;
 
@@ -113,6 +177,7 @@ export const useDMMessagesStore = defineStore("dmMessages", {
                         text: r.text ?? "",
                         createdAtMs: Date.parse(r.created_at) || Date.now(),
                     });
+
                     const dmThreads = useDMThreadsStore();
                     dmThreads.bumpLastMessage(String(r.thread_id), {
                         text: r.text ?? "",
@@ -131,6 +196,7 @@ export const useDMMessagesStore = defineStore("dmMessages", {
             this._inboxSub = null;
         },
 
+        // ---------- guards ----------
         installGuards() {
             if (this._guardsInstalled) return;
             this._guardsInstalled = true;
@@ -153,6 +219,7 @@ export const useDMMessagesStore = defineStore("dmMessages", {
             window.addEventListener("pageshow", kick);
         },
 
+        // ---------- load / subscribe per thread ----------
         async load(threadId, limit = 200) {
             if (!threadId) return;
             this._ensureThread(threadId);
@@ -181,13 +248,19 @@ export const useDMMessagesStore = defineStore("dmMessages", {
             this.hydrateOutboxToUI();
         },
 
+        // compat alias (so DMChatPanel won't explode)
+        async loadThreadMessages(threadId) {
+            return this.load(threadId);
+        },
+
         subscribe(threadId) {
             if (!threadId) return;
             if (this.subs[threadId]) return;
 
             const ch = supabase
                 .channel(`dm_msgs_${threadId}`)
-                .on("postgres_changes",
+                .on(
+                    "postgres_changes",
                     { event: "INSERT", schema: "public", table: "dm_messages", filter: `thread_id=eq.${threadId}` },
                     (payload) => {
                         const r = payload.new;
@@ -206,13 +279,14 @@ export const useDMMessagesStore = defineStore("dmMessages", {
                         };
 
                         this._upsert(threadId, msg);
-                        // ✅ LIVE preview in DM list even when inside the thread
+
                         const dmThreads = useDMThreadsStore();
                         dmThreads.bumpLastMessage(String(threadId), {
                             text: msg.text ?? "",
                             created_at: msg.created_at,
                             user_id: msg.user_id,
                         });
+
                         if (r.client_id) this._ackOutbox(r.client_id, r);
                     }
                 )
@@ -228,6 +302,7 @@ export const useDMMessagesStore = defineStore("dmMessages", {
             delete this.subs[threadId];
         },
 
+        // ---------- send ----------
         enqueueSend(threadId, text, replyToId = null) {
             if (!threadId) throw new Error("NO_THREAD");
             const content = String(text || "").trim();
@@ -266,7 +341,7 @@ export const useDMMessagesStore = defineStore("dmMessages", {
             return clientId;
         },
 
-        async runWorker() {
+        async runWorker(reason = "manual") {
             if (this._runLock) return;
             if (isPaused()) return;
 
@@ -280,12 +355,10 @@ export const useDMMessagesStore = defineStore("dmMessages", {
                 catch { return; }
 
                 const dmThreads = useDMThreadsStore();
-                const profilesStore = useProfilesStore();
+                const profiles = useProfilesStore();
 
-                // ensure my profile cached => stable nickname
-                try { await profilesStore.ensureLoaded([userId]); } catch { }
-                const me = profilesStore.getById(userId);
-
+                try { await profiles.ensureLoaded([userId]); } catch { }
+                const me = profiles.getById?.(userId) || profiles.byId?.[userId] || null;
                 const fromName = String(me?.nickname || "GIO");
 
                 for (const item of this.outbox) {
@@ -315,6 +388,7 @@ export const useDMMessagesStore = defineStore("dmMessages", {
 
                         if (error) throw error;
 
+                        // ACK UI immediately
                         this._upsert(item.threadId, {
                             id: data.id,
                             client_id: data.client_id,
@@ -327,128 +401,39 @@ export const useDMMessagesStore = defineStore("dmMessages", {
                             _error: null,
                         });
 
+                        // DM list preview
+                        try {
+                            dmThreads.bumpLastMessage(String(item.threadId), {
+                                text: data.text ?? item.content,
+                                created_at: data.created_at,
+                                user_id: data.user_id,
+                            });
+                        } catch { }
+
+                        // PUSH (best-effort) — safe path: resolve recipient via dm_thread_members (RLS) => send toUserId
+                        try {
+                            console.log("[push][dm] start", { threadId: item.threadId, fromUserId: userId });
+
+                            const toUserId = await this._getDMRecipientId(item.threadId, userId);
+                            if (!toUserId) throw new Error("NO_DM_RECIPIENT");
+
+                            await this._pushDMToUser({
+                                toUserId,
+                                threadId: item.threadId,
+                                fromUserId: userId,
+                                fromName,
+                                text: data.text ?? item.content,
+                                createdAt: data.created_at,
+                                msgId: data.id,
+                            });
+                        } catch (e) {
+                            console.warn("[push][dm] failed (non-blocking):", e?.message || e);
+                        }
+
                         item.status = "sent";
                         item.serverId = data.id;
                         item.error = null;
                         this._saveOutbox();
-
-                        // ---- PUSH (best-effort) ----
-                        try {
-                            const rooms = useRoomsStore();
-                            const profiles = useProfilesStore(); // אם אין לך כאן import — תוסיף (כמו ב-DM)
-                            try { await profiles.ensureLoaded([userId]); } catch { }
-                            const me = profiles.getById?.(userId) || profiles.byId?.[userId] || null;
-                            const fromName = String(me?.nickname || "GIO");
-
-                            const roomKey = this._resolveRoomKey(item.roomId);
-                            if (!roomKey) throw new Error("NO_ROOM_KEY_MAPPING");
-
-                            const roomName = this._resolveRoomName(item.roomId);
-
-                            // להביא חברי חדר: אני מניח שיש room_members(room_id, user_id)
-                            const { data: members, error: mErr } = await supabase
-                                .from("room_members")
-                                .select("user_id")
-                                .eq("room_id", item.roomId);
-
-                            if (mErr) throw mErr;
-
-                            const toUserIds = (members || [])
-                                .map(x => x.user_id)
-                                .filter(uid => uid && String(uid) !== String(userId));
-
-                            for (const toUserId of toUserIds) {
-                                const payload = {
-                                    groupKey: `room_${roomKey}`,
-                                    roomKey,                 // ✅ כדי שה-SW ימנע אם כבר בפנים
-                                    title: roomName,         // ✅ כותרת ההתראה = שם החדר
-                                    lineTitle: fromName,     // ✅ שורה = "שם: הודעה"
-                                    body: previewText(item.content, 180),
-                                    url: `/room/${roomKey}`,
-                                    msgId: String(data.id),
-
-                                    fromUserId: String(userId),
-                                    badgeUrl: "/pwa-192.png?v=1",
-                                };
-
-                                const { data: sessRes } = await supabase.auth.getSession();
-                                const accessToken = sessRes?.session?.access_token || null;
-
-                                const resp = await fetch(getPushApiUrl(), {
-                                    method: "POST",
-                                    headers: {
-                                        "Content-Type": "application/json",
-                                        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-                                        apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
-                                    },
-                                    body: JSON.stringify({ toUserId, payload }),
-                                });
-
-                                const json = await resp.json().catch(() => ({}));
-                                if (!resp.ok) console.warn("[room push] failed:", resp.status, json);
-                            }
-                        } catch (e) {
-                            console.warn("[room push] best-effort crashed:", e);
-                        }
-                        // ---- PUSH (best-effort) ----
-                        try {
-                            const rooms = useRoomsStore();
-                            const profiles = useProfilesStore(); // אם אין לך כאן import — תוסיף (כמו ב-DM)
-                            try { await profiles.ensureLoaded([userId]); } catch { }
-                            const me = profiles.getById?.(userId) || profiles.byId?.[userId] || null;
-                            const fromName = String(me?.nickname || "GIO");
-
-                            const roomKey = this._resolveRoomKey(item.roomId);
-                            if (!roomKey) throw new Error("NO_ROOM_KEY_MAPPING");
-
-                            const roomName = this._resolveRoomName(item.roomId);
-
-                            // להביא חברי חדר: אני מניח שיש room_members(room_id, user_id)
-                            const { data: members, error: mErr } = await supabase
-                                .from("room_members")
-                                .select("user_id")
-                                .eq("room_id", item.roomId);
-
-                            if (mErr) throw mErr;
-
-                            const toUserIds = (members || [])
-                                .map(x => x.user_id)
-                                .filter(uid => uid && String(uid) !== String(userId));
-
-                            for (const toUserId of toUserIds) {
-                                const payload = {
-                                    groupKey: `room_${roomKey}`,
-                                    roomKey,                 // ✅ כדי שה-SW ימנע אם כבר בפנים
-                                    title: roomName,         // ✅ כותרת ההתראה = שם החדר
-                                    lineTitle: fromName,     // ✅ שורה = "שם: הודעה"
-                                    body: previewText(item.content, 180),
-                                    url: `/room/${roomKey}`,
-                                    msgId: String(data.id),
-
-                                    fromUserId: String(userId),
-                                    badgeUrl: "/pwa-192.png?v=1",
-                                };
-
-                                const { data: sessRes } = await supabase.auth.getSession();
-                                const accessToken = sessRes?.session?.access_token || null;
-
-                                const resp = await fetch(getPushApiUrl(), {
-                                    method: "POST",
-                                    headers: {
-                                        "Content-Type": "application/json",
-                                        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-                                        apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
-                                    },
-                                    body: JSON.stringify({ toUserId, payload }),
-                                });
-
-                                const json = await resp.json().catch(() => ({}));
-                                if (!resp.ok) console.warn("[room push] failed:", resp.status, json);
-                            }
-                        } catch (e) {
-                            console.warn("[room push] best-effort crashed:", e);
-                        }
-
                     } catch (e) {
                         item.status = "queued";
                         item.error = e?.message || "SEND_FAILED";

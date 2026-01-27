@@ -74,10 +74,6 @@
                             {{ Math.min(99, notifications.dmTotalUnread) }}
                         </span>
 
-                        <!-- ✅ pulse (שקט, בלי קוקאין) -->
-                        <span v-if="notifications.dmTotalUnread > 0"
-                              class="absolute -top-1 -right-1 w-[18px] h-[18px]
-                     rounded-full bg-green-500/40 animate-ping"></span>
                     </button>
 
                     <div class="h-px bg-white/10 mt-2 mb-1"></div>
