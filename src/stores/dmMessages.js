@@ -17,11 +17,9 @@ function nowIso() { return new Date().toISOString(); }
 function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
 function getPushApiUrl() {
-    // prod
-    if (location.hostname !== "localhost") return "/api/send-push";
-    // dev -> hit prod api
-    return "https://gio-home.vercel.app/api/send-push";
+    return "/api/send-push"; // תמיד same-origin
 }
+
 
 function previewText(s, n = 140) {
     const t = String(s || "").replace(/\s+/g, " ").trim();
@@ -116,6 +114,12 @@ export const useDMMessagesStore = defineStore("dmMessages", {
                         text: r.text ?? "",
                         createdAtMs: Date.parse(r.created_at) || Date.now(),
                     });
+                    const dmThreads = useDMThreadsStore();
+                    dmThreads.bumpLastMessage(String(r.thread_id), {
+                        text: r.text ?? "",
+                        created_at: r.created_at,
+                        user_id: r.user_id,
+                    });
                 })
                 .subscribe((status) => console.log("[dmInbox] status:", status));
 
@@ -203,6 +207,13 @@ export const useDMMessagesStore = defineStore("dmMessages", {
                         };
 
                         this._upsert(threadId, msg);
+                        // ✅ LIVE preview in DM list even when inside the thread
+                        const dmThreads = useDMThreadsStore();
+                        dmThreads.bumpLastMessage(String(threadId), {
+                            text: msg.text ?? "",
+                            created_at: msg.created_at,
+                            user_id: msg.user_id,
+                        });
                         if (r.client_id) this._ackOutbox(r.client_id, r);
                     }
                 )

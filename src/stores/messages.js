@@ -134,21 +134,23 @@ export const useMessagesStore = defineStore("messages", {
             if (!roomId) return;
             this._ensureRoom(roomId);
 
+            // ✅ fetch last N messages
             const { data, error } = await supabase
                 .from("messages")
                 .select("id,client_id,room_id,user_id,text,created_at,reply_to_id")
                 .eq("room_id", roomId)
-                .order("created_at", { ascending: true })
+                .order("created_at", { ascending: false })
                 .limit(limit);
 
             if (error) throw error;
 
-            const rows = (data || []).map((r) => ({
+            // ✅ reverse to display in chronological order
+            const rows = (data || []).reverse().map((r) => ({
                 id: r.id,
                 client_id: r.client_id,
                 room_id: r.room_id,
                 user_id: r.user_id,
-                text: r.text ?? "", // ✅ נכון
+                text: r.text ?? "",
                 created_at: r.created_at,
                 reply_to_id: r.reply_to_id || null,
                 _status: null,
@@ -156,8 +158,6 @@ export const useMessagesStore = defineStore("messages", {
             }));
 
             this.byRoom[roomId] = rows;
-
-            // bring back pending/failed on top of loaded data
             this.hydrateOutboxToUI();
         },
 
@@ -179,7 +179,7 @@ export const useMessagesStore = defineStore("messages", {
                             client_id: r.client_id,
                             room_id: r.room_id,
                             user_id: r.user_id,
-                            text: r.text ?? "", // ✅ נכון
+                            text: r.text ?? "",
                             created_at: r.created_at,
                             reply_to_id: r.reply_to_id || null,
                             _status: null,
@@ -196,6 +196,7 @@ export const useMessagesStore = defineStore("messages", {
 
             this.subs[roomId] = ch;
         },
+
 
         async unsubscribe(roomId) {
             const ch = this.subs[roomId];

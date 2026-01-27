@@ -269,10 +269,19 @@
         autoGrow();
         bumpTyping();
     }
-
+    function isMobileLike() {
+        // pointer coarse = רוב המכשירי מגע
+        return window.matchMedia?.("(pointer: coarse)")?.matches;
+    }
     function onComposerKeydown(e) {
         if (e.key !== "Enter") return;
+
+        // ✅ מובייל: Enter = ירידת שורה (לא שולח)
+        if (isMobileLike()) return;
+
+        // ✅ דסקטופ: Shift+Enter = שורה, Enter = שליחה
         if (e.shiftKey) return;
+
         if (sending.value) return;
         e.preventDefault();
         handleFormSubmit();
@@ -305,6 +314,10 @@
         } catch (e) {
             if (!newMessage.value) newMessage.value = draft;
             console.error("[dm send] failed", e);
+        } finally {
+            // ✅ keep keyboard open
+            await nextTick();
+            inputEl.value?.focus?.({ preventScroll: true });
         }
     }
 
@@ -328,6 +341,7 @@
 
                 // ✅ load messages for this thread
                 await dm.loadThreadMessages(id);
+                dm.subscribe(id);
 
                 // (אופציונלי) scroll
                 await nextTick();

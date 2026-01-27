@@ -34,7 +34,14 @@ export const useDMThreadsStore = defineStore("dmThreads", {
             this.selfThreadId = data;
             return data;
         },
+        bumpLastMessage(threadId, msg) {
+            const t = this.byId(String(threadId));
+            if (!t) return;
 
+            t.lastText = msg.text ?? t.lastText;
+            t.lastAt = msg.created_at ? Date.parse(msg.created_at) : Date.now();
+            t.lastUserId = msg.user_id ?? t.lastUserId;
+        },
         async _forceLoadProfiles(ids = []) {
             const profilesStore = useProfilesStore();
             const uniq = [...new Set(ids)].filter(Boolean);
