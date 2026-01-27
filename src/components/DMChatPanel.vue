@@ -66,11 +66,17 @@
                             </div>
 
                             <div class="block max-w-[85%] sm:max-w-[75%] bg-white/[0.04] border border-white/5 rounded-2xl rounded-tl-none px-3 py-1.5 text-sm break-words whitespace-pre-wrap select-none touch-callout-none"
+                                 style="touch-action: pan-y;"
                                  :dir="getTextDirection(msg.text)"
                                  @contextmenu="onContextMenu($event, msg)"
-                                 @click="onMessageClick(msg)">
-                                {{ msg.text }}
+                                 @click="onMessageClick(msg)"
+                                 @pointerdown="onMsgPointerDown($event, msg)"
+                                 @pointermove="onMsgPointerMove($event)"
+                                 @pointerup="onMsgPointerUp($event)"
+                                 @pointercancel="onMsgPointerCancel()">
+                                 {{ msg.text }}
                             </div>
+
 
                             <div v-if="msg._status === 'pending'" class="mt-1 text-[10px] text-white/35">Sending…</div>
                             <div v-else-if="msg._status === 'failed'" class="mt-1 text-[10px] text-red-300/80 cursor-pointer">
@@ -176,6 +182,94 @@
     const sending = ref(false);
 
     const myId = computed(() => session.value?.user?.id ?? null);
+
+    // ---- swipe-to-reply + longpress-to-copy (POINTER EVENTS) ----
+    let pStartX = 0;
+    let pStartY = 0;
+    let pStartAt = 0;
+    let pLastDx = 0;
+    let pMoved = false;
+
+    let lpTimer = null;
+    let lpReady = false;
+    let lpMsg = null;
+
+    function clearLP() {
+        if (lpTimer) clearTimeout(lpTimer);
+        lpTimer = null;
+        lpReady = false;
+        lpMsg = null;
+    }
+
+    function onMsgPointerDown(e, msg) {
+        // רק touch/pen (לא עכבר)
+        if (e.pointerType === "mouse") return;
+
+        pStartX = e.clientX;
+        pStartY = e.clientY;
+        pStartAt = Date.now();
+        pLastDx = 0;
+        pMoved = false;
+
+        clearLP();
+        lpMsg = msg;
+
+        // ארוך = “מוכן להעתקה”, אבל את ההעתקה נעשה ב-pointerup (gesture אמיתי)
+        lpTimer = setTimeout(() => {
+            lpReady = true;
+        }, 420);
+
+        try { e.currentTarget?.setPointerCapture?.(e.pointerId); } catch { }
+    }
+
+    function onMsgPointerMove(e) {
+        if (e.pointerType === "mouse") return;
+
+        const dx = e.clientX - pStartX;
+        const dy = e.clientY - pStartY;
+        pLastDx = dx;
+
+        // גלילה אנכית → מבטל longpress
+        if (Math.abs(dy) > 10) {
+            pMoved = true;
+            clearLP();
+            return;
+        }
+
+        // תנועה רוחבית קלה → מבטל longpress כדי לא “להעתיק בטעות”
+        if (Math.abs(dx) > 12) {
+            pMoved = true;
+            clearLP();
+        }
+    }
+
+    async function onMsgPointerUp(e) {
+        if (e.pointerType === "mouse") return;
+
+        const heldMs = Date.now() - pStartAt;
+
+        // 1) longpress => copy (על UP כדי שזה ייחשב user gesture)
+        if (lpReady && !pMoved && lpMsg?.text) {
+            await copyToClipboard(lpMsg.text);
+            clearLP();
+            return;
+        }
+
+        clearLP();
+
+        // 2) swipe right => reply
+        // מהיר יחסית ולא גרירה ארוכה
+        if (heldMs <= 900 && pLastDx >= 60 && lpMsg) {
+            setReply(lpMsg);
+        }
+    }
+
+    function onMsgPointerCancel() {
+        clearLP();
+    }
+
+   
+
 
     const raw = computed(() => dm.messagesInThread(props.threadId) || []);
     const mapped = computed(() => {

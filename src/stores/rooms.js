@@ -38,6 +38,8 @@ export const useRoomsStore = defineStore("rooms", {
         loadedForHouseId: null,
         loading: false,
         error: null,
+        lastByRoomKey: {}, // { [roomKey]: { text, at, userId } }
+
     }),
 
     getters: {
@@ -59,6 +61,49 @@ export const useRoomsStore = defineStore("rooms", {
     },
 
     actions: {
+        async hydrateLastPreviewsForRooms(roomIds = []) {
+            const ids = (roomIds || []).filter(Boolean);
+            if (ids.length === 0) return;
+
+            // view: room_last_messages
+            const { data, error } = await supabase
+                .from("room_last_messages")
+                .select("room_id,user_id,text,created_at")
+                .in("room_id", ids);
+
+            if (error) throw error;
+
+            const byId = this.byId; // getter קיים אצלך
+            for (const row of data || []) {
+                const room = byId?.[row.room_id];
+                if (!room?.key) continue;
+
+                this.bumpLastMessage(room.key, {
+                    text: row.text ?? "",
+                    created_at: row.created_at,
+                    user_id: row.user_id,
+                });
+            }
+        },
+
+        bumpLastMessage(roomKey, msg) {
+            if (!roomKey) return;
+            const rk = String(roomKey);
+            const text = String(msg?.text || "").trim();
+            const at = msg?.created_at ? Date.parse(msg.created_at) : (msg?.at || Date.now());
+
+            this.lastByRoomKey[rk] = {
+                text,
+                at: Number(at) || Date.now(),
+                userId: msg?.user_id || null,
+            };
+        },
+        lastPreviewFor(roomKey) {
+            const rk = String(roomKey || "");
+            const x = this.lastByRoomKey?.[rk];
+            return x?.text ? x.text : "";
+        },
+
         async setRoomSceneBackground(roomId, file) {
             const room = (this.rooms || []).find(r => r.id === roomId);
             if (!room) throw new Error("Room not found");
@@ -105,6 +150,15 @@ export const useRoomsStore = defineStore("rooms", {
                 this.loadedForHouseId = houseId;
 
                 console.log("[roomsStore] loaded:", houseId, this.rooms.length);
+
+                // ✅ hydrate last message previews immediately (so sidebar shows after refresh)
+                try {
+                    const ids = (this.rooms || []).map(r => r?.id).filter(Boolean);
+                    await this.hydrateLastPreviewsForRooms(ids);
+                } catch (e) {
+                    console.warn("[roomsStore] hydrateLastPreviews failed:", e?.message || e);
+                }
+
             } catch (e) {
                 this.error = e;
                 this.rooms = [];

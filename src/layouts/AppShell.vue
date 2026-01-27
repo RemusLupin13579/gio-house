@@ -1,7 +1,16 @@
 <template>
+    <!--
+      GIO AppShell
+      ============
+      זה “השלד” של כל האפליקציה:
+      - Desktop: 3 עמודות (Rail / Sidebar / Main)
+      - Mobile: Topbar + Drawer עם Rail + Sidebar
+      - RouterView תמיד ב-Main (חוץ ממקרה נדיר: drawer פתוח על מסך dms)
+      - Badges: DM + Rooms (unread)
+    -->
     <div class="fixed inset-0 bg-black text-white overflow-hidden flex flex-col md:flex-row">
 
-        <!-- ✅ MOBILE TOP BAR (לא בחדר ולא בצ׳אט DM) -->
+        <!-- ✅ MOBILE TOP BAR (לא בחדר ולא בDM פתוח) -->
         <div v-if="showMobileTopBar"
              class="md:hidden h-12 px-3 flex items-center justify-between border-b border-white/5">
             <button class="w-10 h-10 rounded-xl bg-white/5 border border-white/10 hover:border-green-500/50 transition active:scale-[0.98]"
@@ -10,6 +19,7 @@
                 ☰
             </button>
 
+            <!-- לובי shortcut -->
             <button class="w-full px-3 py-2 rounded-xl flex items-center justify-between hover:bg-white/5 transition border border-transparent"
                     :class="route.name === 'home' ? 'bg-white/5 border border-green-500/30' : ''"
                     @click="goLobby({ closeDrawer: true })">
@@ -18,7 +28,8 @@
                     <span class="font-semibold truncate block max-w-[180px]">לובי</span>
                 </div>
 
-                <div class="gio-room-right" dir="ltr">
+                <div class="gio-room-right ml-auto flex items-center gap-2 justify-end" dir="ltr">
+                    <!-- avatars -->
                     <div class="gio-room-avatars" dir="ltr">
                         <template v-for="(u, i) in roomUsers('lobby').slice(0, AVATARS_MAX)" :key="u.user_id || u.id || i">
                             <div class="gio-room-avatar" :style="{ zIndex: 10 + i }" :title="u.nickname || 'User'">
@@ -34,7 +45,8 @@
                         </div>
                     </div>
 
-                    <span class="gio-room-count">
+                    <!-- count -->
+                    <span v-if="roomUsers('lobby').length >= 2" class="gio-room-count">
                         <span v-if="presence.status === 'connecting'" class="gio-skel-count"></span>
                         <span v-else>{{ roomUsers('lobby').length }}</span>
                     </span>
@@ -42,10 +54,10 @@
             </button>
         </div>
 
-        <!-- ✅ DESKTOP LAYOUT -->
+        <!-- ✅ DESKTOP STAGE -->
         <div class="gio-app-stage flex-1 min-h-0 flex md:flex-row" :style="appStageStyle">
 
-            <!-- LEFT RAIL (desktop): DMs button ABOVE houses rail + divider -->
+            <!-- LEFT RAIL (desktop): DMs + houses rail -->
             <aside class="hidden md:flex w-16 bg-[#0b0f12] border-r border-white/5 flex-col items-center">
                 <div class="w-full px-2 pt-2">
                     <button class="relative w-full h-12 rounded-2xl bg-white/5 border border-white/10 hover:border-green-500/40 transition flex items-center justify-center"
@@ -54,19 +66,19 @@
                             title="DMs">
                         💬
 
-                        <!-- badge -->
+                        <!-- ✅ DM badge (כבר עובד אצלך, פה רק שמרתי אותו) -->
                         <span v-if="notifications.dmTotalUnread > 0"
                               class="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1
-               rounded-full bg-green-500 text-black text-[11px] font-extrabold
-               flex items-center justify-center shadow-lg">
+                     rounded-full bg-green-500 text-black text-[11px] font-extrabold
+                     flex items-center justify-center shadow-lg">
                             {{ Math.min(99, notifications.dmTotalUnread) }}
                         </span>
 
-                        <!-- pulse (שקט, בלי קוקאין) -->
+                        <!-- ✅ pulse (שקט, בלי קוקאין) -->
                         <span v-if="notifications.dmTotalUnread > 0"
-                              class="absolute -top-1 -right-1 w-[18px] h-[18px] rounded-full bg-green-500/40 animate-ping"></span>
+                              class="absolute -top-1 -right-1 w-[18px] h-[18px]
+                     rounded-full bg-green-500/40 animate-ping"></span>
                     </button>
-
 
                     <div class="h-px bg-white/10 mt-2 mb-1"></div>
                 </div>
@@ -81,11 +93,9 @@
 
             <!-- RIGHT PANEL (desktop): Rooms OR DMs -->
             <section class="hidden md:flex w-72 bg-[#0c1116] border-r border-white/5 flex-col">
-
                 <!-- header -->
                 <div class="h-20 px-4 flex items-center justify-between border-b border-white/5">
                     <div class="flex items-center gap-2 w-full">
-
                         <template v-if="isDMMode">
                             <div class="flex items-center gap-2 flex-1 min-w-0">
                                 <span class="text-lg">💬</span>
@@ -132,11 +142,10 @@
                                 </div>
                             </div>
                         </template>
-
                     </div>
                 </div>
 
-                <!-- ✅ SIDE LIST: חייב להיות flex-col + overflow נכון כדי שלא "יעצור באמצע" -->
+                <!-- body list -->
                 <div class="flex-1 min-h-0 w-full overflow-hidden flex flex-col p-3">
                     <template v-if="isDMMode">
                         <DMSidebar @openAddFriends="addFriendsOpen = true" />
@@ -145,101 +154,102 @@
                     <template v-else>
                         <div class="text-xs text-white/40 mb-3 px-1 uppercase tracking-wider font-medium">חדרים</div>
 
-                        
+                        <!-- לובי -->
+                        <button class="w-full px-3 py-2 rounded-xl flex items-center justify-between hover:bg-white/5 transition border border-transparent"
+                                :class="route.name === 'home' ? 'bg-white/5 border border-green-500/30' : ''"
+                                @click="goLobby({ closeDrawer: true })">
+                            <div class="flex items-center gap-2">
+                                <span class="text-lg">🏛️</span>
+                                <span class="font-semibold truncate block max-w-[180px]">לובי</span>
+                            </div>
 
-                            <button class="w-full px-3 py-2 rounded-xl flex items-center justify-between hover:bg-white/5 transition border border-transparent"
-                                    :class="route.name === 'home' ? 'bg-white/5 border border-green-500/30' : ''"
-                                    @click="goLobby({ closeDrawer: true })">
+                            <div class="gio-room-right ml-auto flex items-center gap-2 justify-end" dir="ltr">
+                                <div class="gio-room-avatars" dir="ltr">
+                                    <template v-for="(u, i) in roomUsers('lobby').slice(0, AVATARS_MAX)" :key="u.user_id || u.id || i">
+                                        <div class="gio-room-avatar" :style="{ zIndex: 10 + i }" :title="u.nickname || 'User'">
+                                            <img v-if="u.avatar_url" :src="u.avatar_url" alt="" />
+                                            <span v-else>{{ (u.nickname?.[0] ?? "•") }}</span>
+                                        </div>
+                                    </template>
 
-                                <div class="flex items-center gap-2">
-                                    <span class="text-lg">🏛️</span>
-                                    <span class="font-semibold truncate block max-w-[180px]">לובי</span>
+                                    <div v-if="roomUsers('lobby').length > AVATARS_MAX"
+                                         class="gio-room-avatar gio-room-more"
+                                         :title="`+${roomUsers('lobby').length - AVATARS_MAX}`">
+                                        +{{ roomUsers('lobby').length - AVATARS_MAX }}
+                                    </div>
                                 </div>
 
-                                <div class="gio-room-right" dir="ltr">
+                                <span v-if="roomUsers('lobby').length >= 2" class="gio-room-count">
+                                    <span v-if="presence.status === 'connecting'" class="gio-skel-count"></span>
+                                    <span v-else>{{ roomUsers('lobby').length }}</span>
+                                </span>
+                            </div>
+                        </button>
+
+                        <div class="h-px bg-white/10 my-2 mx-2"></div>
+
+                        <!-- rooms -->
+                        <button v-for="r in activeRooms"
+                                :key="r.id"
+                                class="w-full px-3 py-2 rounded-xl hover:bg-white/5 transition"
+                                :class="isActiveRoom(r.key) ? 'bg-white/5 border border-green-500/30' : 'border border-transparent'"
+                                @click="enterRoom(r.key)">
+                            <div class="gio-room-row">
+                                <div class="gio-room-left">
+                                    <span class="text-lg shrink-0">{{ r.icon || "🚪" }}</span>
+
+                                    <div class="min-w-0">
+                                        <span class="font-semibold truncate block max-w-[180px]">
+                                            {{ r.name || r.key }}
+                                        </span>
+
+                                        <!-- last preview -->
+                                        <div class="text-[11px] text-white/40 truncate max-w-[180px] w-full text-left" dir="ltr">
+                                            {{ roomsStore.lastPreviewFor?.(r.key) || "" }}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- ✅ RIGHT SIDE: כאן שמים את ה-badge של החדרים הכי “צמוד לימין” שיש -->
+                                <div class="gio-room-right ml-auto flex items-center gap-2 justify-end" dir="ltr">
+
+                                    <!-- avatars -->
                                     <div class="gio-room-avatars" dir="ltr">
-                                        <template v-for="(u, i) in roomUsers('lobby').slice(0, AVATARS_MAX)" :key="u.user_id || u.id || i">
+                                        <template v-for="(u, i) in roomUsers(r.key).slice(0, AVATARS_MAX)" :key="u.user_id || u.id || i">
                                             <div class="gio-room-avatar" :style="{ zIndex: 10 + i }" :title="u.nickname || 'User'">
                                                 <img v-if="u.avatar_url" :src="u.avatar_url" alt="" />
                                                 <span v-else>{{ (u.nickname?.[0] ?? "•") }}</span>
                                             </div>
                                         </template>
 
-                                        <div v-if="roomUsers('lobby').length > AVATARS_MAX"
+                                        <div v-if="roomUsers(r.key).length > AVATARS_MAX"
                                              class="gio-room-avatar gio-room-more"
-                                             :title="`+${roomUsers('lobby').length - AVATARS_MAX}`">
-                                            +{{ roomUsers('lobby').length - AVATARS_MAX }}
+                                             :title="`+${roomUsers(r.key).length - AVATARS_MAX}`">
+                                            +{{ roomUsers(r.key).length - AVATARS_MAX }}
                                         </div>
                                     </div>
 
-                                    <span class="gio-room-count">
+                                    <!-- count -->
+                                    <span v-if="roomUsers(r.key).length >= 2" class="gio-room-count">
                                         <span v-if="presence.status === 'connecting'" class="gio-skel-count"></span>
-                                        <span v-else>{{ roomUsers('lobby').length }}</span>
+                                        <span v-else>{{ roomUsers(r.key).length }}</span>
+                                    </span>
+
+                                    <!-- ✅ Rooms badge (העתקה בול של DM badge, רק לפי roomKey) -->
+                                    <span v-if="getRoomUnread(r.key) > 0"
+                                          class="min-w-[18px] h-[18px] px-1 rounded-full
+                           bg-green-500 text-black text-[11px] font-extrabold
+                           flex items-center justify-center shadow-lg"
+                                          title="Unread">
+                                        {{ Math.min(99, getRoomUnread(r.key)) }}
                                     </span>
                                 </div>
-                            </button>
-
-                            <div class="h-px bg-white/10 my-2 mx-2"></div>
-
-                            <button v-for="r in activeRooms"
-                                    :key="r.id"
-                                    class="w-full px-3 py-2 rounded-xl hover:bg-white/5 transition"
-                                    :class="isActiveRoom(r.key) ? 'bg-white/5 border border-green-500/30' : 'border border-transparent'"
-                                    @click="enterRoom(r.key)">
-
-                                <div class="gio-room-row">
-                                    <div class="gio-room-left">
-                                        <span class="text-lg shrink-0">{{ r.icon || "🚪" }}</span>
-
-                                        <div class="min-w-0 gio-room-title">
-                                            <input v-if="inlineEdit.id === r.id"
-                                                   ref="inlineEditInput"
-                                                   v-model="inlineEdit.draft"
-                                                   class="w-full max-w-[180px] bg-black/40 border border-green-500/25 rounded-lg px-2 py-1 text-sm outline-none
-                                    focus:border-green-500/40 focus:ring-2 focus:ring-green-500/10"
-                                                   @keydown.enter.prevent="commitInlineEdit(r)"
-                                                   @keydown.esc.prevent="cancelInlineEdit"
-                                                   @blur="cancelInlineEdit"
-                                                   @click.stop />
-                                            <span v-else
-                                                  class="font-semibold truncate block max-w-[180px]"
-                                                  @dblclick.stop.prevent="beginInlineEdit(r)"
-                                                  title="Double click to rename">
-                                                {{ r.name || r.key }}
-                                            </span>
-                                        </div>
-                                    </div>
-
-                                    <div class="gio-room-right" dir="ltr">
-                                        <div class="gio-room-avatars" dir="ltr">
-                                            <template v-for="(u, i) in roomUsers(r.key).slice(0, AVATARS_MAX)" :key="u.user_id || u.id || i">
-                                                <div class="gio-room-avatar"
-                                                     :style="{ zIndex: 10 + i }"
-                                                     :title="u.nickname || 'User'">
-                                                    <img v-if="u.avatar_url" :src="u.avatar_url" alt="" />
-                                                    <span v-else>{{ (u.nickname?.[0] ?? "•") }}</span>
-                                                </div>
-                                            </template>
-
-                                            <div v-if="roomUsers(r.key).length > AVATARS_MAX"
-                                                 class="gio-room-avatar gio-room-more"
-                                                 :title="`+${roomUsers(r.key).length - AVATARS_MAX}`">
-                                                +{{ roomUsers(r.key).length - AVATARS_MAX }}
-                                            </div>
-                                        </div>
-
-                                        <span class="gio-room-count">
-                                            <span v-if="presence.status === 'connecting'" class="gio-skel-count"></span>
-                                            <span v-else>{{ roomUsers(r.key).length }}</span>
-                                        </span>
-                                    </div>
-                                </div>
-                            </button>
-                        
+                            </div>
+                        </button>
                     </template>
                 </div>
 
-                <!-- footer (נשאר) -->
+                <!-- footer -->
                 <div class="h-14 px-3 border-t border-white/5 flex items-center justify-between">
                     <div class="flex items-center gap-2">
                         <div class="w-9 h-9 rounded-xl bg-white/5 border border-white/10 overflow-hidden flex items-center justify-center">
@@ -250,6 +260,7 @@
                         <div class="leading-tight">
                             <div class="font-bold">{{ nickname }}</div>
 
+                            <!-- presence chip -->
                             <div class="gio-topbar__right">
                                 <div class="h-5 gio-presence-chip cursor-pointer select-none"
                                      :data-state="presence.status"
@@ -282,20 +293,19 @@
                 </div>
             </section>
 
-            <!-- ✅ MAIN CONTENT (desktop + mobile behind drawer) -->
+            <!-- ✅ MAIN CONTENT -->
             <main class="flex-1 bg-black overflow-hidden min-h-0">
                 <div class="gio-fade h-full min-h-0" :key="house.currentHouseId">
-                    <!-- אם המגירה פתוחה וגם אנחנו במסך /dms במובייל → אל תציג כלום מאחור -->
+                    <!-- אם drawer פתוח וגם במסך /dms במובייל → לא מציגים מאחור -->
                     <div v-if="isMobile() && mobileNavOpen && route.name === 'dms'" class="h-full bg-black"></div>
 
-                    <!-- אחרת → תציג רגיל -->
+                    <!-- אחרת → רגיל -->
                     <RouterView v-else class="h-full min-h-0" />
-
                 </div>
             </main>
         </div>
 
-        <!-- ✅ MOBILE DRAWER (overlay) -->
+        <!-- ✅ MOBILE DRAWER -->
         <div v-if="mobileNavOpen" class="md:hidden fixed inset-0 z-[9999]">
             <div class="absolute inset-0 bg-black/50 backdrop-blur-[2px] transition-opacity"
                  :style="{ opacity: overlayOpacity }"
@@ -308,7 +318,7 @@
                  @touchend="onDrawerTouchEnd">
                 <div class="flex h-full">
 
-                    <!-- LEFT RAIL (mobile): DMs button + houses -->
+                    <!-- LEFT RAIL (mobile): DMs + houses -->
                     <div class="w-16 bg-[#0b0f12] border-r border-white/10 flex flex-col items-center">
                         <div class="w-full px-2 pt-2">
                             <button class="relative w-full h-12 rounded-2xl bg-white/5 border border-white/10 hover:border-green-500/40 transition flex items-center justify-center"
@@ -317,19 +327,16 @@
                                     title="DMs">
                                 💬
 
-                                <!-- badge -->
                                 <span v-if="notifications.dmTotalUnread > 0"
                                       class="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1
-rounded-full bg-green-500 text-black text-[11px] font-extrabold
-flex items-center justify-center shadow-lg">
+                         rounded-full bg-green-500 text-black text-[11px] font-extrabold
+                         flex items-center justify-center shadow-lg">
                                     {{ Math.min(99, notifications.dmTotalUnread) }}
                                 </span>
 
-                                <!-- pulse (שקט, בלי קוקאין) -->
                                 <span v-if="notifications.dmTotalUnread > 0"
                                       class="absolute -top-1 -right-1 w-[18px] h-[18px] rounded-full bg-green-500/40 animate-ping"></span>
                             </button>
-
 
                             <div class="h-px bg-white/10 mt-2 mb-1"></div>
                         </div>
@@ -342,10 +349,9 @@ flex items-center justify-center shadow-lg">
                         </div>
                     </div>
 
-                    <!-- RIGHT PANEL (mobile): Rooms OR DMs (רק רשימות! בלי RouterView בפנים) -->
+                    <!-- RIGHT PANEL (mobile): lists only -->
                     <div class="flex-1 bg-[#0c1116] flex flex-col min-h-0">
 
-                        <!-- header -->
                         <div class="h-16 px-4 flex items-center justify-between border-b border-white/10">
                             <div class="flex items-center gap-2 min-w-0">
                                 <div class="font-bold text-green-300 truncate">
@@ -379,119 +385,103 @@ flex items-center justify-center shadow-lg">
                             </button>
                         </div>
 
-                        <!-- ✅ BODY: רק רשימות, עם גלילה עד הסוף -->
-                        
+                        <!-- body -->
+                        <div class="flex-1 min-h-0 overflow-hidden">
                             <template v-if="isDMMode">
-                                <DMSidebar @openAddFriends="addFriendsOpen = true"
-                                           @openThread="onMobileOpenThread" />
+                                <DMSidebar @openAddFriends="addFriendsOpen = true" />
                             </template>
 
                             <template v-else>
+                                <div class="h-full min-h-0 w-full overflow-hidden flex flex-col p-4">
+                                    <div class="text-xs text-white/40 mb-3 px-3 uppercase tracking-wider">חדרים</div>
 
-                                
-                                    <!-- ✅ Lobby + rooms list: תשים כאן את אותו קוד בדיוק -->
-                                    <div class="h-[100dvh] min-h-0 w-full overflow-hidden flex flex-col p-4">
-                                        <template v-if="isDMMode">
-                                            <DMSidebar @openAddFriends="addFriendsOpen = true" />
-                                        </template>
-
-                                        <template v-else>
-                                            <div class="text-xs text-white/40 mb-3 px-3 uppercase tracking-wider">חדרים</div>
-
-                                            <div class="space-y-1 overflow-y-auto">
-                                                <button class="w-full px-3 py-2 rounded-xl flex items-center justify-between hover:bg-white/5 transition border border-transparent"
-                                                        :class="route.name === 'home' ? 'bg-white/5 border border-green-500/30' : ''"
-                                                        @click="goLobby({ closeDrawer: true })">
-                                                    <div class="flex items-center gap-2">
-                                                        <span class="text-lg">🏛️</span>
-                                                        <span class="font-semibold truncate block max-w-[180px]">לובי</span>
-                                                    </div>
-
-                                                    <div class="gio-room-right" dir="ltr">
-                                                        <div class="gio-room-avatars" dir="ltr">
-                                                            <template v-for="(u, i) in roomUsers('lobby').slice(0, AVATARS_MAX)" :key="u.user_id || u.id || i">
-                                                                <div class="gio-room-avatar" :style="{ zIndex: 10 + i }" :title="u.nickname || 'User'">
-                                                                    <img v-if="u.avatar_url" :src="u.avatar_url" alt="" />
-                                                                    <span v-else>{{ (u.nickname?.[0] ?? "•") }}</span>
-                                                                </div>
-                                                            </template>
-
-                                                            <div v-if="roomUsers('lobby').length > AVATARS_MAX"
-                                                                 class="gio-room-avatar gio-room-more"
-                                                                 :title="`+${roomUsers('lobby').length - AVATARS_MAX}`">
-                                                                +{{ roomUsers('lobby').length - AVATARS_MAX }}
-                                                            </div>
-                                                        </div>
-
-                                                        <span class="gio-room-count">
-                                                            <span v-if="presence.status === 'connecting'" class="gio-skel-count"></span>
-                                                            <span v-else>{{ roomUsers('lobby').length }}</span>
-                                                        </span>
-                                                    </div>
-                                                </button>
-
-                                                <div class="h-px bg-white/10 my-2"></div>
-
-                                                <button v-for="r in activeRooms"
-                                                        :key="r.id"
-                                                        class="w-full px-3 py-2 rounded-xl hover:bg-white/5 transition"
-                                                        :class="isActiveRoom(r.key) ? 'bg-white/5 border border-green-500/30' : 'border border-transparent'"
-                                                        @click="enterRoom(r.key)">
-
-                                                    <div class="gio-room-row">
-                                                        <div class="gio-room-left">
-                                                            <span class="text-lg shrink-0">{{ r.icon || "🚪" }}</span>
-
-                                                            <div class="min-w-0 gio-room-title">
-                                                                <input v-if="inlineEdit.id === r.id"
-                                                                       ref="inlineEditInput"
-                                                                       v-model="inlineEdit.draft"
-                                                                       class="w-full max-w-[180px] bg-black/40 border border-green-500/25 rounded-lg px-2 py-1 text-sm outline-none
-                                    focus:border-green-500/40 focus:ring-2 focus:ring-green-500/10"
-                                                                       @keydown.enter.prevent="commitInlineEdit(r)"
-                                                                       @keydown.esc.prevent="cancelInlineEdit"
-                                                                       @blur="cancelInlineEdit"
-                                                                       @click.stop />
-                                                                <span v-else
-                                                                      class="font-semibold truncate block max-w-[180px]"
-                                                                      @dblclick.stop.prevent="beginInlineEdit(r)"
-                                                                      title="Double click to rename">
-                                                                    {{ r.name || r.key }}
-                                                                </span>
-                                                            </div>
-                                                        </div>
-
-                                                        <div class="gio-room-right" dir="ltr">
-                                                            <div class="gio-room-avatars" dir="ltr">
-                                                                <template v-for="(u, i) in roomUsers(r.key).slice(0, AVATARS_MAX)" :key="u.user_id || u.id || i">
-                                                                    <div class="gio-room-avatar"
-                                                                         :style="{ zIndex: 10 + i }"
-                                                                         :title="u.nickname || 'User'">
-                                                                        <img v-if="u.avatar_url" :src="u.avatar_url" alt="" />
-                                                                        <span v-else>{{ (u.nickname?.[0] ?? "•") }}</span>
-                                                                    </div>
-                                                                </template>
-
-                                                                <div v-if="roomUsers(r.key).length > AVATARS_MAX"
-                                                                     class="gio-room-avatar gio-room-more"
-                                                                     :title="`+${roomUsers(r.key).length - AVATARS_MAX}`">
-                                                                    +{{ roomUsers(r.key).length - AVATARS_MAX }}
-                                                                </div>
-                                                            </div>
-
-                                                            <span class="gio-room-count">
-                                                                <span v-if="presence.status === 'connecting'" class="gio-skel-count"></span>
-                                                                <span v-else>{{ roomUsers(r.key).length }}</span>
-                                                            </span>
-                                                        </div>
-                                                    </div>
-                                                </button>
+                                    <div class="space-y-1 overflow-y-auto">
+                                        <!-- Lobby -->
+                                        <button class="w-full px-3 py-2 rounded-xl flex items-center justify-between hover:bg-white/5 transition border border-transparent"
+                                                :class="route.name === 'home' ? 'bg-white/5 border border-green-500/30' : ''"
+                                                @click="goLobby({ closeDrawer: true })">
+                                            <div class="flex items-center gap-2">
+                                                <span class="text-lg">🏛️</span>
+                                                <span class="font-semibold truncate block max-w-[180px]">לובי</span>
                                             </div>
-                                        </template>
+
+                                            <div class="gio-room-right flex items-center gap-2" dir="ltr">
+                                                <div class="gio-room-avatars" dir="ltr">
+                                                    <template v-for="(u, i) in roomUsers('lobby').slice(0, AVATARS_MAX)" :key="u.user_id || u.id || i">
+                                                        <div class="gio-room-avatar" :style="{ zIndex: 10 + i }" :title="u.nickname || 'User'">
+                                                            <img v-if="u.avatar_url" :src="u.avatar_url" alt="" />
+                                                            <span v-else>{{ (u.nickname?.[0] ?? "•") }}</span>
+                                                        </div>
+                                                    </template>
+                                                    <div v-if="roomUsers('lobby').length > AVATARS_MAX"
+                                                         class="gio-room-avatar gio-room-more"
+                                                         :title="`+${roomUsers('lobby').length - AVATARS_MAX}`">
+                                                        +{{ roomUsers('lobby').length - AVATARS_MAX }}
+                                                    </div>
+                                                </div>
+
+                                                <span v-if="roomUsers('lobby').length >= 2" class="gio-room-count">
+                                                    <span v-if="presence.status === 'connecting'" class="gio-skel-count"></span>
+                                                    <span v-else>{{ roomUsers('lobby').length }}</span>
+                                                </span>
+                                            </div>
+                                        </button>
+
+                                        <div class="h-px bg-white/10 my-2"></div>
+
+                                        <!-- Rooms -->
+                                        <button v-for="r in activeRooms"
+                                                :key="r.id"
+                                                class="w-full px-3 py-2 rounded-xl hover:bg-white/5 transition"
+                                                :class="isActiveRoom(r.key) ? 'bg-white/5 border border-green-500/30' : 'border border-transparent'"
+                                                @click="enterRoom(r.key)">
+                                            <div class="gio-room-row">
+                                                <div class="gio-room-left">
+                                                    <span class="text-lg shrink-0">{{ r.icon || "🚪" }}</span>
+                                                    <div class="min-w-0">
+                                                        <span class="font-semibold truncate block max-w-[180px]">
+                                                            {{ r.name || r.key }}
+                                                        </span>
+                                                        <div class="text-[11px] text-white/40 truncate max-w-[180px] w-full text-left" dir="ltr">
+                                                            {{ roomsStore.lastPreviewFor?.(r.key) || "" }}
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                <div class="gio-room-right flex items-center gap-2" dir="ltr">
+
+                                                    <span v-if="getRoomUnread(r.key) > 0"
+                                                          class="w-[18px] h-[18px] rounded-full bg-green-500/40 animate-ping"
+                                                          aria-hidden="true"></span>
+
+                                                    <div class="gio-room-avatars" dir="ltr">
+                                                        <template v-for="(u, i) in roomUsers(r.key).slice(0, AVATARS_MAX)" :key="u.user_id || u.id || i">
+                                                            <div class="gio-room-avatar" :style="{ zIndex: 10 + i }" :title="u.nickname || 'User'">
+                                                                <img v-if="u.avatar_url" :src="u.avatar_url" alt="" />
+                                                                <span v-else>{{ (u.nickname?.[0] ?? "•") }}</span>
+                                                            </div>
+                                                        </template>
+                                                    </div>
+
+                                                    <span v-if="roomUsers(r.key).length >= 2" class="gio-room-count">
+                                                        {{ roomUsers(r.key).length }}
+                                                    </span>
+
+                                                    <!-- ✅ Rooms badge -->
+                                                    <span v-if="getRoomUnread(r.key) > 0"
+                                                          class="min-w-[18px] h-[18px] px-1 rounded-full
+                                   bg-green-500 text-black text-[11px] font-extrabold
+                                   flex items-center justify-center shadow-lg">
+                                                        {{ Math.min(99, getRoomUnread(r.key)) }}
+                                                    </span>
+
+                                                </div>
+                                            </div>
+                                        </button>
                                     </div>
-                            
+                                </div>
                             </template>
-                        
+                        </div>
 
                         <!-- footer -->
                         <div class="h-14 px-3 border-t border-white/10 flex items-center justify-between">
@@ -503,13 +493,11 @@ flex items-center justify-center shadow-lg">
 
                                 <div class="leading-tight">
                                     <div class="font-bold">{{ nickname }}</div>
-
                                     <div class="mt-1">
                                         <div class="h-5 gio-presence-chip cursor-pointer select-none inline-flex"
                                              :data-state="presence.status"
                                              :data-user="myUserStatus"
-                                             @click="presence.status === 'ready' ? cycleMyStatus() : null"
-                                             title="Change status">
+                                             @click="presence.status === 'ready' ? cycleMyStatus() : null">
                                             <span class="gio-dot" />
                                             <span v-if="presence.status === 'connecting'" class="gio-sync">
                                                 Syncing <span class="gio-dots"><i></i><i></i><i></i></span>
@@ -534,7 +522,7 @@ flex items-center justify-center shadow-lg">
             </div>
         </div>
 
-        <!-- Toasts (נשאר) -->
+        <!-- ✅ Toasts (mobile) -->
         <div class="fixed bottom-4 left-1/2 -translate-x-1/2 z-[10050] flex flex-col gap-2 pointer-events-none md:hidden">
             <div v-for="t in ui.toasts"
                  :key="t.id"
@@ -543,6 +531,7 @@ flex items-center justify-center shadow-lg">
             </div>
         </div>
 
+        <!-- Modals -->
         <HouseSwitcherModal v-if="openHouseModal" @close="openHouseModal=false" />
         <HouseInviteModal v-if="openInviteModal && currentHouse" :house="currentHouse" @close="openInviteModal=false" />
         <RoomManagerModal v-if="openRoomsModal" @close="openRoomsModal=false" />
@@ -551,8 +540,19 @@ flex items-center justify-center shadow-lg">
     </div>
 </template>
 
-
 <script setup>
+    /**
+     * AppShell — המוח של ה-Layout 🧠
+     * --------------------------------
+     * פה לא כותבים “לוגיקה של עסק” (שליחה/DB וכו׳),
+     * רק:
+     * - ניווט
+     * - הצגת חדרים/DMs
+     * - drawer במובייל
+     * - badges (unread)
+     *
+     * המטרה: “שלד” יציב שלא נשבר כשאתה מוסיף פיצ׳רים.
+     */
     import { useNotifications } from "../composables/useNotifications";
     import { useNotificationsStore } from "../stores/notifications";
     import RoomManagerModal from "../components/RoomManagerModal.vue";
@@ -574,6 +574,7 @@ flex items-center justify-center shadow-lg">
     import AddFriendsModal from "../components/AddFriendsModal.vue";
     import { useDMThreadsStore } from "../stores/dmThreads";
 
+    const roomUnread = (roomKey) => Number(notifications.roomUnread?.[roomKey] || 0);
     const dmThreads = useDMThreadsStore();
 
     const { notif } = useNotifications();         // context + auto-clear
@@ -1263,7 +1264,8 @@ flex items-center justify-center shadow-lg">
         }
 
         house.enterRoom?.(roomKey);
-
+        // נקה unread לחדר הזה
+        notifications.clearRoom(roomKey);
         // ✅ Home -> Room = push (כדי ש-back יחזור ללובי)
         // ✅ Room -> Room = replace (כדי ש-back לא יסתובב בחדרים)
         const nav = route.name === "room" ? router.replace : router.push;
@@ -1505,6 +1507,19 @@ flex items-center justify-center shadow-lg">
         if (isEditable) {
             el.blur();
         }
+    }
+    // ---------- unread badges (ROOMS) ----------
+    function getRoomUnread(roomKey) {
+        // נסה כמה שמות אפשריים כדי שלא תקרוס אם ה-store שלך נקרא אחרת
+        const map =
+            notifications.roomUnread ||
+            notifications.roomsUnread ||
+            notifications.unreadRooms ||
+            notifications.byRoom ||
+            {};
+
+        const n = map?.[roomKey] ?? 0;
+        return Number(n) || 0;
     }
 
 

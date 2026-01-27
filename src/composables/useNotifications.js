@@ -40,7 +40,15 @@ export function useNotifications() {
             // entering room clears that room (optional)
             if (routeName === "room" && roomKey) {
                 notif.clearRoom(roomKey);
+
+                // ✅ tell SW: clear that notification group (כמו DM)
+                try {
+                    const groupKey = `room_${roomKey}`;
+                    navigator.serviceWorker?.controller?.postMessage?.({ type: "CLEAR_GROUP", groupKey });
+                } catch { }
             }
+
+
         },
         { immediate: true }
     );

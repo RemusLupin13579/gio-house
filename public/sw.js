@@ -98,6 +98,19 @@ async function isUserAlreadyInDm(threadId) {
         }
     });
 }
+async function isUserAlreadyInRoom(roomKey) {
+    if (!roomKey) return false;
+    const wantedPath = `/room/${roomKey}`;
+    const wins = await clients.matchAll({ type: "window", includeUncontrolled: true });
+    return wins.some((c) => {
+        try {
+            const u = new URL(c.url);
+            return u.pathname === wantedPath;
+        } catch {
+            return false;
+        }
+    });
+}
 
 function buildAutoBody(linesAll = []) {
     // linesAll: מערך שורות בסדר כרונולוגי (ישן->חדש)
@@ -144,16 +157,26 @@ self.addEventListener("push", (event) => {
                 String(data.threadId || "").trim() ||
                 (groupKey.startsWith("dm_") ? groupKey.slice(3) : "");
 
+            const roomKey =
+                String(data.roomKey || "").trim() ||
+                (groupKey.startsWith("room_") ? groupKey.slice(5) : "");
+
+            // prevent notifications when user is already inside that DM
             if (threadId) {
                 const already = await isUserAlreadyInDm(threadId);
-                if (already) {
-                    // לא מראה התראה, לא מעדכן unread בקאש (כי הוא קורא את זה עכשיו)
-                    return;
-                }
+                if (already) return;
             }
 
+            // prevent notifications when user is already inside that ROOM
+            if (roomKey) {
+                const already = await isUserAlreadyInRoom(roomKey);
+                if (already) return;
+            }
+
+
             // WhatsApp-ish line: "שם: הודעה"
-            const newLineText = clip(`${title}: ${text}`, 180);
+            const lineTitle = String(data.lineTitle || title || "GIO").trim() || "GIO";
+            const newLineText = clip(`${lineTitle}: ${text}`, 180);
 
             // load group state
             let prev =

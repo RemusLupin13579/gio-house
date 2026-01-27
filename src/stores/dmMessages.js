@@ -16,17 +16,14 @@ function uuid() { return crypto.randomUUID(); }
 function nowIso() { return new Date().toISOString(); }
 function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
-function getPushApiUrl() {
-    // תמיד אותו origin
-    return "/api/send-push";
-}
-
-
-
-function previewText(s, n = 140) {
+function previewText(s, n = 180) {
     const t = String(s || "").replace(/\s+/g, " ").trim();
     return t.length > n ? t.slice(0, n - 1) + "…" : t;
 }
+function getPushApiUrl() {
+    return "/api/send-push";
+}
+
 
 export const useDMMessagesStore = defineStore("dmMessages", {
     state: () => ({
@@ -337,53 +334,121 @@ export const useDMMessagesStore = defineStore("dmMessages", {
 
                         // ---- PUSH (best-effort) ----
                         try {
-                            const t = dmThreads.byId(item.threadId);
-                            const toUserId = t?.otherUserId || null;
-                            if (!toUserId || String(toUserId) === String(userId)) continue;
+                            const rooms = useRoomsStore();
+                            const profiles = useProfilesStore(); // אם אין לך כאן import — תוסיף (כמו ב-DM)
+                            try { await profiles.ensureLoaded([userId]); } catch { }
+                            const me = profiles.getById?.(userId) || profiles.byId?.[userId] || null;
+                            const fromName = String(me?.nickname || "GIO");
 
-                            const payload = {
-                                // WhatsApp-ish: one notification per conversation
-                                groupKey: `dm_${item.threadId}`,
-                                title: fromName,
-                                body: previewText(item.content, 180),
-                                url: `/dm/${item.threadId}`,
-                                msgId: String(data.id),
+                            const roomKey = this._resolveRoomKey(item.roomId);
+                            if (!roomKey) throw new Error("NO_ROOM_KEY_MAPPING");
 
-                                // IMPORTANT: server will resolve icon from bucket avatars/<fromUserId>/*
-                                fromUserId: String(userId),
+                            const roomName = this._resolveRoomName(item.roomId);
 
-                                // logo as badge
-                                badgeUrl: "/pwa-192.png?v=1",
-                            };
+                            // להביא חברי חדר: אני מניח שיש room_members(room_id, user_id)
+                            const { data: members, error: mErr } = await supabase
+                                .from("room_members")
+                                .select("user_id")
+                                .eq("room_id", item.roomId);
 
-                            console.log("[send-push] calling /api/send-push", {
-                                toUserId,
-                                groupKey: payload.groupKey,
-                                msgId: payload.msgId,
-                                fromUserId: payload.fromUserId,
-                            });
+                            if (mErr) throw mErr;
 
-                            const { data: sessRes } = await supabase.auth.getSession();
-                            const accessToken = sessRes?.session?.access_token || null;
+                            const toUserIds = (members || [])
+                                .map(x => x.user_id)
+                                .filter(uid => uid && String(uid) !== String(userId));
 
-                            const resp = await fetch(getPushApiUrl(), {
-                                method: "POST",
-                                headers: {
-                                    "Content-Type": "application/json",
-                                    ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-                                    apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
-                                },
-                                body: JSON.stringify({ toUserId, payload }),
-                            });
+                            for (const toUserId of toUserIds) {
+                                const payload = {
+                                    groupKey: `room_${roomKey}`,
+                                    roomKey,                 // ✅ כדי שה-SW ימנע אם כבר בפנים
+                                    title: roomName,         // ✅ כותרת ההתראה = שם החדר
+                                    lineTitle: fromName,     // ✅ שורה = "שם: הודעה"
+                                    body: previewText(item.content, 180),
+                                    url: `/room/${roomKey}`,
+                                    msgId: String(data.id),
 
+                                    fromUserId: String(userId),
+                                    badgeUrl: "/pwa-192.png?v=1",
+                                };
 
+                                const { data: sessRes } = await supabase.auth.getSession();
+                                const accessToken = sessRes?.session?.access_token || null;
 
-                            const json = await resp.json().catch(() => ({}));
-                            if (!resp.ok) console.warn("[send-push] failed:", resp.status, json);
-                            else console.log("[send-push] ok:", json);
+                                const resp = await fetch(getPushApiUrl(), {
+                                    method: "POST",
+                                    headers: {
+                                        "Content-Type": "application/json",
+                                        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+                                        apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+                                    },
+                                    body: JSON.stringify({ toUserId, payload }),
+                                });
+
+                                const json = await resp.json().catch(() => ({}));
+                                if (!resp.ok) console.warn("[room push] failed:", resp.status, json);
+                            }
                         } catch (e) {
-                            console.warn("[send-push] best-effort crashed:", e);
+                            console.warn("[room push] best-effort crashed:", e);
                         }
+                        // ---- PUSH (best-effort) ----
+                        try {
+                            const rooms = useRoomsStore();
+                            const profiles = useProfilesStore(); // אם אין לך כאן import — תוסיף (כמו ב-DM)
+                            try { await profiles.ensureLoaded([userId]); } catch { }
+                            const me = profiles.getById?.(userId) || profiles.byId?.[userId] || null;
+                            const fromName = String(me?.nickname || "GIO");
+
+                            const roomKey = this._resolveRoomKey(item.roomId);
+                            if (!roomKey) throw new Error("NO_ROOM_KEY_MAPPING");
+
+                            const roomName = this._resolveRoomName(item.roomId);
+
+                            // להביא חברי חדר: אני מניח שיש room_members(room_id, user_id)
+                            const { data: members, error: mErr } = await supabase
+                                .from("room_members")
+                                .select("user_id")
+                                .eq("room_id", item.roomId);
+
+                            if (mErr) throw mErr;
+
+                            const toUserIds = (members || [])
+                                .map(x => x.user_id)
+                                .filter(uid => uid && String(uid) !== String(userId));
+
+                            for (const toUserId of toUserIds) {
+                                const payload = {
+                                    groupKey: `room_${roomKey}`,
+                                    roomKey,                 // ✅ כדי שה-SW ימנע אם כבר בפנים
+                                    title: roomName,         // ✅ כותרת ההתראה = שם החדר
+                                    lineTitle: fromName,     // ✅ שורה = "שם: הודעה"
+                                    body: previewText(item.content, 180),
+                                    url: `/room/${roomKey}`,
+                                    msgId: String(data.id),
+
+                                    fromUserId: String(userId),
+                                    badgeUrl: "/pwa-192.png?v=1",
+                                };
+
+                                const { data: sessRes } = await supabase.auth.getSession();
+                                const accessToken = sessRes?.session?.access_token || null;
+
+                                const resp = await fetch(getPushApiUrl(), {
+                                    method: "POST",
+                                    headers: {
+                                        "Content-Type": "application/json",
+                                        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+                                        apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+                                    },
+                                    body: JSON.stringify({ toUserId, payload }),
+                                });
+
+                                const json = await resp.json().catch(() => ({}));
+                                if (!resp.ok) console.warn("[room push] failed:", resp.status, json);
+                            }
+                        } catch (e) {
+                            console.warn("[room push] best-effort crashed:", e);
+                        }
+
                     } catch (e) {
                         item.status = "queued";
                         item.error = e?.message || "SEND_FAILED";

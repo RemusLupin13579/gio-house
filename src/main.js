@@ -14,10 +14,14 @@ import { useProfilesStore } from "./stores/profiles";
 import { useNotificationsStore } from "./stores/notifications";
 import { useDMMessagesStore } from "./stores/dmMessages";
 
+
+
 const pinia = createPinia();
 const app = createApp(App).use(pinia).use(router);
 app.mount("#app");
 
+const notifications = useNotificationsStore();
+notifications.load();
 // ✅ Service Worker
 if ("serviceWorker" in navigator) {
     window.addEventListener("load", async () => {
