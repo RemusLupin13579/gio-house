@@ -12,72 +12,27 @@ const OUTBOX_KEY = "gio-dm-outbox-v1";
 const WORKER_MS = 1200;
 const MAX_ATTEMPTS = 6;
 
-function uuid() {
-    return crypto.randomUUID();
-}
-function nowIso() {
-    return new Date().toISOString();
-}
-function sleep(ms) {
-    return new Promise((r) => setTimeout(r, ms));
-}
+function uuid() { return crypto.randomUUID(); }
+function nowIso() { return new Date().toISOString(); }
+function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
 function getPushApiUrl() {
-    // Always hit your own backend.
-    // Prod: /api/send-push on gio-home.vercel.app
-    // Local: if you don't have a local API server, call prod API.
-    return location.hostname === "localhost"
-        ? "https://gio-home.vercel.app/api/send-push"
-        : "/api/send-push";
+    // prod
+    if (location.hostname !== "localhost") return "/api/send-push";
+    // dev -> hit prod api
+    return "https://gio-home.vercel.app/api/send-push";
 }
-
-
 
 function previewText(s, n = 140) {
     const t = String(s || "").replace(/\s+/g, " ").trim();
     return t.length > n ? t.slice(0, n - 1) + "…" : t;
 }
 
-// ✅ אצלך הבאקט: avatars/<ID>/avatar.* או head.*
-function pickAvatarUrl(uid) {
-    const base = `https://khaezthvfznjqalhzitz.supabase.co/storage/v1/object/public/avatars/${uid}`;
-    const v = Date.now();
-    // לא בודקים HEAD פה (קליינט), רק שולחים “הימור” סביר.
-    // השרת/edge שלך יכול לעשות HEAD ולבחור באמת (מומלץ),
-    // אבל גם ככה: נשלח png קודם ואז jpg.
-    return `${base}/avatar.png?v=${v}`; // ראשון
-}
-
-function resolveAvatarFromProfile(uid, profile) {
-    const v = Date.now();
-    const raw = profile?.avatar_full_url || profile?.avatar_url || null;
-    if (raw) {
-        const glue = raw.includes("?") ? "&" : "?";
-        return `${raw}${glue}v=${v}`;
-    }
-    return pickAvatarUrl(uid);
-}
-
-
-
-function publicAvatarCandidates(uid) {
-    const base = `https://khaezthvfznjqalhzitz.supabase.co/storage/v1/object/public/avatars/${uid}`;
-    return [
-        `${base}/avatar.jpg`,
-        `${base}/avatar.jpeg`,
-        `${base}/avatar.png`,
-        `${base}/head.png`,
-        `${base}/head.jpg`,
-        `${base}/head.jpeg`,
-    ];
-}
-
 export const useDMMessagesStore = defineStore("dmMessages", {
     state: () => ({
-        byThread: {}, // { [threadId]: Message[] }
-        subs: {}, // { [threadId]: RealtimeChannel }
-        outbox: [], // { clientId, threadId, content, replyToId, ... }
-
+        byThread: {},
+        subs: {},
+        outbox: [],
         _worker: null,
         _guardsInstalled: false,
         _runLock: false,
@@ -94,17 +49,13 @@ export const useDMMessagesStore = defineStore("dmMessages", {
         },
 
         _saveOutbox() {
-            try {
-                localStorage.setItem(OUTBOX_KEY, JSON.stringify(this.outbox));
-            } catch { }
+            try { localStorage.setItem(OUTBOX_KEY, JSON.stringify(this.outbox)); } catch { }
         },
         _loadOutbox() {
             try {
                 const raw = localStorage.getItem(OUTBOX_KEY);
                 this.outbox = raw ? JSON.parse(raw) : [];
-            } catch {
-                this.outbox = [];
-            }
+            } catch { this.outbox = []; }
         },
 
         _ensureThread(threadId) {
@@ -119,19 +70,11 @@ export const useDMMessagesStore = defineStore("dmMessages", {
 
             if (msg.client_id) {
                 const i = arr.findIndex((m) => m.client_id && m.client_id === msg.client_id);
-                if (i >= 0) {
-                    arr[i] = { ...arr[i], ...msg };
-                    this._sortThread(threadId);
-                    return;
-                }
+                if (i >= 0) { arr[i] = { ...arr[i], ...msg }; this._sortThread(threadId); return; }
             }
             if (msg.id) {
                 const j = arr.findIndex((m) => m.id && m.id === msg.id);
-                if (j >= 0) {
-                    arr[j] = { ...arr[j], ...msg };
-                    this._sortThread(threadId);
-                    return;
-                }
+                if (j >= 0) { arr[j] = { ...arr[j], ...msg }; this._sortThread(threadId); return; }
             }
             arr.push(msg);
             this._sortThread(threadId);
@@ -152,23 +95,17 @@ export const useDMMessagesStore = defineStore("dmMessages", {
         },
 
         subscribeInbox() {
-            if (this._inboxSub) {
-                console.log("[dmInbox] already subscribed");
-                return;
-            }
+            if (this._inboxSub) return;
 
             console.log("[dmInbox] subscribing...");
 
             const ch = supabase
                 .channel("dm_inbox")
                 .on("postgres_changes", { event: "INSERT", schema: "public", table: "dm_messages" }, (payload) => {
-                    console.log("[dmInbox] INSERT event", payload);
                     const r = payload?.new;
                     if (!r) return;
 
                     const myId = session.value?.user?.id ?? null;
-                    console.log("[dmInbox] myId=", myId, "from=", r.user_id, "thread=", r.thread_id);
-
                     if (myId && String(r.user_id) === String(myId)) return;
 
                     const notif = useNotificationsStore();
@@ -179,21 +116,15 @@ export const useDMMessagesStore = defineStore("dmMessages", {
                         text: r.text ?? "",
                         createdAtMs: Date.parse(r.created_at) || Date.now(),
                     });
-
-                    console.log("[dmInbox] unread now:", notif.dmUnread?.[String(r.thread_id)]);
                 })
-                .subscribe((status) => {
-                    console.log("[dmInbox] status:", status);
-                });
+                .subscribe((status) => console.log("[dmInbox] status:", status));
 
             this._inboxSub = ch;
         },
 
         async unsubscribeInbox() {
             if (!this._inboxSub) return;
-            try {
-                await supabase.removeChannel(this._inboxSub);
-            } catch { }
+            try { await supabase.removeChannel(this._inboxSub); } catch { }
             this._inboxSub = null;
         },
 
@@ -253,8 +184,7 @@ export const useDMMessagesStore = defineStore("dmMessages", {
 
             const ch = supabase
                 .channel(`dm_msgs_${threadId}`)
-                .on(
-                    "postgres_changes",
+                .on("postgres_changes",
                     { event: "INSERT", schema: "public", table: "dm_messages", filter: `thread_id=eq.${threadId}` },
                     (payload) => {
                         const r = payload.new;
@@ -284,9 +214,7 @@ export const useDMMessagesStore = defineStore("dmMessages", {
         async unsubscribe(threadId) {
             const ch = this.subs[threadId];
             if (!ch) return;
-            try {
-                await supabase.removeChannel(ch);
-            } catch { }
+            try { await supabase.removeChannel(ch); } catch { }
             delete this.subs[threadId];
         },
 
@@ -299,7 +227,7 @@ export const useDMMessagesStore = defineStore("dmMessages", {
             const created_at = nowIso();
 
             this._upsert(threadId, {
-                id: clientId, // temp
+                id: clientId,
                 client_id: clientId,
                 thread_id: threadId,
                 user_id: null,
@@ -344,15 +272,11 @@ export const useDMMessagesStore = defineStore("dmMessages", {
                 const dmThreads = useDMThreadsStore();
                 const profilesStore = useProfilesStore();
 
-                // ✅ טען את הפרופיל שלי בשביל nickname יציב
+                // ensure my profile cached => stable nickname
                 try { await profilesStore.ensureLoaded([userId]); } catch { }
                 const me = profilesStore.getById(userId);
 
-                const myIconUrl = resolveAvatarFromProfile(userId, me);
-
-                const fromName =
-                    me?.nickname ||
-                    "GIO";
+                const fromName = String(me?.nickname || "GIO");
 
                 for (const item of this.outbox) {
                     if (item.status !== "queued") continue;
@@ -405,19 +329,17 @@ export const useDMMessagesStore = defineStore("dmMessages", {
                             if (!toUserId || String(toUserId) === String(userId)) continue;
 
                             const payload = {
-                                groupKey: `dm_${item.threadId}`,        // ✅ קיבוץ לפי שיחה (וואטסאפ)
-                                threadId: String(item.threadId),
-                                msgId: String(data.id),                 // ✅ מזהה הודעה
-
-                                title: fromName,                        // ✅ nickname
-                                body: previewText(item.content, 160),   // ✅ preview
-
+                                // WhatsApp-ish: one notification per conversation
+                                groupKey: `dm_${item.threadId}`,
+                                title: fromName,
+                                body: previewText(item.content, 180),
                                 url: `/dm/${item.threadId}`,
+                                msgId: String(data.id),
 
-                                // ✅ הכי חשוב: לא שולחים iconUrl מהקליינט
-                                // כי הוא מגיע אצלך מ-avatars_full וזה דופק הכל
+                                // IMPORTANT: server will resolve icon from bucket avatars/<fromUserId>/*
                                 fromUserId: String(userId),
 
+                                // logo as badge
                                 badgeUrl: "/pwa-192.png?v=1",
                             };
 
@@ -437,12 +359,9 @@ export const useDMMessagesStore = defineStore("dmMessages", {
                             const json = await resp.json().catch(() => ({}));
                             if (!resp.ok) console.warn("[send-push] failed:", resp.status, json);
                             else console.log("[send-push] ok:", json);
-
                         } catch (e) {
                             console.warn("[send-push] best-effort crashed:", e);
                         }
-
-
                     } catch (e) {
                         item.status = "queued";
                         item.error = e?.message || "SEND_FAILED";
@@ -461,9 +380,6 @@ export const useDMMessagesStore = defineStore("dmMessages", {
                 this._runLock = false;
             }
         },
-
-
-
 
         startWorker() {
             if (this._worker) return;

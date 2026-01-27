@@ -1,8 +1,26 @@
 // /api/send-push.js
 import webpush from "web-push";
 
-function avatarCandidates(projectUrl, uid) {
-    const base = `${projectUrl}/storage/v1/object/public/avatars/${uid}`;
+const ALLOW_ORIGINS = new Set([
+    "https://gio-home.vercel.app",
+    "http://localhost:5173",
+    "http://localhost:4173",
+]);
+
+function setCors(req, res) {
+    const origin = req.headers.origin || "";
+    const allow = ALLOW_ORIGINS.has(origin) ? origin : "https://gio-home.vercel.app";
+
+    res.setHeader("Access-Control-Allow-Origin", allow);
+    res.setHeader("Vary", "Origin");
+    res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+}
+
+const SUPABASE_BASE = "https://khaezthvfznjqalhzitz.supabase.co";
+
+function avatarCandidates(uid) {
+    const base = `${SUPABASE_BASE}/storage/v1/object/public/avatars/${uid}`;
     return [
         `${base}/avatar.jpg`,
         `${base}/avatar.jpeg`,
@@ -13,21 +31,22 @@ function avatarCandidates(projectUrl, uid) {
     ];
 }
 
-// בדיקה קלה כדי לבחור קובץ שקיים באמת (HEAD)
 async function pickFirstExisting(urls) {
     for (const u of urls) {
         try {
-            const r = await fetch(u, { method: "HEAD" });
-            if (r.ok) return u;
+            const h = await fetch(u, { method: "HEAD" });
+            if (h.ok) return u;
+            if (h.status === 405) {
+                const g = await fetch(u, { method: "GET" });
+                if (g.ok) return u;
+            }
         } catch { }
     }
     return null;
 }
 
 export default async function handler(req, res) {
-    res.setHeader("Access-Control-Allow-Origin", "https://gio-home.vercel.app");
-    res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    setCors(req, res);
 
     if (req.method === "OPTIONS") return res.status(200).send("ok");
     if (req.method === "GET") return res.status(200).json({ ok: true, route: "/api/send-push" });
@@ -48,7 +67,6 @@ export default async function handler(req, res) {
 
         webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC, VAPID_PRIVATE);
 
-        // fetch subs with service role (REST)
         const r = await fetch(
             `${SUPABASE_URL}/rest/v1/push_subscriptions?user_id=eq.${encodeURIComponent(toUserId)}&select=endpoint,p256dh,auth`,
             { headers: { apikey: SERVICE_KEY, authorization: `Bearer ${SERVICE_KEY}` } }
@@ -60,36 +78,37 @@ export default async function handler(req, res) {
         }
 
         const subs = await r.json().catch(() => []);
-        if (!Array.isArray(subs) || subs.length === 0) return res.status(200).json({ ok: true, sent: 0, note: "NO_SUBSCRIPTIONS" });
-
-        // ✅ iconUrl מהבאקט הנכון בלבד
-        let iconUrl = null;
-        const fromUserId = String(payload?.fromUserId || "").trim();
-        if (fromUserId) {
-            iconUrl = await pickFirstExisting(avatarCandidates(SUPABASE_URL, fromUserId));
-            if (iconUrl) {
-                const glue = iconUrl.includes("?") ? "&" : "?";
-                iconUrl = `${iconUrl}${glue}v=${Date.now()}`; // cache bust
-            }
+        if (!Array.isArray(subs) || subs.length === 0) {
+            return res.status(200).json({ ok: true, sent: 0, note: "NO_SUBSCRIPTIONS" });
         }
 
+        const msgId = String(payload?.msgId || `${Date.now()}_${Math.random().toString(16).slice(2)}`);
+        const groupKey = String(payload?.groupKey || payload?.tag || "gio").trim() || "gio";
+        const title = String(payload?.title || "GIO").trim() || "GIO";
+        const body = String(payload?.body || "New message");
+        const url = String(payload?.url || "/");
+
+        let iconUrl = null;
+        const fromUserId = payload?.fromUserId ? String(payload.fromUserId) : null;
+        if (fromUserId) {
+            iconUrl = await pickFirstExisting(avatarCandidates(fromUserId));
+            if (iconUrl) iconUrl = `${iconUrl}?v=${Date.now()}`;
+        }
+        if (!iconUrl && typeof payload?.iconUrl === "string" && payload.iconUrl.startsWith("http")) {
+            iconUrl = payload.iconUrl;
+        }
+
+        const badgeUrl = payload?.badgeUrl || "/pwa-192.png?v=1";
+
         const notifPayload = {
-            groupKey: payload?.groupKey || payload?.tag || "gio",
-            threadId: payload?.threadId || null,
-            msgId: String(payload?.msgId || `${Date.now()}`),
-
-            title: payload?.title || "GIO",
-            body: payload?.body || "New message",
-            url: payload?.url || "/",
-
-            // iOS לא יכבד icon פר-התראה => נשאיר לוגו כאן
-            iconUrl: "/pwa-192.png?v=1",
-            badgeUrl: payload?.badgeUrl || "/pwa-192.png?v=1",
-
-            // ✅ פה נשים את האוואטר (מה שבאמת רצית)
-            imageUrl: iconUrl || null, // iconUrl כאן הוא האוואטר שמצאת מ-avatars/<id>/...
+            groupKey,
+            title,
+            body,
+            url,
+            msgId,
+            iconUrl: iconUrl || "https://gio-home.vercel.app/pwa-192.png?v=1",
+            badgeUrl,
         };
-
 
         let sent = 0;
         const results = [];
@@ -104,15 +123,6 @@ export default async function handler(req, res) {
                 const statusCode = e?.statusCode ?? null;
                 const body = e?.body ?? null;
                 results.push({ endpoint: s.endpoint, ok: false, statusCode, body });
-
-                if (statusCode === 404 || statusCode === 410) {
-                    try {
-                        await fetch(`${SUPABASE_URL}/rest/v1/push_subscriptions?endpoint=eq.${encodeURIComponent(s.endpoint)}`, {
-                            method: "DELETE",
-                            headers: { apikey: SERVICE_KEY, authorization: `Bearer ${SERVICE_KEY}` },
-                        });
-                    } catch { }
-                }
             }
         }
 

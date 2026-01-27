@@ -25,9 +25,17 @@ export function useNotifications() {
             notif.setContext({ routeName, dmThreadId, roomKey });
 
             // entering DM clears that DM
+            // בתוך ה-watch שכבר קיים אצלך, כשנכנסים ל-DM:
             if (routeName === "dm" && dmThreadId) {
                 notif.clearDM(dmThreadId);
+
+                // ✅ tell SW: clear that notification group
+                try {
+                    const groupKey = `dm_${dmThreadId}`;
+                    navigator.serviceWorker?.controller?.postMessage?.({ type: "CLEAR_GROUP", groupKey });
+                } catch { }
             }
+
 
             // entering room clears that room (optional)
             if (routeName === "room" && roomKey) {
