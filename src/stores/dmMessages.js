@@ -128,12 +128,17 @@ export const useDMMessagesStore = defineStore("dmMessages", {
                 threadId: tid,
                 url: `/dm/${tid}`,
                 msgId: String(msgId || `${tid}_${Date.parse(createdAt) || Date.now()}`),
-                title: "DM",
-                body: `${String(fromName || "GIO")}: ${previewText(text, 180)}`,
+                // ✅ title = username
+                title: String(fromName || "GIO"),
+                // ✅ body = רק הטקסט (בלי username)
+                body: previewText(text, 180),
                 fromUserId: String(fromUserId || ""),
-                lineTitle: String(fromName || "GIO"),
+                // ❌ לא שולחים lineTitle בכלל ל-DM
                 badgeUrl: "/pwa-192.png?v=1",
+                // ✅ חדש:
+                noPrefix: true,
             };
+
 
             const endpoint = `${API_BASE}/api/send-push`;
 
@@ -224,6 +229,7 @@ export const useDMMessagesStore = defineStore("dmMessages", {
         },
 
         // ---------- load / subscribe per thread ----------
+        // /src/stores/dmMessages.js
         async load(threadId, limit = 200) {
             if (!threadId) return;
             this._ensureThread(threadId);
@@ -232,12 +238,14 @@ export const useDMMessagesStore = defineStore("dmMessages", {
                 .from("dm_messages")
                 .select("id,client_id,thread_id,user_id,text,created_at,reply_to_id")
                 .eq("thread_id", threadId)
-                .order("created_at", { ascending: true })
+                .order("created_at", { ascending: false })
+                .order("id", { ascending: false })
                 .limit(limit);
 
             if (error) throw error;
 
-            this.byThread[threadId] = (data || []).map((r) => ({
+            // ✅ הופכים כדי להציג מלמעלה-למטה (ישן→חדש)
+            this.byThread[threadId] = (data || []).reverse().map((r) => ({
                 id: r.id,
                 client_id: r.client_id,
                 thread_id: r.thread_id,

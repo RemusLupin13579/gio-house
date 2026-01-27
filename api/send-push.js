@@ -157,18 +157,26 @@ export default async function handler(req, res) {
             iconUrl = payload.iconUrl;
         }
 
+        const isDM = !!(payload?.threadId || threadId);
+
         const notifPayload = {
             groupKey,
-            title,
+            // DM: הכותרת היא ה-username (שנשלח ב-payload.title)
+            // Rooms: כמו קודם
+            title: isDM ? title : title,
+            // DM: גוף = רק הטקסט
+            // Rooms: כמו קודם
             body: bodyText,
             url,
             msgId,
             iconUrl: iconUrl || "https://gio-home.vercel.app/pwa-192.png?v=1",
             badgeUrl: payload?.badgeUrl || "/pwa-192.png?v=1",
-            lineTitle: payload?.lineTitle || null,
+            // ❌ DM: לא שולחים lineTitle בכלל
+            // ✅ Rooms: כן
+            lineTitle: isDM ? null : (payload?.lineTitle || null),
             roomKey: payload?.roomKey || null,
             threadId: payload?.threadId || (threadId ? String(threadId) : null),
-            fromUserId: senderId, // פה זה רק שדה בתוך JSON, לא identifier חדש
+            fromUserId: senderId,
         };
 
         let sent = 0;

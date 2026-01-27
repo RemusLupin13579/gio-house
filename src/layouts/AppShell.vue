@@ -572,7 +572,7 @@
         import AddFriendsModal from "../components/AddFriendsModal.vue";
         import {useDMThreadsStore} from "../stores/dmThreads";
 
-    const roomUnread = (roomKey) => Number(notifications.roomUnread?.[roomKey] || 0);
+        const roomUnread = (roomKey) => Number(notifications.roomUnread?.[roomKey] || 0);
         const dmThreads = useDMThreadsStore();
 
         const {notif} = useNotifications();         // context + auto-clear

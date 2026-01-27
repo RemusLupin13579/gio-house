@@ -172,6 +172,7 @@ export default async function handler(req: Request): Promise<Response> {
             roomKey: payload?.roomKey || null,
             threadId: payload?.threadId || (threadId ? String(threadId) : null),
             fromUserId: senderId,
+            noPrefix: !!payload?.noPrefix,
         };
 
         let sent = 0;

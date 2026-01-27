@@ -1,5 +1,5 @@
 /* /public/sw.js */
-const SW_VERSION = "2026-01-27_auto_01";
+const SW_VERSION = "2026-01-27_auto_02";
 const STORE_CACHE = "gio:notif:groups:v1";
 
 // כמה שורות לשמור בהיסטוריה בקאש (לפי קבוצה)
@@ -64,13 +64,17 @@ async function saveGroup(groupKey, data) {
     );
 }
 
+async function closeNotificationsByTag(tag) {
+    try {
+        const ns = await self.registration.getNotifications({ tag });
+        ns.forEach((n) => n.close());
+    } catch { }
+}
+
 async function clearGroup(groupKey) {
     const cache = await caches.open(STORE_CACHE);
     await cache.delete(`/__notif_group__/${encodeURIComponent(groupKey)}`);
-    try {
-        const ns = await self.registration.getNotifications({ tag: groupKey });
-        ns.forEach((n) => n.close());
-    } catch { }
+    await closeNotificationsByTag(groupKey);
     console.log("[SW] cleared group", groupKey);
 }
 
@@ -98,6 +102,7 @@ async function isUserAlreadyInDm(threadId) {
         }
     });
 }
+
 async function isUserAlreadyInRoom(roomKey) {
     if (!roomKey) return false;
     const wantedPath = `/room/${roomKey}`;
@@ -128,6 +133,13 @@ function buildAutoBody(linesAll = []) {
     return `${slice.join("\n")}\n… (+${more} more)`;
 }
 
+// remove "name: " prefix at the start (used to normalize old DM cached lines)
+function stripNamePrefix(line) {
+    const s = String(line || "");
+    // remove "something: " only at start (reasonable length guard)
+    return s.replace(/^[^:\n]{1,40}:\s*/, "");
+}
+
 self.addEventListener("push", (event) => {
     event.waitUntil(
         (async () => {
@@ -138,7 +150,7 @@ self.addEventListener("push", (event) => {
             const msgId = String(data.msgId || `${Date.now()}_${Math.random().toString(16).slice(2)}`);
 
             const title = String(data.title || "GIO").trim() || "GIO";
-            const text = String(data.body || "New message").trim();
+            const textRaw = String(data.body || "New message").trim();
             const url = String(data.url || "/");
 
             // absolute icon
@@ -152,7 +164,7 @@ self.addEventListener("push", (event) => {
                     ? data.badgeUrl
                     : "https://gio-home.vercel.app/pwa-192.png?v=1";
 
-            // ---- prevent notifications when user is already inside that DM ----
+            // ---- determine context ----
             const threadId =
                 String(data.threadId || "").trim() ||
                 (groupKey.startsWith("dm_") ? groupKey.slice(3) : "");
@@ -161,24 +173,36 @@ self.addEventListener("push", (event) => {
                 String(data.roomKey || "").trim() ||
                 (groupKey.startsWith("room_") ? groupKey.slice(5) : "");
 
-            // prevent notifications when user is already inside that DM
+            const isDM =
+                String(groupKey || "").startsWith("dm_") ||
+                !!String(data.threadId || "").trim();
+
+            // ---- prevent notifications when user is already inside that DM/ROOM ----
             if (threadId) {
                 const already = await isUserAlreadyInDm(threadId);
                 if (already) return;
             }
-
-            // prevent notifications when user is already inside that ROOM
             if (roomKey) {
                 const already = await isUserAlreadyInRoom(roomKey);
                 if (already) return;
             }
 
+            // ---- line formatting (single source of truth) ----
+            const msgText = clip(textRaw, 180);
 
-            // WhatsApp-ish line: "שם: הודעה"
-            const lineTitle = String(data.lineTitle || title || "GIO").trim() || "GIO";
-            const newLineText = clip(`${lineTitle}: ${text}`, 180);
+            // DM: never prefix (even if someone forgot to send noPrefix)
+            const noPrefix = isDM || !!data.noPrefix;
 
-            // load group state
+            const RLM = "\u200F"; // force RTL direction per line
+            const lineTitle = String(data.lineTitle || "GIO").trim() || "GIO";
+
+            // DM -> just the message text
+            // Rooms/others -> "name: message" but forced RTL for consistent alignment
+            const newLineText = noPrefix
+                ? msgText
+                : clip(`${RLM}${lineTitle}: ${msgText}`, 180);
+
+            // ---- load group state ----
             let prev =
                 (await loadGroup(groupKey)) || {
                     groupKey,
@@ -198,6 +222,11 @@ self.addEventListener("push", (event) => {
             prev.iconUrl = iconUrl || prev.iconUrl;
             prev.badgeUrl = badgeUrl || prev.badgeUrl;
 
+            // ✅ normalize cached DM history (remove old "name: " prefixes)
+            if (isDM && Array.isArray(prev.lines)) {
+                prev.lines = prev.lines.map(stripNamePrefix);
+            }
+
             // de-dupe by msgId
             if (prev.lastMsgId !== msgId) {
                 const nextLines = [...(prev.lines || []), newLineText].slice(-MAX_LINES);
@@ -210,8 +239,7 @@ self.addEventListener("push", (event) => {
 
             // build body automatically (2-3 lines then ...)
             const body = buildAutoBody(prev.lines || []);
-            const displayTitle =
-                Number(prev.unread || 0) > 1 ? `${prev.title} (${prev.unread})` : prev.title;
+            const displayTitle = Number(prev.unread || 0) > 1 ? `${prev.title} (${prev.unread})` : prev.title;
 
             const options = {
                 tag: groupKey,
@@ -223,14 +251,14 @@ self.addEventListener("push", (event) => {
                 data: { url: prev.url, groupKey },
                 vibrate: [60, 30, 60],
                 timestamp: prev.lastAt || Date.now(),
-                actions: [
-                    { action: "mark_read", title: "נקרא" },
-                ],
+                actions: [{ action: "mark_read", title: "נקרא" }],
             };
 
             console.log("[SW] notify", {
                 v: SW_VERSION,
                 groupKey,
+                isDM,
+                noPrefix: !!noPrefix,
                 title: displayTitle,
                 unread: prev.unread,
                 savedLines: prev.lines?.length || 0,
@@ -251,11 +279,19 @@ self.addEventListener("notificationclick", (event) => {
     event.waitUntil(
         (async () => {
             if (groupKey && action === "mark_read") {
+                // local clear only (per-device)
                 await clearGroup(String(groupKey));
+
+                // (optional) also broadcast to open clients to update UI immediately
+                try {
+                    const wins = await clients.matchAll({ type: "window", includeUncontrolled: true });
+                    wins.forEach((c) => c.postMessage?.({ type: "SW_GROUP_CLEARED", groupKey: String(groupKey) }));
+                } catch { }
+
                 return;
             }
 
-            // default: open
+            // default: focus existing window then navigate
             const allClients = await clients.matchAll({ type: "window", includeUncontrolled: true });
             for (const c of allClients) {
                 if ("focus" in c) {
@@ -267,6 +303,7 @@ self.addEventListener("notificationclick", (event) => {
                     return;
                 }
             }
+
             if (clients.openWindow) {
                 const w = await clients.openWindow(url);
                 if (groupKey) await clearGroup(String(groupKey));
