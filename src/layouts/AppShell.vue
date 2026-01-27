@@ -448,10 +448,6 @@
                                                 </div>
 
                                                 <div class="gio-room-right flex items-center gap-2" dir="ltr">
-                                                    <span v-if="getRoomUnread(r.key) > 0"
-                                                          class="w-[18px] h-[18px] rounded-full bg-green-500/40 animate-ping"
-                                                          aria-hidden="true"></span>
-
                                                     <div class="gio-room-avatars" dir="ltr">
                                                         <template v-for="(u, i) in roomUsers(r.key).slice(0, AVATARS_MAX)" :key="u.user_id || u.id || i">
                                                             <div class="gio-room-avatar" :style="{ zIndex: 10 + i }" :title="u.nickname || 'User'">
@@ -645,7 +641,9 @@
         // ✅ ניווט (מוגן)
         try {
             if (route.name !== "dm" || String(route.params.threadId) !== threadId) {
-            await router.push({ name: "dm", params: { threadId } });
+                await router.push({ name: "dm", params: { threadId } });
+                await notifications.markThreadRead(threadId);
+
             }
         } catch (e) {
             // swallow navigation failures
@@ -1237,7 +1235,12 @@
     }
 
 
-    const activeRooms = computed(() => roomsStore.activeRooms ?? []);
+        const activeRooms = computed(() => roomsStore.activeRooms ?? []);
+        function getRoomIdByKey(roomKey) {
+            const k = String(roomKey || "");
+            const r = (roomsStore.activeRooms || []).find(x => String(x.key) === k);
+            return r?.id || null;
+        }
 
         async function enterRoom(roomKey, options = { }) {
         if (inlineEdit.value.id) return;
@@ -1248,7 +1251,12 @@
 
         house.enterRoom?.(roomKey);
         // נקה unread לחדר הזה
-        notifications.clearRoom(roomKey);
+            notifications.clearRoom(roomKey);
+            const rid = getRoomIdByKey(roomKey);
+            if (rid && house.currentHouseId) {
+                await notifications.markRoomRead({ houseId: house.currentHouseId, roomId: rid, roomKey: roomKey });
+            }
+
         // ✅ Home -> Room = push (כדי ש-back יחזור ללובי)
         // ✅ Room -> Room = replace (כדי ש-back לא יסתובב בחדרים)
         const nav = route.name === "room" ? router.replace : router.push;
