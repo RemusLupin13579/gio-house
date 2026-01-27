@@ -199,10 +199,10 @@
                 <!-- Actions -->
                 <div class="flex items-center justify-between gap-2 pt-2">
                     <button class="px-3 py-2 rounded-xl bg-red-500/10 border border-red-500/20 hover:bg-red-500/15 transition text-red-200 text-xs"
-                            @click="$emit('signout')"
-                            title="Sign out">
+                            @click="doSignOut">
                         התנתק
                     </button>
+
 
                     <div class="flex items-center gap-2">
                         <button class="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:border-white/20 transition text-xs"
@@ -511,6 +511,16 @@
             err.value = e2?.message || String(e2);
         } finally {
             uploading.value = false;
+        }
+    }
+    async function doSignOut() {
+        try {
+            await supabase.auth.signOut();
+            await auth.init?.(); // אם יש לך init שמנקה state
+        } finally {
+            // תזרוק החוצה מהמודאל
+            // עדיף גם לנקות UI/נתונים רגישים אם יש
+            location.reload();
         }
     }
 

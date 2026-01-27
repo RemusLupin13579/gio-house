@@ -79,112 +79,82 @@ async function clearAllGroups() {
     console.log("[SW] cleared ALL groups");
 }
 
+/* /public/sw.js */
+
 self.addEventListener("push", (event) => {
-    event.waitUntil((async () => {
-        const data = safeJson(event);
+    event.waitUntil(
+        (async () => {
+            const data = safeJson(event);
 
-        // ====== Payload expected ======
-        // {
-        //   groupKey: "dm_<threadId>" | "room_<roomKey>" | ...
-        //   title: "nickname / thread title"
-        //   body: "preview text"
-        //   url: "/dm/<threadId>"
-        //   iconUrl: "https://.../avatars/<id>/avatar.jpg"
-        //   badgeUrl: "/pwa-192.png?v=1"
-        //   msgId: "serverMessageId"
-        // }
-        // ==============================
+            // חילוץ נתונים מה-Payload
+            const groupKey = String(data.groupKey || data.tag || "gio").trim() || "gio";
+            const msgId = String(data.msgId || `${Date.now()}`);
+            const title = String(data.title || "GIO").trim(); // שם השולח/קבוצה
+            const text = String(data.body || "New message").trim();
+            const url = String(data.url || "/");
 
-        const groupKey = String(data.groupKey || data.tag || "gio").trim() || "gio";
-        const msgId = String(data.msgId || `${Date.now()}_${Math.random().toString(16).slice(2)}`);
-
-        const title = String(data.title || "GIO").trim() || "GIO";
-        const url = String(data.url || "/");
-
-        const iconUrl =
-            (typeof data.iconUrl === "string" && data.iconUrl.startsWith("http"))
+            // טיפול באייקון - חובה URL מוחלט
+            const iconUrl = typeof data.iconUrl === "string" && data.iconUrl.startsWith("http")
                 ? data.iconUrl
-                : "/pwa-192.png?v=1";
+                : "https://gio-home.vercel.app/pwa-192.png";
 
-        const badgeUrl =
-            (typeof data.badgeUrl === "string" && data.badgeUrl.length)
-                ? data.badgeUrl
-                : "/pwa-192.png?v=1";
+            // יצירת שורה בסגנון וואטסאפ: "שם: תוכן"
+            const newLineText = `${title}: ${text}`;
+            const clippedLine = clip(newLineText, 180);
 
-        const line = clip(data.body || "New message", 180);
-
-        // --- load previous lines for this groupKey ---
-        const prev = (await loadGroup(groupKey)) || {
-            groupKey,
-            title,
-            url,
-            iconUrl,
-            badgeUrl,
-            lines: [],
-            lastAt: 0,
-            unread: 0,
-            lastMsgId: null,
-        };
-
-        // keep latest metadata (title/icon/url can change)
-        prev.title = title || prev.title;
-        prev.url = url || prev.url;
-        prev.iconUrl = iconUrl || prev.iconUrl;
-        prev.badgeUrl = badgeUrl || prev.badgeUrl;
-
-        // de-dupe by msgId
-        if (prev.lastMsgId !== msgId) {
-            prev.lines = [{ msgId, line, at: Date.now() }, ...(prev.lines || [])]
-                .slice(0, MAX_LINES);
-            prev.unread = Number(prev.unread || 0) + 1;
-            prev.lastAt = Date.now();
-            prev.lastMsgId = msgId;
-        }
-
-        await saveGroup(groupKey, prev);
-
-        // WhatsApp-ish:
-        // - One notification per conversation (tag = groupKey)
-        // - Body becomes multi-line, so it expands nicely
-        const lines = (prev.lines || []).map((x) => x.line);
-        const summary =
-            prev.unread > 1
-                ? `${lines[0]}\n(${prev.unread} unread)`
-                : lines[0] || "New message";
-
-        // show multiple lines (Chrome Android expands)
-        const body = lines.length > 1 ? lines.join("\n") : summary;
-
-        const options = {
-            tag: groupKey,                // ✅ one per group
-            renotify: true,               // ✅ vibration/sound again on update
-            silent: false,
-            icon: prev.iconUrl,           // ✅ avatar (left image) if the platform honors it
-            badge: prev.badgeUrl,         // ✅ small logo
-            body,
-            data: {
-                url: prev.url,
+            // טעינת מצב קבוצה קיים
+            let prev = (await loadGroup(groupKey)) || {
                 groupKey,
-            },
-            vibrate: [60, 30, 60],
-            timestamp: prev.lastAt || Date.now(),
-            actions: [
-                { action: "open", title: "Open" },
-                { action: "mark_read", title: "Mark read" },
-            ],
-        };
+                title, // כותרת ראשית (למשל שם הקבוצה)
+                url,
+                iconUrl,
+                lines: [],
+                unread: 0,
+                lastMsgId: null,
+                collapsed: true
+            };
 
-        console.log("[SW] notify", {
-            v: SW_VERSION,
-            groupKey,
-            title: prev.title,
-            icon: prev.iconUrl,
-            unread: prev.unread,
-            lines: prev.lines?.length,
-        });
+            // עדכון נתונים אם זו הודעה חדשה (De-duplication)
+            if (prev.lastMsgId !== msgId) {
+                prev.lines = [...(prev.lines || []), clippedLine].slice(-5); // שומרים 5 אחרונות
+                prev.unread = (Number(prev.unread) || 0) + 1;
+                prev.lastMsgId = msgId;
+                prev.lastAt = Date.now();
+                // מעדכנים מטא-דאטה מההודעה האחרונה
+                prev.iconUrl = iconUrl;
+                prev.url = url;
+            }
 
-        await self.registration.showNotification(prev.title, options);
-    })());
+            await saveGroup(groupKey, prev);
+
+            // בניית תוכן ההתראה
+            const lines = prev.lines || [];
+            // בכותרת: אם יש כמה הודעות, נכתוב כמה. אם אחת, נכתוב את שם השולח.
+            const displayTitle = prev.unread > 1 ? `${prev.unread} הודעות חדשות` : title;
+
+            // ב-Body: אם מקופץ מראים רק את האחרונה, אם מורחב מראים הכל
+            const body = prev.collapsed
+                ? text
+                : (lines.length > 0 ? lines.join("\n") : text);
+
+            const options = {
+                tag: groupKey,
+                body: body,
+                icon: prev.iconUrl,
+                badge: "https://gio-home.vercel.app/pwa-192.png",
+                renotify: true,
+                data: { url: prev.url, groupKey },
+                vibrate: [60, 30, 60],
+                timestamp: prev.lastAt,
+                actions: [
+                    { action: "toggle", title: prev.collapsed ? "הצג הודעות (▾)" : "צמצם (▴)" },
+                    { action: "mark_read", title: "נקרא" }
+                ]
+            };
+
+            return self.registration.showNotification(displayTitle, options);
+        })()
+    );
 });
 
 self.addEventListener("notificationclick", (event) => {
@@ -195,8 +165,42 @@ self.addEventListener("notificationclick", (event) => {
     event.notification.close();
 
     event.waitUntil((async () => {
-        if (action === "mark_read" && groupKey) {
+        if (!groupKey) {
+            if (clients.openWindow) return clients.openWindow(url);
+            return;
+        }
+
+        if (action === "mark_read") {
             await clearGroup(String(groupKey));
+            return;
+        }
+
+        if (action === "toggle") {
+            const prev = (await loadGroup(String(groupKey))) || null;
+            if (prev) {
+                prev.collapsed = !prev.collapsed;
+                await saveGroup(String(groupKey), prev);
+
+                // re-show same notification with new body state
+                const lines = (prev.lines || []).map((x) => x.line);
+                const lastLine = lines[lines.length - 1] || "New message";
+                const body = prev.collapsed ? lastLine : (lines.length ? lines.join("\n") : lastLine);
+
+                await self.registration.showNotification(prev.title || "GIO", {
+                    tag: String(groupKey),
+                    renotify: false,
+                    silent: true,
+                    icon: prev.iconUrl || "/pwa-192.png?v=1",
+                    badge: prev.badgeUrl || "/pwa-192.png?v=1",
+                    body,
+                    data: { url: prev.url || "/", groupKey: String(groupKey) },
+                    actions: [
+                        { action: "toggle", title: prev.collapsed ? "▾" : "▴" },
+                        { action: "open", title: "Open" },
+                        { action: "mark_read", title: "Mark read" },
+                    ],
+                });
+            }
             return;
         }
 
@@ -206,15 +210,15 @@ self.addEventListener("notificationclick", (event) => {
             if ("focus" in c) {
                 await c.focus();
                 try { await c.navigate(url); } catch { }
-                // clear unread for this conversation when user opened it
-                if (groupKey) await clearGroup(String(groupKey));
+                await clearGroup(String(groupKey));
                 return;
             }
         }
         if (clients.openWindow) {
             const w = await clients.openWindow(url);
-            if (groupKey) await clearGroup(String(groupKey));
+            await clearGroup(String(groupKey));
             return w;
         }
     })());
 });
+

@@ -6,12 +6,12 @@ export default defineConfig({
     plugins: [vue()],
     server: {
         proxy: {
-            "/api/send-push": {
-                target: "https://khaezthvfznjqalhzitz.supabase.co",
+            "/api": {
+                target: "https://gio-home.vercel.app",
                 changeOrigin: true,
                 secure: true,
-                rewrite: (path) => path.replace(/^\/api\/send-push/, "/functions/v1/send-push"),
             },
         },
-    },
+    }
+
 })

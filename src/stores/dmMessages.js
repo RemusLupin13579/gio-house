@@ -17,8 +17,10 @@ function nowIso() { return new Date().toISOString(); }
 function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
 function getPushApiUrl() {
-    return "/api/send-push"; // תמיד same-origin
+    // תמיד אותו origin
+    return "/api/send-push";
 }
+
 
 
 function previewText(s, n = 140) {
@@ -361,16 +363,19 @@ export const useDMMessagesStore = defineStore("dmMessages", {
                                 fromUserId: payload.fromUserId,
                             });
 
-                            const accessToken = session.value?.access_token;
+                            const { data: sessRes } = await supabase.auth.getSession();
+                            const accessToken = sessRes?.session?.access_token || null;
 
                             const resp = await fetch(getPushApiUrl(), {
                                 method: "POST",
                                 headers: {
                                     "Content-Type": "application/json",
                                     ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+                                    apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
                                 },
                                 body: JSON.stringify({ toUserId, payload }),
                             });
+
 
 
                             const json = await resp.json().catch(() => ({}));
