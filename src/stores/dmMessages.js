@@ -361,11 +361,17 @@ export const useDMMessagesStore = defineStore("dmMessages", {
                                 fromUserId: payload.fromUserId,
                             });
 
+                            const accessToken = session.value?.access_token;
+
                             const resp = await fetch(getPushApiUrl(), {
                                 method: "POST",
-                                headers: { "Content-Type": "application/json" },
+                                headers: {
+                                    "Content-Type": "application/json",
+                                    ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+                                },
                                 body: JSON.stringify({ toUserId, payload }),
                             });
+
 
                             const json = await resp.json().catch(() => ({}));
                             if (!resp.ok) console.warn("[send-push] failed:", resp.status, json);
