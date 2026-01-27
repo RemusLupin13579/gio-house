@@ -141,7 +141,8 @@
                 <!-- body list -->
                 <div class="flex-1 min-h-0 w-full overflow-hidden flex flex-col p-3">
                     <template v-if="isDMMode">
-                        <DMSidebar @openAddFriends="addFriendsOpen = true"
+                        <DMSidebar class="w-full min-w-0"
+                                   @openAddFriends="addFriendsOpen = true"
                                    @openThread="onDMOpenThread" />
                     </template>
 
@@ -301,13 +302,14 @@
                  :style="{ opacity: overlayOpacity }"
                  @click="closeMobileNav({ skipHistoryBack: true })"></div>
 
-            <div class="absolute left-0 top-0 h-full bg-[#0b0f12]/95 shadow-2xl will-change-transform"
+            <!-- ✅ חשוב: אין w-full. רוחב מפורש כדי שלא “יברח” -->
+            <div class="absolute left-0 top-0 h-full bg-[#0b0f12]/95 shadow-2xl will-change-transform overflow-hidden"
                  :style="{ width: `${drawerW || drawerWidth()}px`, transform: `translateX(${drawerTranslateX}px)` }"
                  @touchstart.passive="onDrawerTouchStart"
                  @touchmove.passive="onDrawerTouchMove"
                  @touchend="onDrawerTouchEnd">
 
-                <div class="flex h-full">
+                <div class="flex h-full w-full overflow-hidden">
 
                     <!-- LEFT RAIL (mobile): DMs + houses -->
                     <div class="w-16 bg-[#0b0f12] border-r border-white/10 flex flex-col items-center">
@@ -341,7 +343,8 @@
                     </div>
 
                     <!-- RIGHT PANEL (mobile): lists only -->
-                    <div class="flex-1 bg-[#0c1116] flex flex-col min-h-0">
+                    <div class="flex-1 bg-[#0c1116] flex flex-col min-h-0 min-w-0 overflow-hidden">
+
                         <div class="h-16 px-4 flex items-center justify-between border-b border-white/10">
                             <div class="flex items-center gap-2 min-w-0">
                                 <div class="font-bold text-green-300 truncate">
@@ -375,18 +378,22 @@
                             </button>
                         </div>
 
-                        <!-- ✅ BODY (mobile) — כאן התיקון האמיתי: v-if + v-else צמודים -->
+                        <!-- ✅ BODY (mobile) — wrapper אחיד לשני המצבים -->
                         <div class="flex-1 min-h-0 overflow-hidden">
-                            <template v-if="isDMMode">
-                                <DMSidebar @openAddFriends="addFriendsOpen = true"
-                                           @openThread="onDMOpenThread" />
-                            </template>
+                            <div class="h-full min-h-0 w-full overflow-hidden flex flex-col p-4">
+                                <div class="text-xs text-white/40 mb-3 px-3 uppercase tracking-wider">
+                                    {{ isDMMode ? "Messages" : "חדרים" }}
+                                </div>
 
-                            <template v-else>
-                                <div class="h-full min-h-0 w-full overflow-hidden flex flex-col p-4">
-                                    <div class="text-xs text-white/40 mb-3 px-3 uppercase tracking-wider">חדרים</div>
+                                <!-- ✅ scroll area פנימי אחיד -->
+                                <div class="space-y-1 overflow-y-auto min-h-0 w-full min-w-0">
+                                    <template v-if="isDMMode">
+                                        <DMSidebar class="w-full min-w-0"
+                                                   @openAddFriends="addFriendsOpen = true"
+                                                   @openThread="onDMOpenThread" />
+                                    </template>
 
-                                    <div class="space-y-1 overflow-y-auto">
+                                    <template v-else>
                                         <!-- Lobby -->
                                         <button class="w-full px-3 py-2 rounded-xl flex items-center justify-between hover:bg-white/5 transition border border-transparent"
                                                 :class="route.name === 'home' ? 'bg-white/5 border border-green-500/30' : ''"
@@ -469,9 +476,9 @@
                                                 </div>
                                             </div>
                                         </button>
-                                    </div>
+                                    </template>
                                 </div>
-                            </template>
+                            </div>
                         </div>
 
                         <!-- footer (mobile) -->
@@ -530,69 +537,72 @@
         <AddFriendsModal v-if="addFriendsOpen" @close="addFriendsOpen=false" />
     </div>
 </template>
-/
 
 <script setup>
+
+
+
+    <script setup>
     /**
-     * AppShell — המוח של ה-Layout 🧠
-     * --------------------------------
-     * פה לא כותבים “לוגיקה של עסק” (שליחה/DB וכו׳),
-     * רק:
-     * - ניווט
-     * - הצגת חדרים/DMs
-     * - drawer במובייל
-     * - badges (unread)
-     *
-     * המטרה: “שלד” יציב שלא נשבר כשאתה מוסיף פיצ׳רים.
-     */
-    import { useNotifications } from "../composables/useNotifications";
-    import { useNotificationsStore } from "../stores/notifications";
-    import RoomManagerModal from "../components/RoomManagerModal.vue";
-    import HousesSidebar from "../components/HousesSidebar.vue";
-    import HouseInviteModal from "../components/HouseInviteModal.vue";
-    import HouseSwitcherModal from "../components/HouseSwitcherModal.vue";
-    import { computed, ref, watch, onMounted, onBeforeUnmount, nextTick } from "vue";
-    import { RouterView, useRoute, useRouter } from "vue-router";
-    import { useHouseStore } from "../stores/house";
-    import { usePresenceStore } from "../stores/presence";
-    import { session, profile } from "../stores/auth";
-    import { useRoomsStore } from "../stores/rooms";
-    import { useUIStore } from "../stores/ui";
-    import { useMessagesStore } from "../stores/messages";
-    import { supabase } from "../services/supabase";
-    import ProfileSettingsModal from "../components/ProfileSettingsModal.vue";
-    // ✅ DM MODE sidebar
-    import DMSidebar from "../components/DMsSidebar.vue";
-    import AddFriendsModal from "../components/AddFriendsModal.vue";
-    import { useDMThreadsStore } from "../stores/dmThreads";
+        * AppShell — המוח של ה-Layout 🧠
+        * --------------------------------
+        * פה לא כותבים “לוגיקה של עסק” (שליחה/DB וכו׳),
+        * רק:
+        * - ניווט
+        * - הצגת חדרים/DMs
+        * - drawer במובייל
+        * - badges (unread)
+        *
+        * המטרה: “שלד” יציב שלא נשבר כשאתה מוסיף פיצ׳רים.
+        */
+        import {useNotifications} from "../composables/useNotifications";
+        import {useNotificationsStore} from "../stores/notifications";
+        import RoomManagerModal from "../components/RoomManagerModal.vue";
+        import HousesSidebar from "../components/HousesSidebar.vue";
+        import HouseInviteModal from "../components/HouseInviteModal.vue";
+        import HouseSwitcherModal from "../components/HouseSwitcherModal.vue";
+        import {computed, ref, watch, onMounted, onBeforeUnmount, nextTick} from "vue";
+        import {RouterView, useRoute, useRouter} from "vue-router";
+        import {useHouseStore} from "../stores/house";
+        import {usePresenceStore} from "../stores/presence";
+        import {session, profile} from "../stores/auth";
+        import {useRoomsStore} from "../stores/rooms";
+        import {useUIStore} from "../stores/ui";
+        import {useMessagesStore} from "../stores/messages";
+        import {supabase} from "../services/supabase";
+        import ProfileSettingsModal from "../components/ProfileSettingsModal.vue";
+        // ✅ DM MODE sidebar
+        import DMSidebar from "../components/DMsSidebar.vue";
+        import AddFriendsModal from "../components/AddFriendsModal.vue";
+        import {useDMThreadsStore} from "../stores/dmThreads";
 
     const roomUnread = (roomKey) => Number(notifications.roomUnread?.[roomKey] || 0);
-    const dmThreads = useDMThreadsStore();
+        const dmThreads = useDMThreadsStore();
 
-    const { notif } = useNotifications();         // context + auto-clear
-    const notifications = useNotificationsStore(); // for getters
+        const {notif} = useNotifications();         // context + auto-clear
+        const notifications = useNotificationsStore(); // for getters
 
-    const addFriendsOpen = ref(false);
-    const inlineEdit = ref({ id: null, draft: "" });
-    const inlineEditInput = ref(null);
+        const addFriendsOpen = ref(false);
+        const inlineEdit = ref({id: null, draft: "" });
+        const inlineEditInput = ref(null);
 
-    const ui = useUIStore();
-    const openInviteModal = ref(false);
+        const ui = useUIStore();
+        const openInviteModal = ref(false);
 
-    const roomsStore = useRoomsStore();
-    const router = useRouter();
-    const route = useRoute();
-    const rooms = useRoomsStore();
-    const messages = useMessagesStore();
-    const house = useHouseStore();
-    const presence = usePresenceStore();
+        const roomsStore = useRoomsStore();
+        const router = useRouter();
+        const route = useRoute();
+        const rooms = useRoomsStore();
+        const messages = useMessagesStore();
+        const house = useHouseStore();
+        const presence = usePresenceStore();
 
-    const openProfileModal = ref(false);
-    const openRoomsModal = ref(false);
-    const openHouseModal = ref(false);
-    const houseMenuOpen = ref(false);
+        const openProfileModal = ref(false);
+        const openRoomsModal = ref(false);
+        const openHouseModal = ref(false);
+        const houseMenuOpen = ref(false);
 
-    const AVATARS_MAX = 5;
+        const AVATARS_MAX = 5;
 
     // ✅ DM mode
     const isDMMode = computed(() => route.name === "dms" || route.name === "dm");
@@ -600,25 +610,25 @@
     // ✅ top bar only when NOT room and NOT dm
     const showMobileTopBar = computed(() => route.name !== "room" && route.name !== "dm" && route.name !== "dms");
 
-    /* =========================
-   ✅ BACK/FOWARD ROUTING HANDLING
-   ========================= */
-    const lastRoomByHouse = ref({}); // { [houseId]: "roomKey" }
-    const popNavLock = ref(false);
+        /* =========================
+       ✅ BACK/FOWARD ROUTING HANDLING
+       ========================= */
+        const lastRoomByHouse = ref({ }); // {[houseId]: "roomKey" }
+        const popNavLock = ref(false);
 
-    function setLastRoomForHouse(roomKey) {
+        function setLastRoomForHouse(roomKey) {
         const hid = house.currentHouseId;
         if (!hid || !roomKey) return;
-        lastRoomByHouse.value = { ...lastRoomByHouse.value, [hid]: String(roomKey) };
+        lastRoomByHouse.value = {...lastRoomByHouse.value, [hid]: String(roomKey) };
     }
 
-    function getLastRoomForHouse() {
+        function getLastRoomForHouse() {
         const hid = house.currentHouseId;
         if (!hid) return null;
         return lastRoomByHouse.value?.[hid] ?? null;
     }
 
-    async function onDMOpenThread(id) {
+        async function onDMOpenThread(id) {
         const threadId = String(id || "").trim();
         if (!threadId) return;
 
@@ -627,13 +637,13 @@
         // ✅ במובייל: סוגרים מגירה קודם, בלי history.back
         if (isMobile() && mobileNavOpen.value) {
             closeMobileNav({ skipHistoryBack: true });
-            await nextTick();
+        await nextTick();
         }
 
         // ✅ ניווט (מוגן)
         try {
             if (route.name !== "dm" || String(route.params.threadId) !== threadId) {
-                await router.push({ name: "dm", params: { threadId } });
+            await router.push({ name: "dm", params: { threadId } });
             }
         } catch (e) {
             // swallow navigation failures
@@ -642,43 +652,43 @@
     }
 
 
-    // ✅ קאש קטן כדי לא לקרוא getter פעמיים לכל חדר בתוך template
-    function roomUsers(roomKey) {
+        // ✅ קאש קטן כדי לא לקרוא getter פעמיים לכל חדר בתוך template
+        function roomUsers(roomKey) {
         const list = presence.usersInRoom(roomKey) || [];
         return list.filter(u => (u.user_status ?? "online") === "online");
     }
-    function isRoomRoute() {
+        function isRoomRoute() {
         return route.name === "room" || String(route.path || "").startsWith("/room/");
     }
-    function isHomeRoute() {
+        function isHomeRoute() {
         return route.name === "home" || String(route.path || "") === "/";
     }
 
 
-    /* =========================
-       ✅ MOBILE DRAWER STATE
-       ========================= */
-    const mobileNavOpen = ref(false);
-    const drawerTranslateX = ref(-400);
-    const overlayOpacity = ref(0);
-    const drawerW = ref(0); // ✅ GLOBAL drawer width cache
+        /* =========================
+           ✅ MOBILE DRAWER STATE
+           ========================= */
+        const mobileNavOpen = ref(false);
+        const drawerTranslateX = ref(-400);
+        const overlayOpacity = ref(0);
+        const drawerW = ref(0); // ✅ GLOBAL drawer width cache
 
-    function drawerWidth() {
+        function drawerWidth() {
         return window.innerWidth; // FULLSCREEN drawer
     }
 
 
-    function recalcDrawerW() {
-        drawerW.value = drawerWidth();
+        function recalcDrawerW() {
+            drawerW.value = drawerWidth();
 
         // אם המגירה סגורה – ננעל אותה בדיוק לסגירה
         if (!mobileNavOpen.value) {
             drawerTranslateX.value = -drawerW.value;
-            overlayOpacity.value = 0;
+        overlayOpacity.value = 0;
         }
     }
 
-    function animateDrawer(toX, toOpacity, ms = 220) {
+        function animateDrawer(toX, toOpacity, ms = 220) {
         const fromX = drawerTranslateX.value;
         const fromO = overlayOpacity.value;
         const start = performance.now();
@@ -686,27 +696,27 @@
 
         function frame(now) {
             const p = Math.min(1, (now - start) / ms);
-            const e = easeOut(p);
-            drawerTranslateX.value = fromX + (toX - fromX) * e;
-            overlayOpacity.value = fromO + (toOpacity - fromO) * e;
-            if (p < 1) requestAnimationFrame(frame);
+        const e = easeOut(p);
+        drawerTranslateX.value = fromX + (toX - fromX) * e;
+        overlayOpacity.value = fromO + (toOpacity - fromO) * e;
+        if (p < 1) requestAnimationFrame(frame);
         }
         requestAnimationFrame(frame);
     }
 
-    async function goDMs(options = {}) {
-        if (options.closeDrawer && mobileNavOpen.value) closeMobileNav({ skipHistoryBack: true });
+        async function goDMs(options = { }) {
+        if (options.closeDrawer && mobileNavOpen.value) closeMobileNav({skipHistoryBack: true });
         if (route.name !== "dms")
-            await router.push({ name: "dms" });
+        await router.push({name: "dms" });
     }
 
-    /* =========================
-       ✅ Android back closes drawer
-       ========================= */
-    const drawerHistoryPushed = ref(false);
-    let suppressNextPop = false;
+        /* =========================
+           ✅ Android back closes drawer
+           ========================= */
+        const drawerHistoryPushed = ref(false);
+        let suppressNextPop = false;
 
-    async function openMobileNav() {
+        async function openMobileNav() {
         if (mobileNavOpen.value) return;
         stampHistoryState();
         houseMenuOpen.value = false;
@@ -720,11 +730,11 @@
 
         if (!drawerHistoryPushed.value) {
             history.pushState({ gioDrawer: true, gioHouseId: house.currentHouseId ?? null }, "");
-            drawerHistoryPushed.value = true;
+        drawerHistoryPushed.value = true;
         }
     }
 
-    function closeMobileNav(options = {}) {
+        function closeMobileNav(options = { }) {
         if (!mobileNavOpen.value) return;
 
         houseMenuOpen.value = false;
@@ -735,12 +745,12 @@
         window.setTimeout(async () => {
             mobileNavOpen.value = false;
 
-            // ✅ אם סגרנו מגירה בזמן שהיינו ב־/dms במובייל:
-            // נחזיר את המשתמש ל־dm האחרון (אם יש), אחרת נשאר ב־dms
-            if (isMobile() && route.name === "dms") {
+        // ✅ אם סגרנו מגירה בזמן שהיינו ב־/dms במובייל:
+        // נחזיר את המשתמש ל־dm האחרון (אם יש), אחרת נשאר ב־dms
+        if (isMobile() && route.name === "dms") {
                 const last = dmThreads.lastThreadId || dmThreads.lastThread || null;
-                if (last) {
-                    try { await router.replace({ name: "dm", params: { threadId: String(last) } }); } catch (_) { }
+        if (last) {
+                    try {await router.replace({ name: "dm", params: { threadId: String(last) } }); } catch (_) { }
                 }
             }
         }, 155);
@@ -749,30 +759,30 @@
         if (drawerHistoryPushed.value) {
             if (options.skipHistoryBack) {
                 try {
-                    const st = history.state || {};
-                    const next = { ...st };
-                    delete next.gioDrawer;
-                    history.replaceState(next, "", window.location.pathname + window.location.search + window.location.hash);
+                    const st = history.state || { };
+        const next = {...st};
+        delete next.gioDrawer;
+        history.replaceState(next, "", window.location.pathname + window.location.search + window.location.hash);
                 } catch (_) { }
-                drawerHistoryPushed.value = false;
-                suppressNextPop = false;
+        drawerHistoryPushed.value = false;
+        suppressNextPop = false;
             } else {
-                suppressNextPop = true;
-                history.back();
-                drawerHistoryPushed.value = false;
+            suppressNextPop = true;
+        history.back();
+        drawerHistoryPushed.value = false;
             }
         }
     }
 
 
-    function safeReplaceState(stateObj) {
+        function safeReplaceState(stateObj) {
         try {
             history.replaceState(stateObj, "", window.location.pathname + window.location.search + window.location.hash);
         } catch (_) { }
     }
 
-    async function goLobby(options = {}) {
-        if (options.closeDrawer && mobileNavOpen.value) closeMobileNav({ skipHistoryBack: true });
+        async function goLobby(options = { }) {
+        if (options.closeDrawer && mobileNavOpen.value) closeMobileNav({skipHistoryBack: true });
 
         if (route.name !== "home") {
             // ✅ Room -> Home = replace (לא מוסיפים עוד רשומה)
@@ -782,109 +792,109 @@
         const hid = house.currentHouseId;
         if (hid) {
             const needsConnect = presence.status !== "ready" || presence.houseId !== hid;
-            if (needsConnect) await presence.connect({ houseId: hid, initialRoom: "lobby" });
-            await presence.setRoom("lobby");
+        if (needsConnect) await presence.connect({houseId: hid, initialRoom: "lobby" });
+        await presence.setRoom("lobby");
         }
 
         house.enterRoom?.("lobby");
     }
 
-    async function signOut() {
+        async function signOut() {
         try {
             // 1) להתנתק אמיתי מה-auth
-            const { error } = await supabase.auth.signOut();
-            if (error) console.warn("signOut error:", error);
+            const {error} = await supabase.auth.signOut();
+        if (error) console.warn("signOut error:", error);
 
-            // 2) לנתק realtime / subs
-            try { await presence.disconnect?.(); } catch (_) { }
+        // 2) לנתק realtime / subs
+        try {await presence.disconnect?.(); } catch (_) { }
 
-            try {
-                const subs = Object.keys(messages.subs || {});
-                for (const roomId of subs) {
-                    await messages.unsubscribe(roomId);
+        try {
+                const subs = Object.keys(messages.subs || { });
+        for (const roomId of subs) {
+            await messages.unsubscribe(roomId);
                 }
             } catch (_) { }
 
             // ✅ DM inbox + thread subs
-            try {
+        try {
                 const dmMessages = useDMMessagesStore();
-                await dmMessages.unsubscribeInbox?.();
+        await dmMessages.unsubscribeInbox?.();
 
-                const dmSubs = Object.keys(dmMessages.subs || {});
-                for (const threadId of dmSubs) {
-                    await dmMessages.unsubscribe(threadId);
+        const dmSubs = Object.keys(dmMessages.subs || { });
+        for (const threadId of dmSubs) {
+            await dmMessages.unsubscribe(threadId);
                 }
             } catch (_) { }
 
             // 3) לאפס state מקומי
-            session.value = null;
-            profile.value = null;
+        session.value = null;
+        profile.value = null;
 
-            house.reset?.();
-            rooms.reset?.();
+        house.reset?.();
+        rooms.reset?.();
 
-            messages.byRoom = {};
-            messages.subs = {};
+        messages.byRoom = { };
+        messages.subs = { };
 
-            try {
+        try {
                 const dmMessages = useDMMessagesStore();
-                dmMessages.byThread = {};
-                dmMessages.subs = {};
-                dmMessages.outbox = [];
+        dmMessages.byThread = { };
+        dmMessages.subs = { };
+        dmMessages.outbox = [];
             } catch (_) { }
 
             // 4) רק את הדברים שלך (לא של Supabase)
-            try { localStorage.removeItem("gio_current_house_id"); } catch (_) { }
+        try {localStorage.removeItem("gio_current_house_id"); } catch (_) { }
 
-            await router.replace({ name: "login" });
+        await router.replace({name: "login" });
         } catch (e) {
             console.error("signOut failed:", e);
-            await router.replace({ name: "login" });
+        await router.replace({name: "login" });
         }
     }
 
 
-    function onPopState() {
+        function onPopState() {
         if (suppressNextPop) {
             suppressNextPop = false;
-            return;
+        return;
         }
 
         // 1) אם המגירה פתוחה — back סוגר רק אותה
         if (mobileNavOpen.value) {
             closeMobileNav({ skipHistoryBack: true });
-            drawerHistoryPushed.value = false;
-            return;
+        drawerHistoryPushed.value = false;
+        return;
         }
 
         // 2) אם אנחנו בתוך חדר — back חייב להחזיר ללובי (בלי double-exit)
         if (isRoomRoute()) {
             exitArmed.value = false;
-            if (exitTimer) clearTimeout(exitTimer);
+        if (exitTimer) clearTimeout(exitTimer);
 
-            router.replace({ name: "home" });
-            return;
+        router.replace({name: "home" });
+        return;
         }
 
         // 3) אם אנחנו בלובי:
         if (isHomeRoute()) {
             // דסקטופ: לא יוצאים מהדף — "בולעים" את ה-back
             if (!isMobile()) {
-                history.pushState({ ...(history.state || {}), gioStay: true }, "");
-                return;
+            history.pushState({ ...(history.state || {}), gioStay: true }, "");
+        return;
             }
 
-            // מובייל: double back to exit
-            if (!exitArmed.value) {
-                history.pushState({ ...(history.state || {}), gioStay: true }, "");
-                armExit(); // מציג toast "לחץ שוב ליציאה" + טיימר שמאפס
-                return;
+        // מובייל: double back to exit
+        if (!exitArmed.value) {
+            history.pushState({ ...(history.state || {}), gioStay: true }, "");
+        armExit(); // מציג toast "לחץ שוב ליציאה" + טיימר שמאפס
+        return;
             }
 
-            // לחיצה שנייה: נותנים לדפדפן לעשות back אמיתי (יציאה מה-PWA/חזרה אחורה)
-            exitArmed.value = false;
-            if (exitTimer) clearTimeout(exitTimer);
-            return;
+        // לחיצה שנייה: נותנים לדפדפן לעשות back אמיתי (יציאה מה-PWA/חזרה אחורה)
+        exitArmed.value = false;
+        if (exitTimer) clearTimeout(exitTimer);
+        return;
         }
     }
 
@@ -892,34 +902,34 @@
     watch(mobileNavOpen, (open) => {
         if (open) {
             document.documentElement.style.overflow = "hidden";
-            document.body.style.overflow = "hidden";
+        document.body.style.overflow = "hidden";
         } else {
             document.documentElement.style.overflow = "";
-            document.body.style.overflow = "";
+        document.body.style.overflow = "";
         }
     });
 
-    /* =========================
-       ✅ LOAD rooms + presence connect when house changes
-       ========================= */
-    watch(
+        /* =========================
+           ✅ LOAD rooms + presence connect when house changes
+           ========================= */
+        watch(
         () => house.currentHouseId,
         async (houseId) => {
             if (!houseId) return; // ✅ MUST
-            await presence.connect({ houseId, initialRoom: presence.roomName || "lobby" });
+        await presence.connect({houseId, initialRoom: presence.roomName || "lobby" });
         },
-        { immediate: true }
-    );
+        {immediate: true }
+        );
 
 
-    /* =========================
-        ✅ Press Back again to exit app (mobile)
-       ========================= */
-    const exitArmed = ref(false);
-    let exitTimer = null;
+        /* =========================
+            ✅ Press Back again to exit app (mobile)
+           ========================= */
+        const exitArmed = ref(false);
+        let exitTimer = null;
 
-    function armExit() {
-        exitArmed.value = true;
+        function armExit() {
+            exitArmed.value = true;
         //ui?.toast?.("לחץ שוב ליציאה");
         if (exitTimer) clearTimeout(exitTimer);
         exitTimer = setTimeout(() => (exitArmed.value = false), 1600);
@@ -927,28 +937,28 @@
 
 
 
-    /* =========================
-       ✅ FULL-SCREEN SWIPE OPEN (Discord-like)
-       ========================= */
-    const swipeActive = ref(false);
-    const swipeLockedHorizontal = ref(false);
-    const startX = ref(0);
-    const startY = ref(0);
+        /* =========================
+           ✅ FULL-SCREEN SWIPE OPEN (Discord-like)
+           ========================= */
+        const swipeActive = ref(false);
+        const swipeLockedHorizontal = ref(false);
+        const startX = ref(0);
+        const startY = ref(0);
 
-    const INTENT_SLOP = 6;
-    const OPEN_COMMIT_RATIO = 0.12;
-    const SWIPE_GAIN = 1.9;
+        const INTENT_SLOP = 6;
+        const OPEN_COMMIT_RATIO = 0.12;
+        const SWIPE_GAIN = 1.9;
 
-    function isMobile() {
+        function isMobile() {
         return window.matchMedia?.("(max-width: 767px)")?.matches ?? (window.innerWidth < 768);
     }
 
-    function shouldIgnoreTarget(target) {
+        function shouldIgnoreTarget(target) {
         const el = target?.closest?.("input, textarea, select, button, [contenteditable='true']");
         return !!el;
     }
 
-    function onTouchStartGlobal(e) {
+        function onTouchStartGlobal(e) {
         if (!isMobile()) return;
         if (window.visualViewport?.scale && Math.abs(window.visualViewport.scale - 1) > 0.01) return;
         if (mobileNavOpen.value) return;
@@ -962,21 +972,21 @@
         startY.value = t.clientY;
     }
 
-    let dragFrame = 0;
-    let dragTranslate = 0;
+        let dragFrame = 0;
+        let dragTranslate = 0;
 
-    function scheduleDragUpdate(nextTranslate) {
-        dragTranslate = nextTranslate;
+        function scheduleDragUpdate(nextTranslate) {
+            dragTranslate = nextTranslate;
         if (dragFrame) return;
         dragFrame = requestAnimationFrame(() => {
             const w = drawerWidth();
-            drawerTranslateX.value = dragTranslate;
-            overlayOpacity.value = 1 - Math.abs(dragTranslate) / w;
-            dragFrame = 0;
+        drawerTranslateX.value = dragTranslate;
+        overlayOpacity.value = 1 - Math.abs(dragTranslate) / w;
+        dragFrame = 0;
         });
     }
 
-    function onTouchMoveGlobal(e) {
+        function onTouchMoveGlobal(e) {
         if (!swipeActive.value) return;
         if (window.visualViewport?.scale && Math.abs(window.visualViewport.scale - 1) > 0.01) return;
         const t = e.touches?.[0];
@@ -988,15 +998,15 @@
         if (!swipeLockedHorizontal.value) {
             if (Math.abs(dx) < INTENT_SLOP && Math.abs(dy) < INTENT_SLOP) return;
             if (Math.abs(dy) > Math.abs(dx) * 1.15) {
-                swipeActive.value = false;
-                return;
+            swipeActive.value = false;
+        return;
             }
-            // ✅ כאן זה הרגע שהחלטת “זה swipe לפתיחת drawer”
-            closeKeyboard();
+        // ✅ כאן זה הרגע שהחלטת “זה swipe לפתיחת drawer”
+        closeKeyboard();
 
-            swipeLockedHorizontal.value = true;
-            mobileNavOpen.value = true;
-            drawerTranslateX.value = -drawerWidth();
+        swipeLockedHorizontal.value = true;
+        mobileNavOpen.value = true;
+        drawerTranslateX.value = -drawerWidth();
         }
 
         e.preventDefault();
@@ -1006,7 +1016,7 @@
         scheduleDragUpdate(translate);
     }
 
-    function onTouchEndGlobal() {
+        function onTouchEndGlobal() {
         if (!swipeActive.value) return;
         const w = drawerWidth();
         const currentTranslate = dragFrame ? dragTranslate : drawerTranslateX.value;
@@ -1018,24 +1028,24 @@
 
         if (shouldOpen) {
             animateDrawer(0, 1, 120);
-            if (!drawerHistoryPushed.value) {
-                history.pushState({ gioDrawer: true }, "");
-                drawerHistoryPushed.value = true;
+        if (!drawerHistoryPushed.value) {
+            history.pushState({ gioDrawer: true }, "");
+        drawerHistoryPushed.value = true;
             }
         } else {
             animateDrawer(-w, 0, 110);
             window.setTimeout(() => {
-                mobileNavOpen.value = false;
+            mobileNavOpen.value = false;
             }, 130);
         }
     }
 
-    /* =========================
-       ✅ SWIPE CLOSE (drag drawer itself)
-       ========================= */
-    const touchStartX = ref(0);
-    const touchDragging = ref(false);
-    const touchStartTranslate = ref(0);
+        /* =========================
+           ✅ SWIPE CLOSE (drag drawer itself)
+           ========================= */
+        const touchStartX = ref(0);
+        const touchDragging = ref(false);
+        const touchStartTranslate = ref(0);
 
     const drawerProgress = computed(() => {
         const w = drawerW.value || drawerWidth() || 1;
@@ -1053,18 +1063,18 @@
     });
 
     const appStageStyle = computed(() => ({
-        transform: "translateX(0px)", // ✅ אין push בכלל
+            transform: "translateX(0px)", // ✅ אין push בכלל
         transition: "none",
     }));
 
 
-    function onDrawerTouchStart(e) {
-        touchDragging.value = true;
+        function onDrawerTouchStart(e) {
+            touchDragging.value = true;
         touchStartX.value = e.touches[0].clientX;
         touchStartTranslate.value = drawerTranslateX.value;
     }
 
-    function onDrawerTouchMove(e) {
+        function onDrawerTouchMove(e) {
         if (!touchDragging.value) return;
         const dx = e.touches[0].clientX - touchStartX.value;
         const w = drawerWidth();
@@ -1072,7 +1082,7 @@
         scheduleDragUpdate(next);
     }
 
-    function onDrawerTouchEnd() {
+        function onDrawerTouchEnd() {
         if (!touchDragging.value) return;
         touchDragging.value = false;
 
@@ -1081,7 +1091,7 @@
 
         if (!shouldClose) {
             animateDrawer(0, 1, 120);
-            return;
+        return;
         }
 
         // ✅ אם אנחנו במצב DMS – אל תעשה history.back
@@ -1093,10 +1103,10 @@
     }
 
 
-    function onGlobalPointerDown(e) {
+        function onGlobalPointerDown(e) {
         if (houseMenuOpen.value) {
             const insideHeaderMenu = e.target?.closest?.("[data-house-menu]");
-            if (!insideHeaderMenu) houseMenuOpen.value = false;
+        if (!insideHeaderMenu) houseMenuOpen.value = false;
         }
     }
 
@@ -1114,15 +1124,15 @@
 
     const myStatusLabel = computed(() => {
         return (
-            {
-                online: "Online",
-                afk: "AFK",
-                offline: "Offline",
+        {
+            online: "Online",
+        afk: "AFK",
+        offline: "Offline",
             }[myUserStatus.value] || "Online"
         );
     });
 
-    async function cycleMyStatus() {
+        async function cycleMyStatus() {
         if (presence.status !== "ready") return;
 
         const cur = myUserStatus.value;
@@ -1137,34 +1147,34 @@
         scheduleAfk();
     }
 
-    /* =========================
-       ✅ AFK automation (status only — NOT a room)
-       ========================= */
-    //const AFK_MS = 5000; // ✅ דיבוג
-    const AFK_MS = 10 * 60 * 1000; // 10 דקות
+        /* =========================
+           ✅ AFK automation (status only — NOT a room)
+           ========================= */
+        //const AFK_MS = 5000; // ✅ דיבוג
+        const AFK_MS = 10 * 60 * 1000; // 10 דקות
 
-    let afkTimer = null;
-    let wakeDebounce = null;
+        let afkTimer = null;
+        let wakeDebounce = null;
 
-    function clearAfkTimer() {
+        function clearAfkTimer() {
         if (afkTimer) clearTimeout(afkTimer);
         afkTimer = null;
     }
 
-    function scheduleAfk() {
-        clearAfkTimer();
+        function scheduleAfk() {
+            clearAfkTimer();
 
         // Offline ידני = לא נוגעים
         if (myUserStatus.value === "offline") return;
 
         afkTimer = setTimeout(async () => {
             if (myUserStatus.value === "offline") return;
-            await presence.setUserStatus("afk");
-            ui?.toast?.("💤 עברת ל-AFK");
+        await presence.setUserStatus("afk");
+        ui?.toast?.("💤 עברת ל-AFK");
         }, AFK_MS);
     }
 
-    function onUserActivity() {
+        function onUserActivity() {
         if (myUserStatus.value === "offline") return;
 
         scheduleAfk();
@@ -1173,15 +1183,15 @@
             if (wakeDebounce) clearTimeout(wakeDebounce);
             wakeDebounce = setTimeout(async () => {
                 if (myUserStatus.value !== "offline") {
-                    await presence.setUserStatus("online");
-                    ui?.toast?.("👋 חזרת");
+            await presence.setUserStatus("online");
+        ui?.toast?.("👋 חזרת");
                 }
             }, 600);
         }
     }
 
-    function attachAfkListeners() {
-        const opts = { passive: true };
+        function attachAfkListeners() {
+        const opts = {passive: true };
         window.addEventListener("pointerdown", onUserActivity, opts);
         window.addEventListener("pointermove", onUserActivity, opts);
         window.addEventListener("keydown", onUserActivity, opts);
@@ -1189,8 +1199,8 @@
         window.addEventListener("touchstart", onUserActivity, opts);
     }
 
-    function detachAfkListeners() {
-        window.removeEventListener("pointerdown", onUserActivity);
+        function detachAfkListeners() {
+            window.removeEventListener("pointerdown", onUserActivity);
         window.removeEventListener("pointermove", onUserActivity);
         window.removeEventListener("keydown", onUserActivity);
         window.removeEventListener("scroll", onUserActivity);
@@ -1209,7 +1219,7 @@
     const isPublicHouse = computed(() => !!currentHouse.value?.is_public);
     const headerTitle = computed(() =>
         currentHouse.value?.is_public ? "GIO HOUSE" : currentHouse.value?.name || "My House"
-    );
+        );
 
     const houseRail = computed(() => house.myHouses ?? []);
 
@@ -1217,11 +1227,11 @@
     const avatarUrl = computed(() => profile.value?.avatar_url ?? null);
 
     const routeRoomKey = computed(() => {
-        const p = route.params || {};
+        const p = route.params || { };
         return (p.key ?? p.roomKey ?? p.id ?? null);
     });
 
-    function isActiveRoom(roomKey) {
+        function isActiveRoom(roomKey) {
         // ✅ בלובי לא מסמנים חדרים בכלל
         if (route.name === "home") return false;
 
@@ -1235,7 +1245,7 @@
 
     const activeRooms = computed(() => roomsStore.activeRooms ?? []);
 
-    async function enterRoom(roomKey, options = {}) {
+        async function enterRoom(roomKey, options = { }) {
         if (inlineEdit.value.id) return;
 
         if (options.closeDrawer && mobileNavOpen.value) {
@@ -1248,22 +1258,22 @@
         // ✅ Home -> Room = push (כדי ש-back יחזור ללובי)
         // ✅ Room -> Room = replace (כדי ש-back לא יסתובב בחדרים)
         const nav = route.name === "room" ? router.replace : router.push;
-        await nav({ name: "room", params: { id: roomKey } });
+        await nav({name: "room", params: {id: roomKey } });
 
         const hid = house.currentHouseId;
         if (hid) {
             const needsConnect = presence.status !== "ready" || presence.houseId !== hid;
-            if (needsConnect) await presence.connect({ houseId: hid, initialRoom: roomKey });
-            await presence.setRoom(roomKey);
+        if (needsConnect) await presence.connect({houseId: hid, initialRoom: roomKey });
+        await presence.setRoom(roomKey);
         }
 
-        if (mobileNavOpen.value) closeMobileNav({ skipHistoryBack: true });
+        if (mobileNavOpen.value) closeMobileNav({skipHistoryBack: true });
     }
 
 
 
 
-    function switchHouse(houseId) {
+        function switchHouse(houseId) {
         if (!houseId) return;
 
         house.setCurrentHouse(houseId);
@@ -1273,86 +1283,86 @@
         exitArmed.value = false;
         if (exitTimer) clearTimeout(exitTimer);
 
-        if (mobileNavOpen.value) closeMobileNav({ skipHistoryBack: true });
+        if (mobileNavOpen.value) closeMobileNav({skipHistoryBack: true });
 
-        router.replace({ name: "home" });
+        router.replace({name: "home" });
 
         nextTick(() => {
             stampHistoryState({ gioHouseReset: Date.now() });
-            history.pushState({ ...(history.state || {}), gioHouseId: houseId, gioStay: true }, "");
+        history.pushState({...(history.state || {}), gioHouseId: houseId, gioStay: true }, "");
         });
     }
 
 
     const retryPresence = () =>
-        house.currentHouseId && presence.connect({ houseId: house.currentHouseId });
+        house.currentHouseId && presence.connect({houseId: house.currentHouseId });
 
-    watch(
+        watch(
         () => house.currentHouseId,
         () => {
             exitArmed.value = false;
-            if (exitTimer) clearTimeout(exitTimer);
+        if (exitTimer) clearTimeout(exitTimer);
         },
-        { immediate: true }
-    );
+        {immediate: true }
+        );
 
 
-    /* =========================
-       ✅ Drawer close on ANY navigation (airtight)
-       ========================= */
-    // ✅ sync presence with current route (source of truth)
-    // ✅ sync presence + stamp history with current route (source of truth)
-    watch(
+        /* =========================
+           ✅ Drawer close on ANY navigation (airtight)
+           ========================= */
+        // ✅ sync presence with current route (source of truth)
+        // ✅ sync presence + stamp history with current route (source of truth)
+        watch(
         () => route.fullPath,
         async () => {
             // תמיד חותמים את ה-state של ההיסטוריה לבית הנוכחי
             stampHistoryState();
 
-            // ✅ אם חזרנו ללובי (home) — נוכחות ללובי
-            if (route.name === "home") {
+        // ✅ אם חזרנו ללובי (home) — נוכחות ללובי
+        if (route.name === "home") {
                 const hid = house.currentHouseId;
-                if (hid) {
+        if (hid) {
                     const needsConnect = presence.status !== "ready" || presence.houseId !== hid;
-                    if (needsConnect) {
-                        await presence.connect({ houseId: hid, initialRoom: "lobby" });
+        if (needsConnect) {
+            await presence.connect({ houseId: hid, initialRoom: "lobby" });
                     }
-                    await presence.setRoom("lobby");
+        await presence.setRoom("lobby");
                 }
-                house.enterRoom?.("lobby");
-                return;
+        house.enterRoom?.("lobby");
+        return;
             }
 
-            // ✅ אם אנחנו בחדר — נוכחות לחדר לפי ה-route
-            if (route.name === "room") {
-                const p = route.params || {};
-                const roomKey = String(p.id ?? p.key ?? p.roomKey ?? "");
-                if (!roomKey) return;
+        // ✅ אם אנחנו בחדר — נוכחות לחדר לפי ה-route
+        if (route.name === "room") {
+                const p = route.params || { };
+        const roomKey = String(p.id ?? p.key ?? p.roomKey ?? "");
+        if (!roomKey) return;
 
-                setLastRoomForHouse?.(roomKey); // ✅ קריטי ל-toggle
+        setLastRoomForHouse?.(roomKey); // ✅ קריטי ל-toggle
 
-                const hid = house.currentHouseId;
-                if (hid) {
+        const hid = house.currentHouseId;
+        if (hid) {
                     const needsConnect = presence.status !== "ready" || presence.houseId !== hid;
-                    if (needsConnect) {
-                        await presence.connect({ houseId: hid, initialRoom: roomKey });
+        if (needsConnect) {
+            await presence.connect({ houseId: hid, initialRoom: roomKey });
                     }
-                    await presence.setRoom(roomKey);
+        await presence.setRoom(roomKey);
                 }
-                house.enterRoom?.(roomKey);
+        house.enterRoom?.(roomKey);
             }
 
         },
-        { immediate: true }
-    );
+        {immediate: true }
+        );
 
 
-    function resetHorizontalScroll() {
-        // iOS sometimes leaves the page panned horizontally
-        window.scrollTo({ left: 0, top: window.scrollY, behavior: "instant" });
+        function resetHorizontalScroll() {
+            // iOS sometimes leaves the page panned horizontally
+            window.scrollTo({ left: 0, top: window.scrollY, behavior: "instant" });
     }
 
-    function resetGestures(reason) {
-        console.log("[AppShell] resetGestures", reason);
+        function resetGestures(reason) {
+            console.log("[AppShell] resetGestures", reason);
 
         swipeActive.value = false;
         swipeLockedHorizontal.value = false;
@@ -1360,31 +1370,31 @@
 
         if (mobileNavOpen.value) {
             mobileNavOpen.value = false;
-            drawerTranslateX.value = -drawerWidth();
-            overlayOpacity.value = 0;
+        drawerTranslateX.value = -drawerWidth();
+        overlayOpacity.value = 0;
         }
 
         // ✅ נקה גם את הדגל מה-history.state אם נשאר
         if (drawerHistoryPushed.value) {
             try {
-                const st = history.state || {};
-                const next = { ...st };
-                delete next.gioDrawer;
-                history.replaceState(next, "", window.location.pathname + window.location.search + window.location.hash);
+                const st = history.state || { };
+        const next = {...st};
+        delete next.gioDrawer;
+        history.replaceState(next, "", window.location.pathname + window.location.search + window.location.hash);
             } catch (_) { }
-            drawerHistoryPushed.value = false;
+        drawerHistoryPushed.value = false;
         }
     }
 
-    function onVis() {
+        function onVis() {
         if (document.visibilityState === "visible") resetGestures("visibility:visible");
     }
-    function onPageShow(e) {
-        // BFCache restore
-        resetGestures("pageshow" + (e?.persisted ? ":persisted" : ""));
+        function onPageShow(e) {
+            // BFCache restore
+            resetGestures("pageshow" + (e?.persisted ? ":persisted" : ""));
     }
     onMounted(() => {
-        attachAfkListeners();
+            attachAfkListeners();
         scheduleAfk();
         recalcDrawerW();
         resetHorizontalScroll();
@@ -1392,19 +1402,19 @@
         if (isMobile()) {
             // שכבת הגנה כדי שה-back הראשון בלובי לא יזרוק את המשתמש מיד החוצה
             history.replaceState({ gioBase: true }, "");
-            history.pushState({ gioStay: true }, "");
+        history.pushState({gioStay: true }, "");
         }
 
-        document.addEventListener("visibilitychange", onVis, { passive: true });
-        window.addEventListener("pageshow", onPageShow, { passive: true });
-        window.addEventListener("orientationchange", resetHorizontalScroll, { passive: true });
-        window.addEventListener("resize", resetHorizontalScroll, { passive: true });
+        document.addEventListener("visibilitychange", onVis, {passive: true });
+        window.addEventListener("pageshow", onPageShow, {passive: true });
+        window.addEventListener("orientationchange", resetHorizontalScroll, {passive: true });
+        window.addEventListener("resize", resetHorizontalScroll, {passive: true });
         window.addEventListener("resize", recalcDrawerW);
         window.addEventListener("popstate", onPopState);
-        window.addEventListener("touchstart", onTouchStartGlobal, { capture: true, passive: true });
-        window.addEventListener("touchmove", onTouchMoveGlobal, { capture: true, passive: false });
-        window.addEventListener("touchend", onTouchEndGlobal, { capture: true, passive: true });
-        window.addEventListener("pointerdown", onGlobalPointerDown, { capture: true });
+        window.addEventListener("touchstart", onTouchStartGlobal, {capture: true, passive: true });
+        window.addEventListener("touchmove", onTouchMoveGlobal, {capture: true, passive: false });
+        window.addEventListener("touchend", onTouchEndGlobal, {capture: true, passive: true });
+        window.addEventListener("pointerdown", onGlobalPointerDown, {capture: true });
 
         // ✅ guards once
         const messages = useMessagesStore();
@@ -1414,88 +1424,88 @@
 
 
     onBeforeUnmount(() => {
-        detachAfkListeners();
+            detachAfkListeners();
         clearAfkTimer();
 
         document.removeEventListener("visibilitychange", onVis);
         window.removeEventListener("pageshow", onPageShow);
         window.removeEventListener("resize", recalcDrawerW);
         window.removeEventListener("popstate", onPopState);
-        window.removeEventListener("touchstart", onTouchStartGlobal, { capture: true });
-        window.removeEventListener("touchmove", onTouchMoveGlobal, { capture: true });
-        window.removeEventListener("touchend", onTouchEndGlobal, { capture: true });
-        window.removeEventListener("pointerdown", onGlobalPointerDown, { capture: true });
+        window.removeEventListener("touchstart", onTouchStartGlobal, {capture: true });
+        window.removeEventListener("touchmove", onTouchMoveGlobal, {capture: true });
+        window.removeEventListener("touchend", onTouchEndGlobal, {capture: true });
+        window.removeEventListener("pointerdown", onGlobalPointerDown, {capture: true });
     });
 
-    /* =========================
-       ✅ Inline room rename
-       ========================= */
-    function beginInlineEdit(room) {
+        /* =========================
+           ✅ Inline room rename
+           ========================= */
+        function beginInlineEdit(room) {
         if (!room?.id) return;
         // לא עורכים living אם אתה רוצה (אופציונלי). אם כן, מחק את התנאי:
         // if (room.key === "living") return;
 
-        inlineEdit.value = { id: room.id, draft: room.name || room.key || "" };
+        inlineEdit.value = {id: room.id, draft: room.name || room.key || "" };
 
         nextTick(() => {
             // ref בתוך v-for עלול להיות array — נטפל בזה
             const el = Array.isArray(inlineEditInput.value) ? inlineEditInput.value.at(-1) : inlineEditInput.value;
-            el?.focus?.();
-            el?.select?.();
+        el?.focus?.();
+        el?.select?.();
         });
     }
 
-    function cancelInlineEdit() {
-        inlineEdit.value = { id: null, draft: "" };
+        function cancelInlineEdit() {
+            inlineEdit.value = { id: null, draft: "" };
     }
 
-    async function commitInlineEdit(room) {
+        async function commitInlineEdit(room) {
         const name = String(inlineEdit.value.draft || "").trim();
         if (!name) {
             ui?.toast?.("⚠️ שם לא יכול להיות ריק");
-            return;
+        return;
         }
 
         try {
             await roomsStore.updateRoom(room.id, { name });
-            ui?.toast?.("💾 נשמר");
+        ui?.toast?.("💾 נשמר");
         } catch (e) {
             console.error("[AppShell] inline rename failed:", e);
-            ui?.toast?.("💥 שינוי שם נכשל");
+        ui?.toast?.("💥 שינוי שם נכשל");
         } finally {
             cancelInlineEdit();
         }
     }
 
-    function stampHistoryState(extra = {}) {
+        function stampHistoryState(extra = { }) {
         const hid = house.currentHouseId ?? null;
-        const cur = history.state || {};
-        history.replaceState({ ...cur, gioHouseId: hid, ...extra }, "");
+        const cur = history.state || { };
+        history.replaceState({...cur, gioHouseId: hid, ...extra }, "");
     }
 
-    function closeKeyboard() {
+        function closeKeyboard() {
         const el = document.activeElement;
         if (!el) return;
 
         const tag = (el.tagName || "").toLowerCase();
         const isEditable =
-            tag === "textarea" ||
-            tag === "input" ||
-            el.isContentEditable;
+        tag === "textarea" ||
+        tag === "input" ||
+        el.isContentEditable;
 
         if (isEditable) {
             el.blur();
         }
     }
-    // ---------- unread badges (ROOMS) ----------
-    function getRoomUnread(roomKey) {
+        // ---------- unread badges (ROOMS) ----------
+        function getRoomUnread(roomKey) {
         // נסה כמה שמות אפשריים כדי שלא תקרוס אם ה-store שלך נקרא אחרת
         const map =
-            notifications.roomUnread ||
-            notifications.roomsUnread ||
-            notifications.unreadRooms ||
-            notifications.byRoom ||
-            {};
+        notifications.roomUnread ||
+        notifications.roomsUnread ||
+        notifications.unreadRooms ||
+        notifications.byRoom ||
+        { };
 
         const n = map?.[roomKey] ?? 0;
         return Number(n) || 0;
