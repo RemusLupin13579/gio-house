@@ -306,6 +306,7 @@
                  @touchstart.passive="onDrawerTouchStart"
                  @touchmove.passive="onDrawerTouchMove"
                  @touchend="onDrawerTouchEnd">
+
                 <div class="flex h-full">
 
                     <!-- LEFT RAIL (mobile): DMs + houses -->
@@ -663,9 +664,9 @@
     const drawerW = ref(0); // ✅ GLOBAL drawer width cache
 
     function drawerWidth() {
-        // גם במובייל וגם בדסקטופ — Drawer של “sidebar”, לא full-screen
-        return Math.min(window.innerWidth * 0.86, 360);
+        return window.innerWidth; // FULLSCREEN drawer
     }
+
 
     function recalcDrawerW() {
         drawerW.value = drawerWidth();
@@ -1052,10 +1053,10 @@
     });
 
     const appStageStyle = computed(() => ({
-        transform: `translateX(${appStageX.value}px)`,
-        transition: swipeActive.value || touchDragging.value ? "none" : "transform 140ms ease-out",
-        willChange: "transform",
+        transform: "translateX(0px)", // ✅ אין push בכלל
+        transition: "none",
     }));
+
 
     function onDrawerTouchStart(e) {
         touchDragging.value = true;
