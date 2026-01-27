@@ -22,11 +22,15 @@ app.mount("#app");
 if ("serviceWorker" in navigator) {
     window.addEventListener("load", async () => {
         try {
-            const reg = await navigator.serviceWorker.register("/sw.js", { scope: "/" });
+            const SW_VERSION = "2026-01-27_01"; // תשנה כל פעם שאתה משנה sw
+            const reg = await navigator.serviceWorker.register(`/sw.js?v=${SW_VERSION}`);
             console.log("[SW] registered:", reg?.scope);
 
             // log controller
             console.log("[SW] controller?", !!navigator.serviceWorker.controller);
+            navigator.serviceWorker?.addEventListener("message", (e) => {
+                if (e.data?.type === "SW_DEBUG") console.log("[SW_DEBUG]", e.data);
+            });
 
             // ping version
             const ready = await navigator.serviceWorker.ready;
@@ -38,6 +42,9 @@ if ("serviceWorker" in navigator) {
         } catch (e) {
             console.warn("[SW] register failed:", e);
         }
+        const reg = await navigator.serviceWorker.ready;
+        await reg.update();
+
     });
 }
 
