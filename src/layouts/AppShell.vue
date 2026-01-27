@@ -538,10 +538,6 @@
     </div>
 </template>
 
-<script setup>
-
-
-
     <script setup>
     /**
         * AppShell — המוח של ה-Layout 🧠
